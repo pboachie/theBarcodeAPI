@@ -19,20 +19,35 @@ jobs:
         node-version: '20.x'
 
     - name: Install dependencies
-      run: npm ci
+      run: |
+        echo 'Installing dependencies'
+        npm ci
 
     - name: Run linter
-      run: npm run lint
+      run: |
+        echo 'Running linter'
+        npm run lint
 
     # - name: Run tests
     #   run: npm test
 
     - name: Build
-      run: npm run build
+      run: |
+        echo 'Building the app'
+        npm run build
 
-    - name: Deploy
+    - name: Deploy to production
       if: github.ref == 'refs/heads/main'
       run: |
+        echo 'Deploying to production'
+        cd $GITHUB_WORKSPACE
+        sudo ./deploy.sh
+        sudo chown -R www-data:www-data /opt/thebarcodeapi
+
+    - name: Deploy to staging
+      if: github.ref != 'refs/heads/main'
+      run: |
+        echo 'Deploying to staging'
         cd $GITHUB_WORKSPACE
         sudo ./deploy.sh
         sudo chown -R www-data:www-data /opt/thebarcodeapi
