@@ -1,11 +1,14 @@
 import React from 'react';
+import PropTypes from 'prop-types';
 import { useSelector, useDispatch } from 'react-redux';
 import { Slider } from '../components/ui/slider';
 import { setBarcodeWidth, setBarcodeHeight } from '../slices/barcodeSlice';
 
 const BarcodeSizeSlider = ({ type }) => {
   const dispatch = useDispatch();
-  const { barcodeWidth, barcodeHeight, isLimitExceeded } = useSelector((state) => state.barcode);
+  const { barcodeWidth, barcodeHeight, isLimitExceeded } = useSelector(
+    (state) => state.barcode
+  );
 
   const value = type === 'width' ? barcodeWidth : barcodeHeight;
   const setAction = type === 'width' ? setBarcodeWidth : setBarcodeHeight;
@@ -30,6 +33,10 @@ const BarcodeSizeSlider = ({ type }) => {
       />
     </div>
   );
+};
+
+BarcodeSizeSlider.propTypes = {
+  type: PropTypes.string.isRequired,
 };
 
 export default BarcodeSizeSlider;
