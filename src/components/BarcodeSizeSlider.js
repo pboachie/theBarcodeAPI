@@ -6,9 +6,7 @@ import { setBarcodeWidth, setBarcodeHeight } from '../slices/barcodeSlice';
 
 const BarcodeSizeSlider = ({ type }) => {
   const dispatch = useDispatch();
-  const { barcodeWidth, barcodeHeight, isLimitExceeded } = useSelector(
-    (state) => state.barcode
-  );
+  const { barcodeWidth, barcodeHeight, isLimitExceeded } = useSelector((state) => state.barcode);
 
   const value = type === 'width' ? barcodeWidth : barcodeHeight;
   const setAction = type === 'width' ? setBarcodeWidth : setBarcodeHeight;
@@ -20,7 +18,7 @@ const BarcodeSizeSlider = ({ type }) => {
   return (
     <div>
       <label className="block text-sm font-medium mb-1">
-        {type.charAt(0).toUpperCase() + type.slice(1)}: {value}px
+        {`${type.charAt(0).toUpperCase() + type.slice(1)}: ${value}px`}
       </label>
       <Slider
         min={50}
