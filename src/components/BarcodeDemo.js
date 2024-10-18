@@ -13,7 +13,7 @@ const BarcodeDemo = () => {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       {isLimitExceeded && (
         <Alert variant="destructive" className="col-span-2">
-          Limit exceeded. Please adjust your settings.
+          Usage limit exceeded. Please try again tomorrow or try again with a key
         </Alert>
       )}
       <BarcodeConfig />
