@@ -17,7 +17,7 @@ const initialState = {
   rateLimit: {
     requests: 0,
     remaining: 0,
-    reset: 0
+    reset: 0,
   },
   isLimitExceeded: false,
 };

@@ -1,8 +1,8 @@
 // src/components/BarcodeConfig.js
 
 import React from 'react';
-import { useSelector, useDispatch } from 'react-redux';
-import { Card, CardHeader, CardContent } from '@/components/ui/card';
+import { useSelector } from 'react-redux';
+import { Card, CardHeader, CardContent } from '../components/ui/card';
 import BarcodeTypeSelect from './BarcodeTypeSelect';
 import BarcodeDataInput from './BarcodeDataInput';
 import BarcodeSizeSlider from './BarcodeSizeSlider';
@@ -11,7 +11,7 @@ import DPISlider from './DPISlider';
 import CenterTextSwitch from './CenterTextSwitch';
 
 const BarcodeConfig = () => {
-  const isLimitExceeded = useSelector(state => state.barcode.isLimitExceeded);
+  const isLimitExceeded = useSelector((state) => state.barcode.isLimitExceeded);
 
   return (
     <Card className={`bg-white shadow-lg ${isLimitExceeded ? 'opacity-50' : ''}`}>
