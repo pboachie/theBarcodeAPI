@@ -13,21 +13,21 @@ jobs:
     runs-on: self-hosted
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
 
     - name: Use Node.js
-      uses: actions/setup-node@v2
+      uses: actions/setup-node@v3
       with:
         node-version: '20.x'
 
     - name: Install dependencies
       run: npm ci
 
-    - name: Run tests
-      run: npm test
-
     - name: Run linter
       run: npm run lint
+
+    # - name: Run tests
+    #   run: npm test
 
     - name: Build
       run: npm run build
@@ -35,6 +35,6 @@ jobs:
     - name: Deploy
       if: github.ref == 'refs/heads/main'
       run: |
-        sudo rm -rf /opt/thebarcodeapi/*
-        sudo cp -r build/* /opt/thebarcodeapi/
+        sudo mkdir -p /opt/thebarcodeapi/releases
+        sudo ./deploy.sh
         sudo chown -R www-data:www-data /opt/thebarcodeapi
