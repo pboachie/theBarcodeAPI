@@ -40,6 +40,9 @@
       "last 1 safari version"
     ]
   },
+  "engines": {
+    "node": ">=20.18.0"
+  },
   "devDependencies": {
     "eslint": "^8.57.1",
     "eslint-config-prettier": "^9.1.0",
