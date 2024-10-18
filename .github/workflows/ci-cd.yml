@@ -41,13 +41,13 @@ jobs:
       run: |
         echo 'Deploying to production'
         cd $GITHUB_WORKSPACE
-        sudo ./deploy.sh
-        sudo chown -R www-data:www-data /opt/thebarcodeapi
+        ./deploy.sh
+        chown -R www-data:www-data /opt/thebarcodeapi
 
     - name: Deploy to staging
       if: github.ref != 'refs/heads/main'
       run: |
         echo 'Deploying to staging'
         cd $GITHUB_WORKSPACE
-        sudo ./deploy.sh
-        sudo chown -R www-data:www-data /opt/thebarcodeapi
+        ./deploy.sh
+        chown -R www-data:www-data /opt/thebarcodeapi
