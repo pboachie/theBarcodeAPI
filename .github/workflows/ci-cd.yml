@@ -1,0 +1,40 @@
+# .github/workflows/ci-cd.yml
+
+name: CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Use Node.js
+      uses: actions/setup-node@v2
+      with:
+        node-version: '14.x'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run tests
+      run: npm test
+
+    - name: Run linter
+      run: npm run lint
+
+    - name: Build
+      run: npm run build
+
+    - name: Deploy
+      if: github.ref == 'refs/heads/main'
+      run: |
+        sudo rm -rf /opt/thebarcodeapi/*
+        sudo cp -r build/* /opt/thebarcodeapi/
+        sudo chown -R www-data:www-data /opt/thebarcodeapi
