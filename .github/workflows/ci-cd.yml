@@ -33,6 +33,6 @@ jobs:
     - name: Deploy
       if: github.ref == 'refs/heads/main'
       run: |
-        sudo mkdir -p /opt/thebarcodeapi/releases
+        cd $GITHUB_WORKSPACE
         sudo ./deploy.sh
         sudo chown -R www-data:www-data /opt/thebarcodeapi
