@@ -1,0 +1,66 @@
+name: theBarcodeApi Infrastructure Setup
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  setup-infrastructure:
+    runs-on: self-hosted
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Update system
+      run: |
+        echo "Updating system packages..."
+        sudo apt-get update
+        sudo apt-get upgrade -y
+      continue-on-error: true
+
+    - name: Install Nginx
+      run: |
+        echo "Installing Nginx..."
+        sudo apt-get install -y nginx
+
+    - name: Configure Nginx
+      run: |
+        echo "Configuring Nginx for thebarcodeapi.com..."
+        sudo tee /etc/nginx/sites-available/thebarcodeapi << EOF
+        server {
+            listen 80;
+            server_name thebarcodeapi.com;
+            root /opt/thebarcodeapi/current;
+            index index.html;
+            location / {
+                try_files \$uri \$uri/ =404;
+            }
+        }
+        EOF
+        sudo ln -sf /etc/nginx/sites-available/thebarcodeapi /etc/nginx/sites-enabled/
+        sudo nginx -t
+        sudo systemctl reload nginx
+
+    - name: Install Node.js
+      run: |
+        echo "Installing Node.js 20.x..."
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+
+    - name: Verify Installation
+      run: |
+        echo "Verifying installations..."
+        echo "Nginx version:"
+        nginx -v
+        echo "Node.js version:"
+        node -v
+        echo "npm version:"
+        npm -v
+
+    - name: Check Nginx Configuration
+      run: |
+        echo "Checking Nginx configuration..."
+        sudo nginx -t
+        echo "Checking Nginx status..."
+        sudo systemctl status nginx

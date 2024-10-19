@@ -1,0 +1,61 @@
+name: theBarcodeApi Application Deployment
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy-application:
+    runs-on: self-hosted
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20.x'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run linter
+      run: npm run lint
+
+    - name: Build
+      run: npm run build
+
+    - name: Create deployment script
+      run: |
+        cat << EOF > deploy.sh
+        #!/bin/bash
+        set -e
+        echo "Starting deployment..."
+        mkdir -p /opt/thebarcodeapi/releases
+        NEW_RELEASE="/opt/thebarcodeapi/releases/release-\$(date +%Y%m%d%H%M%S)"
+        echo "Creating new release directory: \$NEW_RELEASE"
+        mkdir -p "\$NEW_RELEASE"
+        echo "Copying build files to new release directory"
+        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/build/. "\$NEW_RELEASE/"
+        echo "Creating symlink to new release"
+        ln -sfn "\$NEW_RELEASE" /opt/thebarcodeapi/current
+        echo "Cleaning up old releases"
+        cd /opt/thebarcodeapi/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
+        echo "Reloading nginx"
+        systemctl reload nginx
+        echo "Changing ownership of /opt/thebarcodeapi"
+        chown -R www-data:www-data /opt/thebarcodeapi
+        echo "Deployment completed"
+        EOF
+        chmod +x deploy.sh
+
+    - name: Deploy
+      run: sudo ./deploy.sh
+
+    - name: Verify Deployment
+      run: |
+        ls -la /opt/thebarcodeapi/current
+        sudo systemctl status nginx
