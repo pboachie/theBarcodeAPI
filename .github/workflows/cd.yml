@@ -1,13 +1,14 @@
-name: CI/CD
+name: theBarcodeApi Application Deployment
 
 on:
-  pull_request:
-    branches: [ main ]
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  deploy-application:
     runs-on: self-hosted
 
     steps:
@@ -19,69 +20,42 @@ jobs:
         node-version: '20.x'
 
     - name: Install dependencies
-      run: |
-        echo 'Installing dependencies'
-        npm ci
+      run: npm ci
 
     - name: Run linter
-      run: |
-        echo 'Running linter'
-        npm run lint
+      run: npm run lint
 
     - name: Build
-      run: |
-        echo 'Building the app'
-        npm run build
+      run: npm run build
 
     - name: Create deployment script
       run: |
-        echo 'Creating deployment script'
         cat << EOF > deploy.sh
         #!/bin/bash
-
         set -e
-
         echo "Starting deployment..."
-
-        # Create releases directory
         mkdir -p /opt/thebarcodeapi/releases
-
-        # Create new release directory
         NEW_RELEASE="/opt/thebarcodeapi/releases/release-\$(date +%Y%m%d%H%M%S)"
         echo "Creating new release directory: \$NEW_RELEASE"
         mkdir -p "\$NEW_RELEASE"
-
-        # Copy build files
         echo "Copying build files to new release directory"
         cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/build/. "\$NEW_RELEASE/"
-
-        # Update symlink
         echo "Creating symlink to new release"
         ln -sfn "\$NEW_RELEASE" /opt/thebarcodeapi/current
-
-        # Clean up old releases
         echo "Cleaning up old releases"
         cd /opt/thebarcodeapi/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
-
-        # Reload nginx
         echo "Reloading nginx"
         systemctl reload nginx
-
-        # Change ownership
         echo "Changing ownership of /opt/thebarcodeapi"
         chown -R www-data:www-data /opt/thebarcodeapi
-
         echo "Deployment completed"
         EOF
         chmod +x deploy.sh
 
     - name: Deploy
-      run: |
-        echo 'Deploying the app'
-        sudo ./deploy.sh
+      run: sudo ./deploy.sh
 
     - name: Verify Deployment
       run: |
-        echo 'Verifying deployment'
         ls -la /opt/thebarcodeapi/current
         sudo systemctl status nginx
