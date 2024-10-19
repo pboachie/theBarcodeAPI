@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+env:
+  DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+  ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
+
 jobs:
   setup-infrastructure:
     runs-on: self-hosted
@@ -24,23 +28,50 @@ jobs:
         echo "Installing Nginx..."
         sudo apt-get install -y nginx
 
-    - name: Configure Nginx
+    - name: Create Nginx configuration script
       run: |
-        echo "Configuring Nginx for thebarcodeapi.com..."
-        sudo tee /etc/nginx/sites-available/thebarcodeapi << EOF
+        echo "Creating Nginx configuration script..."
+        cat << 'EOF' > nginx_config.sh
+        #!/bin/bash
+        set -e
+
+        echo "Configuring Nginx for $DOMAIN_NAME in $ENVIRONMENT environment..."
+
+        # Create Nginx configuration
+        cat > /etc/nginx/sites-available/thebarcodeapi << EOL
         server {
             listen 80;
-            server_name thebarcodeapi.com;
-            root /opt/thebarcodeapi/current;
+            server_name $DOMAIN_NAME;
+            root /opt/thebarcodeapi/$ENVIRONMENT/current;
             index index.html;
             location / {
                 try_files \$uri \$uri/ =404;
             }
         }
+        EOL
+
+        echo "Created Nginx configuration file."
+
+        # Create symlink to sites-enabled
+        ln -sf /etc/nginx/sites-available/thebarcodeapi /etc/nginx/sites-enabled/
+        echo "Created symlink in sites-enabled."
+
+        # Test Nginx configuration
+        nginx -t
+        echo "Nginx configuration test passed."
+
+        # Reload Nginx
+        systemctl reload nginx
+        echo "Nginx reloaded successfully."
+
+        echo "Nginx configuration completed."
         EOF
-        sudo ln -sf /etc/nginx/sites-available/thebarcodeapi /etc/nginx/sites-enabled/
-        sudo nginx -t
-        sudo systemctl reload nginx
+        chmod +x nginx_config.sh
+
+    - name: Configure Nginx
+      run: |
+        echo "Running Nginx configuration script..."
+        sudo DOMAIN_NAME=${{ env.DOMAIN_NAME }} ENVIRONMENT=${{ env.ENVIRONMENT }} ./nginx_config.sh
 
     - name: Install Node.js
       run: |
@@ -64,3 +95,8 @@ jobs:
         sudo nginx -t
         echo "Checking Nginx status..."
         sudo systemctl status nginx
+
+    - name: Print Environment Info
+      run: |
+        echo "Deployed to ${{ env.ENVIRONMENT }} environment"
+        echo "Domain: ${{ env.DOMAIN_NAME }}"
