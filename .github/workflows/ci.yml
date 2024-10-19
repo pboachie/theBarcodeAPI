@@ -10,11 +10,12 @@ env:
   ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
 
 jobs:
-  setup-infrastructure:
+  infra-ci-job:
     runs-on: self-hosted
 
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
 
     - name: Create system update script
       run: |
