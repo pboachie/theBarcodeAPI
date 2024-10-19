@@ -35,6 +35,9 @@ jobs:
         #!/bin/bash
         set -e
 
+        # Read environment variables from file
+        source /tmp/nginx_env_vars
+
         echo "Configuring Nginx for $DOMAIN_NAME in $ENVIRONMENT environment..."
 
         # Create Nginx configuration
@@ -65,13 +68,24 @@ jobs:
         echo "Nginx reloaded successfully."
 
         echo "Nginx configuration completed."
+
+        # Clean up
+        rm /tmp/nginx_env_vars
         EOF
         chmod +x nginx_config.sh
 
     - name: Configure Nginx
       run: |
+        echo "Preparing to run Nginx configuration script..."
+        # Create a temporary file with environment variables
+        echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/nginx_env_vars
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
+
         echo "Running Nginx configuration script..."
-        sudo DOMAIN_NAME=${{ env.DOMAIN_NAME }} ENVIRONMENT=${{ env.ENVIRONMENT }} ./nginx_config.sh
+        sudo ./nginx_config.sh
+
+        # Clean up (in case the script didn't run to completion)
+        rm -f /tmp/nginx_env_vars
 
     - name: Install Node.js
       run: |
