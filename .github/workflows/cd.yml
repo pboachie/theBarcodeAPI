@@ -73,7 +73,16 @@ jobs:
         chmod +x deploy.sh
 
     - name: Deploy
-      run: sudo ./deploy.sh
+      run: |
+        # Create a temporary file with environment variables
+        echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/nginx_env_vars
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
+
+        # Run deployment script
+        sudo ./deploy.sh
+
+        # Clean up (in case the script didn't run to completion)
+        rm -f /tmp/nginx_env_vars
 
     - name: Create verification script
       run: |
@@ -99,4 +108,13 @@ jobs:
         chmod +x verify_deployment.sh
 
     - name: Verify Deployment
-      run: sudo ./verify_deployment.sh
+      run: |
+        # Create a temporary file with environment variables
+        echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/nginx_env_vars
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
+
+        # Run verification script
+        sudo ./verify_deployment.sh
+
+        # Clean up (in case the script didn't run to completion)
+        rm -f /tmp/nginx_env_vars
