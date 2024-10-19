@@ -39,14 +39,38 @@ jobs:
         echo 'Building the app'
         npm run build
 
+    - name: Debug Info
+      run: |
+        echo 'Current directory:'
+        pwd
+        echo 'Contents of current directory:'
+        ls -la
+        echo 'Current user:'
+        whoami
+        echo 'Sudo permissions:'
+        sudo -l
+
     - name: Deploy
       run: |
         echo 'Deploying the app'
         sudo mkdir -p /opt/thebarcodeapi/releases
         NEW_RELEASE="/opt/thebarcodeapi/releases/release-$(date +%Y%m%d%H%M%S)"
+        echo "Creating new release directory: $NEW_RELEASE"
         sudo mkdir -p "$NEW_RELEASE"
+        echo "Copying build files to new release directory"
         sudo cp -R "$(pwd)/build/." "$NEW_RELEASE/"
+        echo "Creating symlink to new release"
         sudo ln -sfn "$NEW_RELEASE" /opt/thebarcodeapi/current
-        cd /opt/thebarcodeapi/releases && ls -1dt */ | tail -n +6 | xargs sudo rm -rf
+        echo "Cleaning up old releases"
+        cd /opt/thebarcodeapi/releases && sudo ls -1dt */ | tail -n +6 | xargs sudo rm -rf
+        echo "Reloading nginx"
         sudo systemctl reload nginx
+        echo "Changing ownership of /opt/thebarcodeapi"
         sudo chown -R www-data:www-data /opt/thebarcodeapi
+        echo "Deployment completed"
+
+    - name: Verify Deployment
+      run: |
+        echo 'Verifying deployment'
+        ls -la /opt/thebarcodeapi/current
+        systemctl status nginx
