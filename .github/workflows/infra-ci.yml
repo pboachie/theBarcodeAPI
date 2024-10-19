@@ -65,7 +65,9 @@ jobs:
         cat > /etc/nginx/sites-available/thebarcodeapi << EOL
         server {
             listen 80;
-            server_name $DOMAIN_NAME;
+            # server_name $DOMAIN_NAME www.$DOMAIN_NAME 192.168.1.112;
+            server_name 192.168.1.112;
+            server_tokens off;
             root /opt/thebarcodeapi/$ENVIRONMENT/current;
             index index.html;
             location / {
