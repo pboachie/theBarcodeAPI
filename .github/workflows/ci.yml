@@ -87,11 +87,25 @@ jobs:
         # Clean up (in case the script didn't run to completion)
         rm -f /tmp/nginx_env_vars
 
+    - name: Create Node.js installation script
+      run: |
+        echo "Creating Node.js installation script..."
+        cat << 'EOF' > install_nodejs.sh
+        #!/bin/bash
+        set -e
+
+        echo "Installing Node.js 20.x..."
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y nodejs
+
+        echo "Node.js installation completed."
+        EOF
+        chmod +x install_nodejs.sh
+
     - name: Install Node.js
       run: |
-        echo "Installing Node.js 20.x..."
-        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-        sudo apt-get install -y nodejs
+        echo "Running Node.js installation script..."
+        sudo ./install_nodejs.sh
 
     - name: Verify Installation
       run: |
