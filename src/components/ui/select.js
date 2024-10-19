@@ -66,10 +66,21 @@ export const SelectContent = ({ children }) => (
   <div className="absolute z-10 w-full mt-1 bg-white border rounded shadow-lg">{children}</div>
 );
 
-export const SelectItem = ({ children, value, onSelect }) => (
-  <div className="p-2 cursor-pointer hover:bg-gray-100" onClick={() => onSelect(value)}>
-    {children}
-  </div>
-);
+export const SelectItem = ({ value, children, onSelect }) => {
+  const handleClick = () => {
+    if (onSelect) {
+      onSelect(value);
+    }
+  };
+
+  return (
+    <div
+      className="select-item"
+      onClick={handleClick}
+    >
+      {children}
+    </div>
+  );
+};
 
 export const SelectValue = ({ children }) => children;
