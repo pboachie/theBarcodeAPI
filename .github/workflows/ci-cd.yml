@@ -1,5 +1,3 @@
-# .github/workflows/ci-cd.yml
-
 name: CI/CD
 
 on:
@@ -30,47 +28,60 @@ jobs:
         echo 'Running linter'
         npm run lint
 
-    # Uncomment this step when you're ready to run tests
-    # - name: Run tests
-    #   run: npm test
-
     - name: Build
       run: |
         echo 'Building the app'
         npm run build
 
-    - name: Debug Info
+    - name: Create deployment script
       run: |
-        echo 'Current directory:'
-        pwd
-        echo 'Contents of current directory:'
-        ls -la
-        echo 'Current user:'
-        whoami
-        echo 'Sudo permissions:'
-        sudo -l
+        echo 'Creating deployment script'
+        cat << EOF > deploy.sh
+        #!/bin/bash
+
+        set -e
+
+        echo "Starting deployment..."
+
+        # Create releases directory
+        mkdir -p /opt/thebarcodeapi/releases
+
+        # Create new release directory
+        NEW_RELEASE="/opt/thebarcodeapi/releases/release-\$(date +%Y%m%d%H%M%S)"
+        echo "Creating new release directory: \$NEW_RELEASE"
+        mkdir -p "\$NEW_RELEASE"
+
+        # Copy build files
+        echo "Copying build files to new release directory"
+        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/build/. "\$NEW_RELEASE/"
+
+        # Update symlink
+        echo "Creating symlink to new release"
+        ln -sfn "\$NEW_RELEASE" /opt/thebarcodeapi/current
+
+        # Clean up old releases
+        echo "Cleaning up old releases"
+        cd /opt/thebarcodeapi/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
+
+        # Reload nginx
+        echo "Reloading nginx"
+        systemctl reload nginx
+
+        # Change ownership
+        echo "Changing ownership of /opt/thebarcodeapi"
+        chown -R www-data:www-data /opt/thebarcodeapi
+
+        echo "Deployment completed"
+        EOF
+        chmod +x deploy.sh
 
     - name: Deploy
       run: |
         echo 'Deploying the app'
-        sudo mkdir -p /opt/thebarcodeapi/releases
-        NEW_RELEASE="/opt/thebarcodeapi/releases/release-$(date +%Y%m%d%H%M%S)"
-        echo "Creating new release directory: $NEW_RELEASE"
-        sudo mkdir -p "$NEW_RELEASE"
-        echo "Copying build files to new release directory"
-        sudo cp -R "$(pwd)/build/." "$NEW_RELEASE/"
-        echo "Creating symlink to new release"
-        sudo ln -sfn "$NEW_RELEASE" /opt/thebarcodeapi/current
-        echo "Cleaning up old releases"
-        cd /opt/thebarcodeapi/releases && sudo ls -1dt */ | tail -n +6 | xargs sudo rm -rf
-        echo "Reloading nginx"
-        sudo systemctl reload nginx
-        echo "Changing ownership of /opt/thebarcodeapi"
-        sudo chown -R www-data:www-data /opt/thebarcodeapi
-        echo "Deployment completed"
+        sudo ./deploy.sh
 
     - name: Verify Deployment
       run: |
         echo 'Verifying deployment'
         ls -la /opt/thebarcodeapi/current
-        systemctl status nginx
+        sudo systemctl status nginx
