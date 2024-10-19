@@ -16,17 +16,37 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Update system
+    - name: Create system update script
       run: |
+        echo "Creating system update script..."
+        cat << 'EOF' > update_system.sh
+        #!/bin/bash
+        set -e
         echo "Updating system packages..."
-        sudo apt-get update
-        sudo apt-get upgrade -y
+        apt-get update
+        apt-get upgrade -y
+        echo "System update completed."
+        EOF
+        chmod +x update_system.sh
+
+    - name: Update system
+      run: sudo ./update_system.sh
       continue-on-error: true
 
-    - name: Install Nginx
+    - name: Create Nginx installation script
       run: |
+        echo "Creating Nginx installation script..."
+        cat << 'EOF' > install_nginx.sh
+        #!/bin/bash
+        set -e
         echo "Installing Nginx..."
-        sudo apt-get install -y nginx
+        apt-get install -y nginx
+        echo "Nginx installation completed."
+        EOF
+        chmod +x install_nginx.sh
+
+    - name: Install Nginx
+      run: sudo ./install_nginx.sh
 
     - name: Create Nginx configuration script
       run: |
@@ -103,12 +123,15 @@ jobs:
         chmod +x install_nodejs.sh
 
     - name: Install Node.js
-      run: |
-        echo "Running Node.js installation script..."
-        sudo ./install_nodejs.sh
+      run: sudo ./install_nodejs.sh
 
-    - name: Verify Installation
+    - name: Create verification script
       run: |
+        echo "Creating verification script..."
+        cat << 'EOF' > verify_installation.sh
+        #!/bin/bash
+        set -e
+
         echo "Verifying installations..."
         echo "Nginx version:"
         nginx -v
@@ -117,12 +140,17 @@ jobs:
         echo "npm version:"
         npm -v
 
-    - name: Check Nginx Configuration
-      run: |
         echo "Checking Nginx configuration..."
-        sudo nginx -t
+        nginx -t
         echo "Checking Nginx status..."
-        sudo systemctl status nginx
+        systemctl status nginx
+
+        echo "Verification completed."
+        EOF
+        chmod +x verify_installation.sh
+
+    - name: Verify Installation
+      run: sudo ./verify_installation.sh
 
     - name: Print Environment Info
       run: |
