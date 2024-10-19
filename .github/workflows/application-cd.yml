@@ -1,0 +1,120 @@
+name: theBarcodeApi Application Deployment
+
+on:
+  workflow_run:
+    workflows: ["theBarcodeApi Infrastructure Setup"]
+    types:
+      - completed
+  workflow_dispatch:
+
+env:
+  DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+  ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
+
+jobs:
+  application-cd-job:
+    runs-on: self-hosted
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '20.x'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run linter
+      run: npm run lint
+
+    - name: Build
+      run: npm run build
+
+
+    - name: Create deployment script
+      run: |
+        cat << 'EOF' > deploy.sh
+        #!/bin/bash
+        set -e
+
+        # Read environment variables from file
+        source /tmp/nginx_env_vars
+
+        echo "Starting deployment..."
+
+        mkdir -p /opt/thebarcodeapi/$ENVIRONMENT/releases
+        NEW_RELEASE="/opt/thebarcodeapi/$ENVIRONMENT/releases/release-$(date +%Y%m%d%H%M%S)"
+
+        echo "Creating new release directory: $NEW_RELEASE"
+        mkdir -p "$NEW_RELEASE"
+
+        echo "Copying build files to new release directory"
+        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/build/. "$NEW_RELEASE/"
+
+        echo "Creating symlink to new release"
+        ln -sfn "$NEW_RELEASE" /opt/thebarcodeapi/$ENVIRONMENT/current
+
+        echo "Cleaning up old releases"
+        cd /opt/thebarcodeapi/$ENVIRONMENT/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
+
+        echo "Reloading nginx"
+        systemctl reload nginx
+
+        echo "Changing ownership of /opt/thebarcodeapi"
+        chown -R www-data:www-data /opt/thebarcodeapi
+
+        # Clean up
+        rm /tmp/nginx_env_vars
+
+        echo "Deployment completed"
+        EOF
+        chmod +x deploy.sh
+
+    - name: Deploy
+      run: |
+        # Create a temporary file with environment variables
+        echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/nginx_env_vars
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
+
+        # Run deployment script
+        sudo ./deploy.sh
+
+        # Clean up (in case the script didn't run to completion)
+        rm -f /tmp/nginx_env_vars
+
+    - name: Create verification script
+      run: |
+        cat << 'EOF' > verify_deployment.sh
+        #!/bin/bash
+        set -e
+
+        # Read environment variables from file
+        source /tmp/nginx_env_vars
+
+        echo "Verifying deployment..."
+        echo "Checking /opt/thebarcodeapi/$ENVIRONMENT/current:"
+        ls -la /opt/thebarcodeapi/$ENVIRONMENT/current
+
+        # Clean up
+        rm /tmp/nginx_env_vars
+
+        echo "Checking Nginx status:"
+        systemctl status nginx
+
+        echo "Verification completed"
+        EOF
+        chmod +x verify_deployment.sh
+
+    - name: Verify Deployment
+      run: |
+        # Create a temporary file with environment variables
+        echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/nginx_env_vars
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
+
+        # Run verification script
+        sudo ./verify_deployment.sh
+
+        # Clean up (in case the script didn't run to completion)
+        rm -f /tmp/nginx_env_vars
