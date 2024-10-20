@@ -63,7 +63,7 @@ const BarcodeDemo = () => {
   const generateBarcode = useCallback(async (type, text, width, height, format, dpi, showText) => {
     setIsLoading(true);
     setError(null);
-    const url = `/api/barcode/generate?data=${encodeURIComponent(
+    const url = `http://localhost:8000/barcode/generate?data=${encodeURIComponent(
       text
     )}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`;
     try {
