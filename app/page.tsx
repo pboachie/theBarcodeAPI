@@ -18,7 +18,9 @@ import { useToast } from "@/components/ui/use-toast"
 import { CustomSelect } from "@/components/ui/custom-select"
 
 const apiDomain = process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com';
-const apiVersion = process.env.NEXT_PUBLIC_APP_VERSION || '0.1.5';
+import packageJson from '../package.json';
+
+const apiVersion = packageJson.version || 'x.x.x';
 
 const barcodeTypes = [
   'code128', 'code39', 'ean', 'ean13', 'ean14', 'ean8', 'gs1', 'gs1_128',
