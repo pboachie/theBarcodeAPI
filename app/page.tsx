@@ -9,12 +9,13 @@ import { Loader2, Download, Copy, Printer } from 'lucide-react'
 
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/components/ui/use-toast"
+import { CustomSelect } from "@/components/ui/custom-select"
 
 const apiDomain = process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com';
 const apiVersion = process.env.NEXT_PUBLIC_APP_VERSION || '0.1.5';
@@ -39,6 +40,17 @@ const maxChars = {
 
 export default function BarcodeGenerator() {
   const [barcodeType, setBarcodeType] = useState<keyof typeof maxChars | 'code128'>('code128')
+
+  useEffect(() => {
+    const selectedItem = document.querySelector(`.select-item[aria-selected="true"]`);
+    if (selectedItem) {
+      selectedItem.setAttribute('aria-selected', 'false');
+    }
+    const newItem = document.querySelector(`.select-item[value="${barcodeType}"]`);
+    if (newItem) {
+      newItem.setAttribute('aria-selected', 'true');
+    }
+  }, [barcodeType]);
   const [barcodeText, setBarcodeText] = useState('Change Me!')
   const [barcodeWidth, setBarcodeWidth] = useState(200)
   const [barcodeHeight, setBarcodeHeight] = useState(100)
@@ -183,16 +195,12 @@ export default function BarcodeGenerator() {
   const renderBarcodeTypeInput = () => {
     if (isMobile) {
       return (
-        <Select value={barcodeType} onValueChange={(value: string) => setBarcodeType(value as keyof typeof maxChars | 'code128')} disabled={isLimitExceeded}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select barcode type" />
-          </SelectTrigger>
-          <SelectContent>
-            {barcodeTypes.map(type => (
-              <SelectItem key={type} value={type}>{type.toUpperCase()}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <CustomSelect
+        options={barcodeTypes.map(type => type.toUpperCase())}
+        value={barcodeType.toUpperCase()}
+        onChange={(value) => setBarcodeType(value.toLowerCase() as keyof typeof maxChars | 'code128')}
+        placeholder="Select barcode type"
+      />
       )
     } else {
       return (
@@ -200,12 +208,14 @@ export default function BarcodeGenerator() {
           {barcodeTypes.map(type => (
             <Button
               key={type}
-              variant={barcodeType === type ? "default" : "outline"}
+              className={`barcode-type-button`}
+              variant="outline"
               size="sm"
               onClick={() => setBarcodeType(type as keyof typeof maxChars | 'code128')}
               disabled={isLimitExceeded}
+              data-state={barcodeType === type ? "active" : "inactive"}
             >
-              {type}
+              {type.toUpperCase()}
             </Button>
           ))}
         </div>
@@ -213,19 +223,16 @@ export default function BarcodeGenerator() {
     }
   }
 
+
   const renderImageFormatInput = () => {
     if (isMobile) {
       return (
-        <Select value={imageFormat} onValueChange={setImageFormat} disabled={isLimitExceeded}>
-          <SelectTrigger>
-            <SelectValue placeholder="Select image format" />
-          </SelectTrigger>
-          <SelectContent>
-            {imageFormats.map(format => (
-              <SelectItem key={format} value={format}>{format}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <CustomSelect
+          options={imageFormats}
+          value={imageFormat}
+          onChange={setImageFormat}
+          placeholder="Select image format"
+        />
       )
     } else {
       return (
