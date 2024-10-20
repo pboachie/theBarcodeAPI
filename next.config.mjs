@@ -10,7 +10,7 @@ const nextConfig = {
 
     return [
       {
-        source: '/api/barcode/:path*',
+        source: '/api/:path*',
         destination: `${apiUrl}/:path*`,
       },
     ];
