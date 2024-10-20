@@ -1,33 +1,24 @@
+//src/components/ui/alert.js
+
 import React from 'react';
 
-export const Alert = ({ children, variant = 'default', className, ...props }) => {
-  const variantClasses = {
-    default: 'bg-blue-100 border-blue-500 text-blue-700',
-    destructive: 'bg-red-100 border-red-500 text-red-700',
-    success: 'bg-green-100 border-green-500 text-green-700',
-    primary: 'bg-indigo-100 border-indigo-500 text-indigo-700',
-    danger: 'bg-red-100 border-red-500 text-red-700',
-  };
-
+export const Alert = React.forwardRef(({ className, ...props }, ref) => {
   return (
-    <div
-      className={`border-l-4 p-4 ${variantClasses[variant]} ${className}`}
-      role="alert"
-      {...props}
-    >
-      {children}
-    </div>
+    <div ref={ref} role="alert" className={`rounded-lg border p-4 ${className}`} {...props} />
   );
-};
+});
+Alert.displayName = "Alert";
 
-export const AlertTitle = ({ children, className, ...props }) => (
-  <h3 className={`font-bold ${className}`} {...props}>
-    {children}
-  </h3>
-);
+export const AlertTitle = React.forwardRef(({ className, ...props }, ref) => {
+  return (
+    <h5 ref={ref} className={`font-medium ${className}`} {...props} />
+  );
+});
+AlertTitle.displayName = "AlertTitle";
 
-export const AlertDescription = ({ children, className, ...props }) => (
-  <p className={`mt-2 ${className}`} {...props}>
-    {children}
-  </p>
-);
+export const AlertDescription = React.forwardRef(({ className, ...props }, ref) => {
+  return (
+    <div ref={ref} className={`mt-2 text-sm ${className}`} {...props} />
+  );
+});
+AlertDescription.displayName = "AlertDescription";

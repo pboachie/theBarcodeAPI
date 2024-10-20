@@ -65,13 +65,32 @@ jobs:
         cat > /etc/nginx/sites-available/thebarcodeapi << EOL
         server {
             listen 80;
-            # server_name $DOMAIN_NAME www.$DOMAIN_NAME 192.168.1.112;
-            server_name 192.168.1.112;
+            listen [::]:80;
+            server_name $DOMAIN_NAME www.$DOMAIN_NAME 192.168.1.112;
             server_tokens off;
+
             root /opt/thebarcodeapi/$ENVIRONMENT/current;
             index index.html;
+
             location / {
-                try_files \$uri \$uri/ =404;
+                try_files \$uri \$uri/ /index.html;
+            }
+
+            # Security headers
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-XSS-Protection "1; mode=block" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Referrer-Policy "no-referrer-when-downgrade" always;
+            add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+
+            # Logging
+            access_log /var/log/nginx/thebarcodeapi.access.log;
+            error_log /var/log/nginx/thebarcodeapi.error.log warn;
+
+            # Optimize file serving
+            location ~* \.(jpg|jpeg|png|gif|ico|css|js)$ {
+                expires 1d;
+                add_header Cache-Control "public, no-transform";
             }
         }
         EOL
