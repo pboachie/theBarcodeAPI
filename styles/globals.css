@@ -1,0 +1,184 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+.preview-area {
+  width: 100%;
+  max-width: 600px; /* Default size for smaller screens */
+
+  /* For screens 1024px and larger */
+  @media (min-width: 1024px) {
+    max-width: min(80vw, 1024px); /* Use 80% of viewport width, but cap at 1024px */
+  }
+
+  /* For very large screens */
+  @media (min-width: 1280px) {
+    max-width: min(70vw, 1200px); /* Use 70% of viewport width, but cap at 1200px */
+  }
+}
+
+.barcode-generator-container {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+@media (min-width: 1024px) {
+  .barcode-generator-container {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 2rem;
+  }
+
+  .controls-area {
+    flex: 1;
+    max-width: 400px;
+  }
+
+  .preview-area {
+    flex: 2;
+    max-width: none;
+  }
+}
+
+@media (min-width: 1280px) {
+  .barcode-generator-container {
+    max-width: 1200px;
+  }
+}
+
+.select-item {
+  border: 1px solid red;
+  padding: 8px;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+  color: #333;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.select-item:hover {
+  background-color: red;
+  color: #000;
+}
+
+.select-item:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.5);
+}
+
+.select-item:active {
+  background-color: #ff0000;
+  color: #fff;
+}
+
+.select-item[aria-selected="true"] {
+  background-color: red;
+  color: #fff;
+}
+
+.barcode-type-button {
+  border: 1px solid red;
+  padding: 8px;
+  border-radius: 4px;
+  background-color: #f9f9f9;
+  color: #333;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.barcode-type-button:hover {
+  background-color: #f0f0f0;
+}
+
+.barcode-type-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 0, 0, 0.5);
+}
+
+.barcode-type-button[data-state="active"] {
+  background-color: red;
+  color: #fff;
+  border-color: red;
+}
+
+.custom-select {
+  position: relative;
+  width: 100%;
+  font-family: 'Roboto', sans-serif;
+}
+
+.custom-select-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.custom-select-trigger:hover {
+  background-color: #e0e0e0;
+}
+
+.custom-select-arrow {
+  transition: transform 0.3s ease;
+}
+
+.custom-select-arrow.open {
+  transform: rotate(180deg);
+}
+
+.custom-options {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+}
+
+.custom-option {
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.custom-option:hover {
+  background-color: #f0f0f0;
+}
+
+.custom-option.selected {
+  background-color: #e8f0fe;
+  color: #1a73e8;
+}
