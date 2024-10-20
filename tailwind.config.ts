@@ -11,6 +11,9 @@ const config: Config = {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
+        cream: '#eff1f0',
+        primary: 'var(--primary)',
+        input: 'var(--input)',
       },
     },
   },

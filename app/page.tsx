@@ -247,16 +247,16 @@ export default function BarcodeGenerator() {
   }
 
   return (
-    <div className="p-4 md:p-8 max-w-6xl mx-auto">
-      <Card>
+    <div className="barcode-generator-container p-4 md:p-8">
+      <Card className="max-w-full mx-auto">
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-center">
             The Barcode API {process.env.NODE_ENV === 'development' ? <span className="text-red-500">DEV v{apiVersion}*</span> : <span className="text-green-500">v{apiVersion}</span>}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="space-y-4">
+          <div className="flex flex-col lg:flex-row gap-6">
+            <div className="controls-area space-y-4 lg:w-1/3">
               <div>
                 <label className="block text-sm font-medium mb-1">Barcode Type</label>
                 {renderBarcodeTypeInput()}
@@ -326,7 +326,7 @@ export default function BarcodeGenerator() {
                 </label>
               </div>
             </div>
-            <div className="space-y-4">
+            <div className="preview-area space-y-4 lg:w-2/3">
               <div className="aspect-video bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
                 <AnimatePresence mode="wait">
                   {isLoading ? (
@@ -362,7 +362,7 @@ export default function BarcodeGenerator() {
                   )}
                 </AnimatePresence>
               </div>
-              <div className="mt-4 bg-gray-800 p-4 rounded-md relative">
+              <div className="bg-gray-800 p-4 rounded-md relative">
                 <h3 className="text-sm font-semibold mb-2 text-white">API Call:</h3>
                 <div className="bg-gray-900 p-2 rounded">
                   <code className="text-xs text-white break-all">GET {apiCallUrl}</code>
