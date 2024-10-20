@@ -1,10 +1,9 @@
 // src/components/BarcodeDemo.js
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, color } from 'framer-motion';
 import { Input } from '../components/ui/input';
 import { Card, CardHeader, CardContent } from '../components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Loader2 } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert';
 
@@ -61,65 +60,51 @@ const BarcodeDemo = () => {
     pzn: 6,
   };
 
-  const generateBarcode = useCallback(
-    async (type, text, width, height, format, dpi, showText) => {
-      setIsLoading(true);
-      setError(null);
-      const url = `/api/barcode/generate?data=${encodeURIComponent(
-        text
-      )}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`;
-      try {
-        const response = await fetch(url);
-        if (!response.ok) {
-          if (response.status === 429) {
-            setIsLimitExceeded(true);
-            throw new Error('Usage limit exceeded. Please try again tomorrow.');
-          }
-          throw new Error(`HTTP error! status: ${response.status}`);
+  const generateBarcode = useCallback(async (type, text, width, height, format, dpi, showText) => {
+    setIsLoading(true);
+    setError(null);
+    const url = `/api/barcode/generate?data=${encodeURIComponent(
+      text
+    )}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        if (response.status === 429) {
+          setIsLimitExceeded(true);
+          throw new Error('Usage limit exceeded. Please try again tomorrow.');
         }
-        const blob = await response.blob();
-        const imageUrl = URL.createObjectURL(blob);
-        setRateLimit({
-          requests: response.headers.get('X-Rate-Limit-Requests'),
-          remaining: response.headers.get('X-Rate-Limit-Remaining'),
-          reset: response.headers.get('X-Rate-Limit-Reset'),
-        });
-        setIsLoading(false);
-        return imageUrl;
-      } catch (e) {
-        setIsLoading(false);
-        setError(e.message);
-        return null;
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-    },
-    []
-  );
+      const blob = await response.blob();
+      const imageUrl = URL.createObjectURL(blob);
+      setRateLimit({
+        requests: response.headers.get('X-Rate-Limit-Requests'),
+        remaining: response.headers.get('X-Rate-Limit-Remaining'),
+        reset: response.headers.get('X-Rate-Limit-Reset'),
+      });
+      setIsLoading(false);
+      return imageUrl;
+    } catch (e) {
+      setIsLoading(false);
+      setError(e.message);
+      return null;
+    }
+  }, []);
 
   const debouncedUpdateBarcode = useCallback(
-    debounce(
-      async (type, text, width, height, format, dpi, showText) => {
-        if (!isLimitExceeded) {
-          const url = await generateBarcode(
-            type,
-            text,
-            width,
-            height,
-            format,
-            dpi,
-            showText
+    debounce(async (type, text, width, height, format, dpi, showText) => {
+      if (!isLimitExceeded) {
+        const url = await generateBarcode(type, text, width, height, format, dpi, showText);
+        if (url) {
+          setBarcodeUrl(url);
+          setApiCallUrl(
+            `/api/barcode/generate?data=${encodeURIComponent(
+              text
+            )}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`
           );
-          if (url) {
-            setBarcodeUrl(url);
-            setApiCallUrl(
-              `/api/barcode/generate?data=${encodeURIComponent(
-                text
-              )}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`
-            );
-          }
         }
-      },
-      250
-    ),
+      }
+    }, 250),
     [generateBarcode, isLimitExceeded]
   );
 
@@ -144,6 +129,39 @@ const BarcodeDemo = () => {
     debouncedUpdateBarcode,
   ]);
 
+  useEffect(() => {
+    setBarcodeText('');
+    // Set select to barcodeContent
+    switch (barcodeType) {
+      case 'ean13':
+        setBarcodeText('5901234123457');
+        break;
+      case 'ean8':
+        setBarcodeText('96385074');
+        break;
+      case 'ean14':
+        setBarcodeText('01234567891234');
+        break;
+      case 'upca':
+        setBarcodeText('01234567890');
+        break;
+      case 'isbn10':
+        setBarcodeText('1234567890');
+        break;
+      case 'isbn13':
+        setBarcodeText('9781234567890');
+        break;
+      case 'issn':
+        setBarcodeText('9771234567003');
+        break;
+      case 'pzn':
+        setBarcodeText('1234567');
+        break;
+      default:
+        setBarcodeText('Change Me!');
+    }
+  }, [barcodeType]);
+
   const handleTextChange = (e) => {
     const newText = e.target.value;
     if (maxChars[barcodeType]) {
@@ -156,60 +174,50 @@ const BarcodeDemo = () => {
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto bg-cream text-slate-800">
       <h1 className="text-3xl font-bold mb-6 text-center">
-        TheBarcodeAPI Demo
+        The Barcode Api {process.env.NODE_ENV === 'development' ? <span style={{ color: 'red' }}>DEV*</span> : '®'}
       </h1>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        <Card
-          className={`bg-white shadow-lg ${
-            isLimitExceeded ? 'opacity-50' : ''
-          }`}
-        >
+        <Card className={`bg-white shadow-lg ${isLimitExceeded ? 'opacity-50' : ''}`}>
           <CardHeader>
             <h2 className="text-xl font-semibold">Barcode Configuration</h2>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Barcode Type
-                </label>
+                <label className="block text-sm font-medium mb-1">Barcode Type</label>
                 <select
                   value={barcodeType}
                   onChange={(e) => setBarcodeType(e.target.value)}
                   disabled={isLimitExceeded}
                   className="w-full p-2 border rounded"
                 >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select barcode type">
-                      {barcodeType.toUpperCase()}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {barcodeTypes.map((type) => (
-                      <SelectItem key={type} value={type}>{type.toUpperCase()}</SelectItem>
-                    ))}
-                  </SelectContent>
+                  {barcodeTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
                   Barcode Content{' '}
-                  {maxChars[barcodeType]
-                    ? `(Max ${maxChars[barcodeType]} characters)`
-                    : ''}
+                  {maxChars[barcodeType] ? `(Max ${maxChars[barcodeType]} characters)` : ''}
                 </label>
                 <Input
                   value={barcodeText}
-                  onChange={handleTextChange}
+                  onChange={(e) => handleTextChange(e)}
+                  onFocus={(e) => {
+                    const value = e.target.value;
+                    e.target.value = '';
+                    e.target.value = value;
+                  }}
                   className="w-full"
                   placeholder={`Enter ${barcodeType} content`}
                   disabled={isLimitExceeded}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Width: {barcodeWidth}px
-                </label>
+                <label className="block text-sm font-medium mb-1">Width: {barcodeWidth}px</label>
                 <input
                   type="range"
                   min={50}
@@ -222,9 +230,7 @@ const BarcodeDemo = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Height: {barcodeHeight}px
-                </label>
+                <label className="block text-sm font-medium mb-1">Height: {barcodeHeight}px</label>
                 <input
                   type="range"
                   min={50}
@@ -237,9 +243,7 @@ const BarcodeDemo = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  Image Format
-                </label>
+                <label className="block text-sm font-medium mb-1">Image Format</label>
                 <select
                   value={imageFormat}
                   onChange={(e) => setImageFormat(e.target.value)}
@@ -254,9 +258,7 @@ const BarcodeDemo = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">
-                  DPI: {dpi}
-                </label>
+                <label className="block text-sm font-medium mb-1">DPI: {dpi}</label>
                 <input
                   type="range"
                   min={130}
