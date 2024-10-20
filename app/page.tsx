@@ -24,7 +24,7 @@ const barcodeTypes = [
   'gtin', 'isbn', 'isbn10', 'isbn13', 'issn', 'itf', 'jan', 'pzn', 'upc', 'upca'
 ];
 
-const imageFormats = ['BMP', 'GIF', 'JPEG', 'PCX', 'PNG', 'TIFF']
+const imageFormats = ['BMP', 'GIF', 'JPEG', 'PNG'] // PCX, TIFF not supported via web
 
 const maxChars = {
   ean13: 12,
@@ -38,7 +38,7 @@ const maxChars = {
 }
 
 export default function BarcodeGenerator() {
-  const [barcodeType, setBarcodeType] = useState('code128')
+  const [barcodeType, setBarcodeType] = useState<keyof typeof maxChars | 'code128'>('code128')
   const [barcodeText, setBarcodeText] = useState('Change Me!')
   const [barcodeWidth, setBarcodeWidth] = useState(200)
   const [barcodeHeight, setBarcodeHeight] = useState(100)
@@ -48,17 +48,16 @@ export default function BarcodeGenerator() {
   const [barcodeUrl, setBarcodeUrl] = useState('')
   const [apiCallUrl, setApiCallUrl] = useState('')
   const [dpi, setDpi] = useState(300)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
   const [isLimitExceeded, setIsLimitExceeded] = useState(false)
 
   const isMobile = useMediaQuery({ maxWidth: 767 })
   const { toast } = useToast()
 
-  const generateBarcode = useCallback(async (type, text, width, height, format, dpi, showText) => {
+  const generateBarcode = useCallback(async (type: any, text: string | number | boolean, width: any, height: any, format: any, dpi: any, showText: any) => {
     setIsLoading(true)
     setError(null)
     const url = `${apiDomain}/api/generate?data=${encodeURIComponent(text)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`
-    console.log(url)
     try {
       const response = await fetch(url)
       if (!response.ok) {
@@ -74,18 +73,22 @@ export default function BarcodeGenerator() {
       return imageUrl
     } catch (e) {
       setIsLoading(false)
-      setError(e.message)
+      if (e instanceof Error) {
+        setError(e.message)
+      } else {
+        setError('An unknown error occurred')
+      }
       return null
     }
   }, [])
 
   const debouncedUpdateBarcode = useCallback(
-    debounce(async (type, text, width, height, format, dpi, showText) => {
+    debounce(async (...args: [string, string, number, number, string, number, boolean]) => {
       if (!isLimitExceeded) {
-        const url = await generateBarcode(type, text, width, height, format, dpi, showText)
+        const url = await generateBarcode(...args)
         if (url) {
           setBarcodeUrl(url)
-          setApiCallUrl(`/api/generate?data=${encodeURIComponent(text)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`)
+          setApiCallUrl(`/api/generate?data=${encodeURIComponent(args[1])}&format=${args[0]}&width=${args[2]}&height=${args[3]}&image_format=${args[4]}&dpi=${args[5]}&center_text=${args[6]}`)
         }
       }
     }, 250),
@@ -136,25 +139,35 @@ export default function BarcodeGenerator() {
     }
   }, [barcodeType])
 
-  const handleTextChange = (e) => {
+  const handleTextChange = (e: { target: { value: any; }; }) => {
     const newText = e.target.value
-    if (maxChars[barcodeType]) {
-      setBarcodeText(newText.slice(0, maxChars[barcodeType]))
+    if (barcodeType in maxChars) {
+      setBarcodeText(newText.slice(0, maxChars[barcodeType as keyof typeof maxChars]))
     } else {
       setBarcodeText(newText)
     }
   }
 
-  const handleCopy = () => {
-    // Append apiDomain to the URL
-    const formattedAPiCallUrl = `${apiDomain}${apiCallUrl}`
-    navigator.clipboard.writeText(formattedAPiCallUrl)
-    toast({
-      title: "Copied!",
-      description: "API URL copied to clipboard",
-    })
+  const handleCopy = async () => {
+    try {
+      console.log("Copy button clicked")
+      const formattedApiCallUrl = `${apiDomain}${apiCallUrl}`
+      await navigator.clipboard.writeText(formattedApiCallUrl)
+      toast({
+        title: "Copied!",
+        description: "API URL copied to clipboard",
+        duration: 2200, // Display for 2.2 seconds
+      })
+    } catch (error) {
+      console.error("Failed to copy:", error)
+      toast({
+        title: "Failed to Copy",
+        description: "Could not copy the API URL to clipboard",
+        variant: "destructive",
+        duration: 3000,
+      })
+    }
   }
-
   const handleDownload = () => {
     const cleanedBarcodeValue = cleanBarcodeValue(barcodeText)
     const fileName = `${cleanedBarcodeValue}_${barcodeWidth}_${barcodeHeight}.${imageFormat.toLowerCase()}`
@@ -170,13 +183,13 @@ export default function BarcodeGenerator() {
   const renderBarcodeTypeInput = () => {
     if (isMobile) {
       return (
-        <Select value={barcodeType} onValueChange={setBarcodeType} disabled={isLimitExceeded}>
+        <Select value={barcodeType} onValueChange={(value: string) => setBarcodeType(value as keyof typeof maxChars | 'code128')} disabled={isLimitExceeded}>
           <SelectTrigger>
             <SelectValue placeholder="Select barcode type" />
           </SelectTrigger>
           <SelectContent>
             {barcodeTypes.map(type => (
-              <SelectItem key={type} value={type}>{type}</SelectItem>
+              <SelectItem key={type} value={type}>{type.toUpperCase()}</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -189,7 +202,7 @@ export default function BarcodeGenerator() {
               key={type}
               variant={barcodeType === type ? "default" : "outline"}
               size="sm"
-              onClick={() => setBarcodeType(type)}
+              onClick={() => setBarcodeType(type as keyof typeof maxChars | 'code128')}
               disabled={isLimitExceeded}
             >
               {type}
@@ -250,7 +263,7 @@ export default function BarcodeGenerator() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  Barcode Content {maxChars[barcodeType] ? `(Max ${maxChars[barcodeType]} characters)` : ''}
+                  Barcode Content {barcodeType in maxChars ? `(Max ${maxChars[barcodeType as keyof typeof maxChars]} characters)` : ''}
                 </label>
                 <Input
                   value={barcodeText}
@@ -355,7 +368,7 @@ export default function BarcodeGenerator() {
                   <code className="text-xs text-white break-all">GET {apiCallUrl}</code>
                 </div>
                 <Button
-                  size="icon"
+                  size="sm"
                   variant="ghost"
                   className="absolute top-2 right-2"
                   onClick={handleCopy}
@@ -372,7 +385,7 @@ export default function BarcodeGenerator() {
                   <Download className="w-4 h-4 mr-2" />
                   Download
                 </Button>
-                <Button variant="outline" className="flex-1">
+                <Button variant="outline" className="flex-1 bg-black text-white">
                   <Printer className="w-4 h-4 mr-2" />
                   Print
                 </Button>
@@ -385,18 +398,18 @@ export default function BarcodeGenerator() {
   )
 }
 
-function debounce(func, wait) {
-  let timeout
-  return function executedFunction(...args) {
+function debounce(func: (...args: any[]) => void, wait: number | undefined) {
+  let timeout: string | number | NodeJS.Timeout | undefined
+  return function executedFunction(...args: any[]) {
     const later = () => {
       clearTimeout(timeout)
-      func(...args)
+      func(...args as [string, string, number, number, string, number, boolean])
     }
     clearTimeout(timeout)
     timeout = setTimeout(later, wait)
   }
 }
 
-const cleanBarcodeValue = (value) => {
+const cleanBarcodeValue = (value: string) => {
   return value.replace(/[^a-zA-Z0-9]/g, '_');
 };

@@ -2,8 +2,12 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-export interface TextareaProps
-  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {}
+export interface TextareaProps extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+  className?: string
+  onChange?: (event: React.ChangeEvent<HTMLTextAreaElement>) => void
+  oncopy?: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void
+  oncut?: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void
+  }
 
 const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, ...props }, ref) => {
