@@ -2,14 +2,13 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useMediaQuery } from 'react-responsive'
 import { Loader2, Download, Copy, Printer } from 'lucide-react'
 
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -40,19 +39,48 @@ const maxChars = {
   pzn: 6,
 }
 
+// Move generateBarcode outside the component
+const generateBarcode = async (
+  type: string,
+  text: string | number | boolean,
+  width: number,
+  height: number,
+  format: string,
+  dpi: number,
+  showText: boolean,
+  setIsLoading: (isLoading: boolean) => void,
+  setError: (error: string | null) => void,
+  setIsLimitExceeded: (isExceeded: boolean) => void
+): Promise<string | null> => {
+  setIsLoading(true);
+  setError(null);
+  const url = `${apiDomain}/api/generate?data=${encodeURIComponent(text.toString())}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`;
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      if (response.status === 429) {
+        setIsLimitExceeded(true);
+        throw new Error('Usage limit exceeded. Please try again tomorrow.');
+      }
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const blob = await response.blob();
+    const imageUrl = URL.createObjectURL(blob);
+    setIsLoading(false);
+    return imageUrl;
+  } catch (e) {
+    setIsLoading(false);
+    if (e instanceof Error) {
+      setError(e.message);
+    } else {
+      setError('An unknown error occurred');
+    }
+    return null;
+  }
+};
+
 export default function BarcodeGenerator() {
   const [barcodeType, setBarcodeType] = useState<keyof typeof maxChars | 'code128'>('code128')
-
-  useEffect(() => {
-    const selectedItem = document.querySelector(`.select-item[aria-selected="true"]`);
-    if (selectedItem) {
-      selectedItem.setAttribute('aria-selected', 'false');
-    }
-    const newItem = document.querySelector(`.select-item[value="${barcodeType}"]`);
-    if (newItem) {
-      newItem.setAttribute('aria-selected', 'true');
-    }
-  }, [barcodeType]);
   const [barcodeText, setBarcodeText] = useState('Change Me!')
   const [barcodeWidth, setBarcodeWidth] = useState(200)
   const [barcodeHeight, setBarcodeHeight] = useState(100)
@@ -67,47 +95,42 @@ export default function BarcodeGenerator() {
 
   const isMobile = useMediaQuery({ maxWidth: 767 })
   const { toast } = useToast()
+  const timeoutRef = useRef<NodeJS.Timeout>();
 
-  const generateBarcode = useCallback(async (type: any, text: string | number | boolean, width: any, height: any, format: any, dpi: any, showText: any) => {
-    setIsLoading(true)
-    setError(null)
-    const url = `${apiDomain}/api/generate?data=${encodeURIComponent(text)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`
-    try {
-      const response = await fetch(url)
-      if (!response.ok) {
-        if (response.status === 429) {
-          setIsLimitExceeded(true)
-          throw new Error('Usage limit exceeded. Please try again tomorrow.')
-        }
-        throw new Error(`HTTP error! status: ${response.status}`)
-      }
-      const blob = await response.blob()
-      const imageUrl = URL.createObjectURL(blob)
-      setIsLoading(false)
-      return imageUrl
-    } catch (e) {
-      setIsLoading(false)
-      if (e instanceof Error) {
-        setError(e.message)
-      } else {
-        setError('An unknown error occurred')
-      }
-      return null
+  const debouncedUpdateBarcode = useCallback((
+    type: string,
+    text: string,
+    width: number,
+    height: number,
+    format: string,
+    dpi: number,
+    showText: boolean
+  ) => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
     }
-  }, [])
 
-  const debouncedUpdateBarcode = useCallback(
-    debounce(async (...args: [string, string, number, number, string, number, boolean]) => {
+    timeoutRef.current = setTimeout(async () => {
       if (!isLimitExceeded) {
-        const url = await generateBarcode(...args)
+        const url = await generateBarcode(
+          type,
+          text,
+          width,
+          height,
+          format,
+          dpi,
+          showText,
+          setIsLoading,
+          setError,
+          setIsLimitExceeded
+        );
         if (url) {
-          setBarcodeUrl(url)
-          setApiCallUrl(`/api/generate?data=${encodeURIComponent(args[1])}&format=${args[0]}&width=${args[2]}&height=${args[3]}&image_format=${args[4]}&dpi=${args[5]}&center_text=${args[6]}`)
+          setBarcodeUrl(url);
+          setApiCallUrl(`/api/generate?data=${encodeURIComponent(text)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`);
         }
       }
-    }, 250),
-    [generateBarcode, isLimitExceeded]
-  )
+    }, 250);
+  }, [isLimitExceeded]);
 
   useEffect(() => {
     debouncedUpdateBarcode(
@@ -118,8 +141,19 @@ export default function BarcodeGenerator() {
       imageFormat,
       dpi,
       showText
-    )
-  }, [barcodeType, barcodeText, barcodeWidth, barcodeHeight, imageFormat, dpi, showText, debouncedUpdateBarcode])
+    );
+  }, [barcodeType, barcodeText, barcodeWidth, barcodeHeight, imageFormat, dpi, showText, debouncedUpdateBarcode]);
+
+  useEffect(() => {
+    const selectedItem = document.querySelector(`.select-item[aria-selected="true"]`);
+    if (selectedItem) {
+      selectedItem.setAttribute('aria-selected', 'false');
+    }
+    const newItem = document.querySelector(`.select-item[value="${barcodeType}"]`);
+    if (newItem) {
+      newItem.setAttribute('aria-selected', 'true');
+    }
+  }, [barcodeType]);
 
   useEffect(() => {
     setBarcodeText('')
@@ -153,7 +187,7 @@ export default function BarcodeGenerator() {
     }
   }, [barcodeType])
 
-  const handleTextChange = (e: { target: { value: any; }; }) => {
+  const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newText = e.target.value
     if (barcodeType in maxChars) {
       setBarcodeText(newText.slice(0, maxChars[barcodeType as keyof typeof maxChars]))
@@ -182,8 +216,9 @@ export default function BarcodeGenerator() {
       })
     }
   }
+
   const handleDownload = () => {
-    const cleanedBarcodeValue = cleanBarcodeValue(barcodeText)
+    const cleanedBarcodeValue = barcodeText.replace(/[^a-zA-Z0-9]/g, '')
     const fileName = `${cleanedBarcodeValue}_${barcodeWidth}_${barcodeHeight}.${imageFormat.toLowerCase()}`
 
     const link = document.createElement('a')
@@ -224,7 +259,6 @@ export default function BarcodeGenerator() {
       )
     }
   }
-
 
   const renderImageFormatInput = () => {
     if (isMobile) {
@@ -289,7 +323,7 @@ export default function BarcodeGenerator() {
                   max={1000}
                   step={1}
                   value={[barcodeWidth]}
-                  onValueChange={([value]) => setBarcodeWidth(value)}
+                  onValueChange={([value]: [number]) => setBarcodeWidth(value)}
                   disabled={isLimitExceeded}
                 />
               </div>
@@ -300,7 +334,7 @@ export default function BarcodeGenerator() {
                   max={1000}
                   step={1}
                   value={[barcodeHeight]}
-                  onValueChange={([value]) => setBarcodeHeight(value)}
+                  onValueChange={([value]: [number]) => setBarcodeHeight(value)}
                   disabled={isLimitExceeded}
                 />
               </div>
@@ -315,7 +349,7 @@ export default function BarcodeGenerator() {
                   max={1000}
                   step={1}
                   value={[dpi]}
-                  onValueChange={([value]) => setDpi(value)}
+                  onValueChange={([value]: [number]) => setDpi(value)}
                   disabled={isLimitExceeded}
                 />
                 <div className="flex justify-between text-xs text-gray-500">
@@ -406,19 +440,3 @@ export default function BarcodeGenerator() {
     </div>
   )
 }
-
-function debounce(func: (...args: any[]) => void, wait: number | undefined) {
-  let timeout: string | number | NodeJS.Timeout | undefined
-  return function executedFunction(...args: any[]) {
-    const later = () => {
-      clearTimeout(timeout)
-      func(...args as [string, string, number, number, string, number, boolean])
-    }
-    clearTimeout(timeout)
-    timeout = setTimeout(later, wait)
-  }
-}
-
-const cleanBarcodeValue = (value: string) => {
-  return value.replace(/[^a-zA-Z0-9]/g, '_');
-};
