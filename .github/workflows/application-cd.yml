@@ -14,7 +14,6 @@ env:
 
 jobs:
   application-cd-job:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: self-hosted
 
     steps:
