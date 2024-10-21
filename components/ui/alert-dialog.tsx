@@ -12,6 +12,7 @@ const AlertDialogTrigger = AlertDialogPrimitive.Trigger
 
 interface ExtendedAlertDialogPortalProps extends AlertDialogPrimitive.AlertDialogPortalProps {
   className?: string;
+  children?: React.ReactNode;
 }
 
 const AlertDialogPortal = ({

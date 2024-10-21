@@ -12,6 +12,7 @@ const DialogTrigger = DialogPrimitive.Trigger
 
 interface ExtendedDialogPortalProps extends DialogPrimitive.DialogPortalProps {
   className?: string;
+  children?: React.ReactNode;
 }
 
 const DialogPortal = ({
