@@ -242,8 +242,8 @@ jobs:
 
         echo "Checking Nginx configuration..."
         nginx -t
-        echo "Checking Nginx status..."
-        systemctl status nginx
+        #echo "Checking Nginx status..."
+        #systemctl status nginx
 
         echo "Checking PM2 status..."
         pm2 list | grep thebarcodeapi-$ENVIRONMENT
@@ -264,8 +264,8 @@ jobs:
 
     - name: Stop and disable Nginx
       run: |
-        echo "Stopping Nginx..."
-        systemctl stop nginx
+        #echo "Stopping Nginx..."
+        #systemctl stop nginx
         echo "Disabling Nginx..."
         systemctl disable nginx
 
