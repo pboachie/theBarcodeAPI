@@ -58,9 +58,14 @@ jobs:
         cp /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/package.json "$NEW_RELEASE/"
         cp /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/package-lock.json "$NEW_RELEASE/"
 
-        # Install production dependencies
+        # Change to the new release directory
         cd "$NEW_RELEASE"
-        npm ci --only=production -omit=dev
+
+        # Install production dependencies
+        npm ci --only=production --omit=dev
+
+        # Get the version from package.json
+        VERSION=$(node -p "require('./package.json').version")
 
         # Update symlink
         echo "Creating symlink to new release"
@@ -70,11 +75,7 @@ jobs:
         echo "Cleaning up old releases"
         cd /opt/thebarcodeapi/$ENVIRONMENT/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
 
-        # Get the version from package.json
-        VERSION=$(node -p "require('./package.json').version")
-
         echo "Starting/Restarting PM2 process with version $VERSION"
-        cd "$NEW_RELEASE"
         if pm2 list | grep -q "thebarcodeapi-$ENVIRONMENT"; then
           pm2 reload "thebarcodeapi-$ENVIRONMENT" --update-env --env production
         else
