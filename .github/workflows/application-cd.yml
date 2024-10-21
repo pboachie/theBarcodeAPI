@@ -91,8 +91,8 @@ jobs:
         echo "PM2 process started/restarted with version $VERSION"
 
         # Reload Nginx
-        echo "Reloading nginx"
-        systemctl reload nginx
+        # echo "Reloading nginx"
+        # systemctl reload nginx
 
         # Set permissions
         echo "Changing ownership of /opt/thebarcodeapi"
@@ -133,8 +133,8 @@ jobs:
         echo "Checking Next.js application status:"
         pm2 list | grep thebarcodeapi-$ENVIRONMENT
 
-        echo "Checking Nginx status:"
-        systemctl status nginx
+        # echo "Checking Nginx status:"
+        # systemctl status nginx
 
         # Clean up
         rm /tmp/nginx_env_vars

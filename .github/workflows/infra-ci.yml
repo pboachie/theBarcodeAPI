@@ -262,6 +262,18 @@ jobs:
         # Clean up
         rm -f /tmp/nginx_env_vars
 
+    - name: Stop and disable Nginx
+      run: |
+        echo "Stopping Nginx..."
+        systemctl stop nginx
+        echo "Disabling Nginx..."
+        systemctl disable nginx
+
+    - name: Clean up and remove scripts
+      run: |
+        echo "Cleaning up..."
+        rm -f update_system.sh install_nginx.sh nginx_config.sh install_nodejs.sh setup_pm2.sh verify_installation.sh
+
     - name: Print Environment Info
       run: |
         echo "Deployed to ${{ env.ENVIRONMENT }} environment"
