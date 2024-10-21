@@ -175,7 +175,6 @@ jobs:
         echo "Setting up PM2 for $ENVIRONMENT environment..."
 
         # Create PM2 ecosystem file
-        mkdir -p /opt/thebarcodeapi/$ENVIRONMENT
         cat > /opt/thebarcodeapi/$ENVIRONMENT/ecosystem.config.js << EOL
         module.exports = {
           apps : [{
@@ -198,13 +197,13 @@ jobs:
         echo "PM2 ecosystem file created."
 
         # Start the application with PM2
-        sudo pm2 start /opt/thebarcodeapi/$ENVIRONMENT/ecosystem.config.js
+        pm2 start /opt/thebarcodeapi/$ENVIRONMENT/ecosystem.config.js
 
         # Save the PM2 process list and environment
-        sudo pm2 save
+        pm2 save
 
         # Generate startup script
-        sudo pm2 startup systemd -u ubuntu --hp /home/ubuntu
+        pm2 startup systemd -u github-runner --hp /home/github-runner
 
         echo "PM2 setup completed for $ENVIRONMENT environment."
         EOF
@@ -215,7 +214,7 @@ jobs:
         # Create a temporary file with environment variables
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/nginx_env_vars
 
-        bash ./setup_pm2.sh
+        sudo ./setup_pm2.sh
 
         # Clean up
         rm -f /tmp/nginx_env_vars
