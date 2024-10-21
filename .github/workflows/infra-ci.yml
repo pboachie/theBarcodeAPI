@@ -115,8 +115,8 @@ jobs:
         echo "Nginx configuration test passed."
 
         # Reload Nginx
-        systemctl reload nginx
-        echo "Nginx reloaded successfully."
+        # systemctl reload nginx
+        # echo "Nginx reloaded successfully."
 
         echo "Nginx configuration completed."
 
