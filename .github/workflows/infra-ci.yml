@@ -69,11 +69,13 @@ jobs:
             server_name $DOMAIN_NAME www.$DOMAIN_NAME 192.168.1.112;
             server_tokens off;
 
-            root /opt/thebarcodeapi/$ENVIRONMENT/current;
-            index index.html;
-
             location / {
-                try_files \$uri \$uri/ /index.html;
+                proxy_pass http://localhost:3000;
+                proxy_http_version 1.2;
+                proxy_set_header Upgrade \$http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host \$host;
+                proxy_cache_bypass \$http_upgrade;
             }
 
             # Security headers
@@ -141,11 +143,73 @@ jobs:
         apt-get install -y nodejs
 
         echo "Node.js installation completed."
+
+        echo "Installing PM2..."
+        npm install -g pm2
+
+        echo "PM2 installation completed."
         EOF
         chmod +x install_nodejs.sh
 
-    - name: Install Node.js
+    - name: Install Node.js and PM2
       run: sudo ./install_nodejs.sh
+
+    - name: Create PM2 setup script
+      run: |
+        echo "Creating PM2 setup script..."
+        cat << 'EOF' > setup_pm2.sh
+        #!/bin/bash
+        set -e
+
+        # Read environment variables from file
+        source /tmp/nginx_env_vars
+
+        echo "Setting up PM2 for $ENVIRONMENT environment..."
+
+        # Create PM2 ecosystem file
+        cat > /opt/thebarcodeapi/$ENVIRONMENT/ecosystem.config.js << EOL
+        module.exports = {
+          apps : [{
+            name: 'thebarcodeapi-$ENVIRONMENT',
+            script: 'npm',
+            args: 'start',
+            cwd: '/opt/thebarcodeapi/$ENVIRONMENT/current',
+            instances: 'max',
+            autorestart: true,
+            watch: false,
+            max_memory_restart: '5G',
+            env: {
+              NODE_ENV: 'production',
+              ENVIRONMENT: '$ENVIRONMENT'
+            }
+          }]
+        };
+        EOL
+
+        echo "PM2 ecosystem file created."
+
+        # Start the application with PM2
+        pm2 start /opt/thebarcodeapi/$ENVIRONMENT/ecosystem.config.js
+
+        # Save the PM2 process list and environment
+        pm2 save
+
+        # Generate startup script
+        pm2 startup systemd -u appuser --hp /home/appuser
+
+        echo "PM2 setup completed for $ENVIRONMENT environment."
+        EOF
+        chmod +x setup_pm2.sh
+
+    - name: Setup PM2
+      run: |
+        # Create a temporary file with environment variables
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/nginx_env_vars
+
+        sudo ./setup_pm2.sh
+
+        # Clean up
+        rm -f /tmp/nginx_env_vars
 
     - name: Create verification script
       run: |
@@ -161,11 +225,16 @@ jobs:
         node -v
         echo "npm version:"
         npm -v
+        echo "PM2 version:"
+        pm2 --version
 
         echo "Checking Nginx configuration..."
         nginx -t
         echo "Checking Nginx status..."
         systemctl status nginx
+
+        echo "Checking PM2 status..."
+        pm2 list
 
         echo "Verification completed."
         EOF
