@@ -184,11 +184,16 @@ jobs:
             instances: 'max',
             autorestart: true,
             watch: false,
+            post_update: ["npm install"],
             max_memory_restart: '5G',
             env: {
               NODE_ENV: 'production',
               ENVIRONMENT: '$ENVIRONMENT'
+            },
+            pmx_module: {
+              script: "./pm2-version.js"
             }
+
           }]
         };
         EOL

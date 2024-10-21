@@ -70,19 +70,24 @@ jobs:
         echo "Cleaning up old releases"
         cd /opt/thebarcodeapi/$ENVIRONMENT/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
 
-        # Restart/Start Next.js application
-        echo "Starting/Restarting PM2 process"
+        # Get the version from package.json
+        VERSION=$(node -p "require('./package.json').version")
+
+        echo "Starting/Restarting PM2 process with version $VERSION"
         cd "$NEW_RELEASE"
         if pm2 list | grep -q "thebarcodeapi-$ENVIRONMENT"; then
-          pm2 reload "thebarcodeapi-$ENVIRONMENT" --update-env
-          echo "PM2 process restarted"
+          pm2 reload "thebarcodeapi-$ENVIRONMENT" --update-env --env production
         else
-          pm2 start npm --name "thebarcodeapi-$ENVIRONMENT" -- start
-          echo "PM2 process started"
+          pm2 start npm --name "thebarcodeapi-$ENVIRONMENT" -- start --env production
         fi
+
+        # Update the process with the version
+        pm2 set "thebarcodeapi-$ENVIRONMENT:APP_VERSION" $VERSION
 
         # Save the new PM2 process list
         pm2 save
+
+        echo "PM2 process started/restarted with version $VERSION"
 
         # Reload Nginx
         echo "Reloading nginx"
