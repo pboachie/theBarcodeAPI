@@ -8,6 +8,8 @@ interface CustomSelectProps {
   placeholder: string;
 }
 
+import styles from './custom-select.module.css';
+
 export const CustomSelect: React.FC<CustomSelectProps> = ({ options, value, onChange, placeholder }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -29,30 +31,30 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({ options, value, onCh
 
   if (!isMounted) {
     return (
-      <div className="custom-select">
-        <div className="custom-select-trigger">
-          <span>{value || placeholder}</span>
-          <ChevronDown className="custom-select-arrow" />
+      <div className={styles.customSelect}>
+        <div className={styles.customSelectTrigger}>
+          <span className={styles.customSelectText}>{value || placeholder}</span>
+          <ChevronDown className={styles.customSelectArrow} />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="custom-select" ref={selectRef}>
+    <div className={styles.customSelect} ref={selectRef}>
       <div
-        className="custom-select-trigger"
+        className={styles.customSelectTrigger}
         onClick={() => setIsOpen(!isOpen)}
       >
-        <span>{value || placeholder}</span>
-        <ChevronDown className={`custom-select-arrow ${isOpen ? 'open' : ''}`} />
+        <span className={styles.customSelectText}>{value || placeholder}</span>
+        <ChevronDown className={`${styles.customSelectArrow} ${isOpen ? styles.open : ''}`} />
       </div>
       {isOpen && (
-        <div className="custom-options">
+        <div className={styles.customOptions}>
           {options.map((option) => (
             <div
               key={option}
-              className={`custom-option ${value === option ? 'selected' : ''}`}
+              className={`${styles.customOption} ${value === option ? styles.selected : ''}`}
               onClick={() => {
                 onChange(option);
                 setIsOpen(false);
@@ -66,5 +68,4 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({ options, value, onCh
     </div>
   );
 };
-
 export default CustomSelect;
