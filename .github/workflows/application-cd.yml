@@ -9,10 +9,12 @@ on:
 
 env:
   DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
-  ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
+  ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+  SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
 
 jobs:
   application-cd-job:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: self-hosted
 
     steps:
@@ -32,7 +34,6 @@ jobs:
     - name: Build
       run: npm run build
 
-
     - name: Create deployment script
       run: |
         cat << 'EOF' > deploy.sh
@@ -44,24 +45,40 @@ jobs:
 
         echo "Starting deployment..."
 
+        # Create directories
         mkdir -p /opt/thebarcodeapi/$ENVIRONMENT/releases
         NEW_RELEASE="/opt/thebarcodeapi/$ENVIRONMENT/releases/release-$(date +%Y%m%d%H%M%S)"
-
         echo "Creating new release directory: $NEW_RELEASE"
         mkdir -p "$NEW_RELEASE"
 
+        # Copy Next.js build files
         echo "Copying build files to new release directory"
-        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/build/. "$NEW_RELEASE/"
+        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/.next "$NEW_RELEASE/"
+        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/public "$NEW_RELEASE/"
+        cp /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/package.json "$NEW_RELEASE/"
+        cp /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/package-lock.json "$NEW_RELEASE/"
 
+        # Install production dependencies
+        cd "$NEW_RELEASE"
+        npm ci --only=production
+
+        # Update symlink
         echo "Creating symlink to new release"
         ln -sfn "$NEW_RELEASE" /opt/thebarcodeapi/$ENVIRONMENT/current
 
+        # Clean up old releases
         echo "Cleaning up old releases"
         cd /opt/thebarcodeapi/$ENVIRONMENT/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
 
+        # Restart Next.js application
+        echo "Restarting Next.js application"
+        pm2 restart thebarcodeapi
+
+        # Reload Nginx
         echo "Reloading nginx"
         systemctl reload nginx
 
+        # Set permissions
         echo "Changing ownership of /opt/thebarcodeapi"
         chown -R www-data:www-data /opt/thebarcodeapi
 
@@ -79,7 +96,7 @@ jobs:
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
 
         # Run deployment script
-        sudo ./deploy.sh
+        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./deploy.sh
 
         # Clean up (in case the script didn't run to completion)
         rm -f /tmp/nginx_env_vars
@@ -97,11 +114,14 @@ jobs:
         echo "Checking /opt/thebarcodeapi/$ENVIRONMENT/current:"
         ls -la /opt/thebarcodeapi/$ENVIRONMENT/current
 
-        # Clean up
-        rm /tmp/nginx_env_vars
+        echo "Checking Next.js application status:"
+        pm2 list
 
         echo "Checking Nginx status:"
         systemctl status nginx
+
+        # Clean up
+        rm /tmp/nginx_env_vars
 
         echo "Verification completed"
         EOF
@@ -114,7 +134,7 @@ jobs:
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
 
         # Run verification script
-        sudo ./verify_deployment.sh
+        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./verify_deployment.sh
 
         # Clean up (in case the script didn't run to completion)
         rm -f /tmp/nginx_env_vars

@@ -7,7 +7,8 @@ on:
 
 env:
   DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
-  ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
+  ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+  SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
 
 jobs:
   infra-ci-job:
@@ -16,6 +17,12 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+
+    - name: Configure sudoers
+      run: |
+        echo "Configuring sudoers..."
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2, /usr/bin/npm" | sudo tee /etc/sudoers.d/github-runner'
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 0440 /etc/sudoers.d/github-runner
 
     - name: Create system update script
       run: |
@@ -31,7 +38,7 @@ jobs:
         chmod +x update_system.sh
 
     - name: Update system
-      run: sudo ./update_system.sh
+      run: echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./update_system.sh
       continue-on-error: true
 
     - name: Create Nginx installation script
@@ -47,7 +54,7 @@ jobs:
         chmod +x install_nginx.sh
 
     - name: Install Nginx
-      run: sudo ./install_nginx.sh
+      run: echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./install_nginx.sh
 
     - name: Create Nginx configuration script
       run: |
@@ -69,11 +76,13 @@ jobs:
             server_name $DOMAIN_NAME www.$DOMAIN_NAME 192.168.1.112;
             server_tokens off;
 
-            root /opt/thebarcodeapi/$ENVIRONMENT/current;
-            index index.html;
-
             location / {
-                try_files \$uri \$uri/ /index.html;
+                proxy_pass http://localhost:3000;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade \$http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host \$host;
+                proxy_cache_bypass \$http_upgrade;
             }
 
             # Security headers
@@ -124,7 +133,7 @@ jobs:
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
 
         echo "Running Nginx configuration script..."
-        sudo ./nginx_config.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./nginx_config.sh
 
         # Clean up (in case the script didn't run to completion)
         rm -f /tmp/nginx_env_vars
@@ -141,11 +150,73 @@ jobs:
         apt-get install -y nodejs
 
         echo "Node.js installation completed."
+
+        echo "Installing PM2..."
+        npm install -g pm2
+
+        echo "PM2 installation completed."
         EOF
         chmod +x install_nodejs.sh
 
-    - name: Install Node.js
-      run: sudo ./install_nodejs.sh
+    - name: Install Node.js and PM2
+      run: echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./install_nodejs.sh
+
+    - name: Create PM2 setup script
+      run: |
+        echo "Creating PM2 setup script..."
+        cat << 'EOF' > setup_pm2.sh
+        #!/bin/bash
+        set -e
+
+        # Read environment variables from file
+        source /tmp/nginx_env_vars
+
+        echo "Setting up PM2 for $ENVIRONMENT environment..."
+
+        # Create PM2 ecosystem file
+        cat > /opt/thebarcodeapi/$ENVIRONMENT/ecosystem.config.js << EOL
+        module.exports = {
+          apps : [{
+            name: 'thebarcodeapi-$ENVIRONMENT',
+            script: 'npm',
+            args: 'start',
+            cwd: '/opt/thebarcodeapi/$ENVIRONMENT/current',
+            instances: 'max',
+            autorestart: true,
+            watch: false,
+            max_memory_restart: '5G',
+            env: {
+              NODE_ENV: 'production',
+              ENVIRONMENT: '$ENVIRONMENT'
+            }
+          }]
+        };
+        EOL
+
+        echo "PM2 ecosystem file created."
+
+        # Start the application with PM2
+        pm2 start /opt/thebarcodeapi/$ENVIRONMENT/ecosystem.config.js
+
+        # Save the PM2 process list and environment
+        pm2 save
+
+        # Generate startup script
+        pm2 startup systemd -u github-runner --hp /home/github-runner
+
+        echo "PM2 setup completed for $ENVIRONMENT environment."
+        EOF
+        chmod +x setup_pm2.sh
+
+    - name: Setup PM2
+      run: |
+        # Create a temporary file with environment variables
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/nginx_env_vars
+
+        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./setup_pm2.sh
+
+        # Clean up
+        rm -f /tmp/nginx_env_vars
 
     - name: Create verification script
       run: |
@@ -161,18 +232,30 @@ jobs:
         node -v
         echo "npm version:"
         npm -v
+        echo "PM2 version:"
+        pm2 --version
 
         echo "Checking Nginx configuration..."
         nginx -t
         echo "Checking Nginx status..."
         systemctl status nginx
 
+        echo "Checking PM2 status..."
+        pm2 list | grep thebarcodeapi-$ENVIRONMENT
+
         echo "Verification completed."
         EOF
         chmod +x verify_installation.sh
 
     - name: Verify Installation
-      run: sudo ./verify_installation.sh
+      run: |
+        # Create a temporary file with environment variables
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/nginx_env_vars
+
+        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./verify_installation.sh
+
+        # Clean up
+        rm -f /tmp/nginx_env_vars
 
     - name: Print Environment Info
       run: |
