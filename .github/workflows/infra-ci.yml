@@ -234,14 +234,21 @@ jobs:
         systemctl status nginx
 
         echo "Checking PM2 status..."
-        pm2 list
+        pm2 list | grep thebarcodeapi-$ENVIRONMENT
 
         echo "Verification completed."
         EOF
         chmod +x verify_installation.sh
 
     - name: Verify Installation
-      run: sudo ./verify_installation.sh
+      run: |
+        # Create a temporary file with environment variables
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/nginx_env_vars
+
+        sudo ./verify_installation.sh
+
+        # Clean up
+        rm -f /tmp/nginx_env_vars
 
     - name: Print Environment Info
       run: |
