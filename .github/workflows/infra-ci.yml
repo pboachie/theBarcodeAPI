@@ -24,9 +24,6 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2, /usr/bin/npm" | sudo tee /etc/sudoers.d/github-runner'
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 0440 /etc/sudoers.d/github-runner
 
-        sudo chmod 0440 /etc/sudoers.d/github-runner
-
-
     - name: Create system update script
       run: |
         echo "Creating system update script..."
@@ -41,7 +38,7 @@ jobs:
         chmod +x update_system.sh
 
     - name: Update system
-      run: sudo ./update_system.sh
+      run: echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./update_system.sh
       continue-on-error: true
 
     - name: Create Nginx installation script
@@ -57,7 +54,7 @@ jobs:
         chmod +x install_nginx.sh
 
     - name: Install Nginx
-      run: sudo ./install_nginx.sh
+      run: echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./install_nginx.sh
 
     - name: Create Nginx configuration script
       run: |
@@ -136,7 +133,7 @@ jobs:
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
 
         echo "Running Nginx configuration script..."
-        sudo ./nginx_config.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./nginx_config.sh
 
         # Clean up (in case the script didn't run to completion)
         rm -f /tmp/nginx_env_vars
@@ -162,7 +159,7 @@ jobs:
         chmod +x install_nodejs.sh
 
     - name: Install Node.js and PM2
-      run: sudo ./install_nodejs.sh
+      run: echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./install_nodejs.sh
 
     - name: Create PM2 setup script
       run: |
@@ -216,7 +213,7 @@ jobs:
         # Create a temporary file with environment variables
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/nginx_env_vars
 
-        sudo ./setup_pm2.sh
+        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./setup_pm2.sh
 
         # Clean up
         rm -f /tmp/nginx_env_vars
@@ -255,7 +252,7 @@ jobs:
         # Create a temporary file with environment variables
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/nginx_env_vars
 
-        sudo ./verify_installation.sh
+        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./verify_installation.sh
 
         # Clean up
         rm -f /tmp/nginx_env_vars
