@@ -73,7 +73,7 @@ jobs:
         # Restart Next.js application
         echo "Restarting Next.js application"
         APP_VERSION=$(jq -r .version < /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/package.json)
-        pm2 start "$NEW_RELEASE/.next" --name "thebarcodeapi-$ENVIRONMENT-$APP_VERSION" --update-env
+        pm2 start "$NEW_RELEASE/.next" --name "thebarcodeapi-$ENVIRONMENT" --version "$APP_VERSION" --update-env
 
         # Reload Nginx
         echo "Reloading nginx"
