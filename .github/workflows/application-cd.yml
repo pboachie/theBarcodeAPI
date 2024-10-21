@@ -61,7 +61,7 @@ jobs:
 
         # Install production dependencies
         cd "$NEW_RELEASE"
-        npm ci --only=production
+        npm ci --only=production -omit=dev
 
         # Update symlink
         echo "Creating symlink to new release"
@@ -142,5 +142,4 @@ jobs:
 
     - name: Clean up build artifacts
       run: |
-        rm -rf .next
-        rm -rf build
+        rm -rf ~/actions-runner/_work/theBarcodeAPI/
