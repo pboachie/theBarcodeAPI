@@ -142,4 +142,7 @@ jobs:
 
     - name: Clean up build artifacts
       run: |
-        rm -rf ~/actions-runner/_work/theBarcodeAPI/
+        rm -rf .next
+        rm -rf build
+        rm package.json
+        rm package-lock.json
