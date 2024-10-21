@@ -77,9 +77,9 @@ jobs:
 
         echo "Starting/Restarting PM2 process with version $VERSION"
         if pm2 list | grep -q "thebarcodeapi-$ENVIRONMENT"; then
-          pm2 reload "thebarcodeapi-$ENVIRONMENT" --update-env --env production
+          pm2 reload "thebarcodeapi-$ENVIRONMENT" --update-env
         else
-          pm2 start npm --name "thebarcodeapi-$ENVIRONMENT" -- start --env production
+          pm2 start npm --name "thebarcodeapi-$ENVIRONMENT" -- start
         fi
 
         # Update the process with the version
