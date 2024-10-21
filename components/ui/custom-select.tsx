@@ -15,8 +15,8 @@ export const CustomSelect: React.FC<CustomSelectProps> = ({ options, value, onCh
 
   useEffect(() => {
     setIsMounted(true);
-    const handleClickOutside = (event: { target: any; }) => {
-      if (selectRef.current && !selectRef.current.contains(event.target)) {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (selectRef.current && !selectRef.current.contains(event.target as Node)) {
         setIsOpen(false);
       }
     };
