@@ -25,7 +25,9 @@ jobs:
         node-version: '20.x'
 
     - name: Install dependencies
-      run: npm ci
+      run:  |
+        echo ${{ github.event.workflow_run.conclusion }}
+        npm ci
 
     - name: Run linter
       run: npm run lint
@@ -71,7 +73,7 @@ jobs:
 
         # Restart Next.js application
         echo "Restarting Next.js application"
-        pm2 restart thebarcodeapi
+        pm2 restart thebarcodeapi-$ENVIRONMENT --update-env
 
         # Reload Nginx
         echo "Reloading nginx"
@@ -114,7 +116,7 @@ jobs:
         ls -la /opt/thebarcodeapi/$ENVIRONMENT/current
 
         echo "Checking Next.js application status:"
-        pm2 list
+        pm2 list | grep thebarcodeapi-$ENVIRONMENT
 
         echo "Checking Nginx status:"
         systemctl status nginx
