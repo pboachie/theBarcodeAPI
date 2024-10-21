@@ -267,12 +267,12 @@ jobs:
         #echo "Stopping Nginx..."
         #systemctl stop nginx
         echo "Disabling Nginx..."
-        systemctl disable nginx
+        echo ${{ env.SUDO_PASSWORD }} | sudo -S systemctl disable nginx
 
     - name: Clean up and remove scripts
       run: |
         echo "Cleaning up..."
-        rm -f update_system.sh install_nginx.sh nginx_config.sh install_nodejs.sh setup_pm2.sh verify_installation.sh
+        echo ${{ env.SUDO_PASSWORD }} | sudo -S rm -f update_system.sh install_nginx.sh nginx_config.sh install_nodejs.sh setup_pm2.sh verify_installation.sh
 
     - name: Print Environment Info
       run: |
