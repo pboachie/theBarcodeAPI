@@ -32,11 +32,19 @@ const maxChars = {
   ean13: 12,
   ean8: 7,
   ean14: 13,
+  ean:13,
+  jan: 13,
+  gtin: 14,
+  upc: 12,
   upca: 11,
+  isbn: 13,
   isbn10: 9,
   isbn13: 12,
+  itf: 14,
   issn: 7,
   pzn: 6,
+  code39: 43,
+  gs1_128: 48,
 }
 
 // Move generateBarcode outside the component
@@ -159,28 +167,52 @@ export default function BarcodeGenerator() {
     setBarcodeText('')
     switch (barcodeType) {
       case 'ean13':
+        setBarcodeText('123456789123')
+        break
+      case 'code39':
+        setBarcodeText('ABC 1234')
+        break
+      case 'ean':
         setBarcodeText('5901234123457')
         break
       case 'ean8':
-        setBarcodeText('96385074')
+        setBarcodeText('1234567')
+        break
+      case 'jan':
+        setBarcodeText('453456999999') // always starts "45" or "49" for Japan
+        break
+      case 'itf':
+        setBarcodeText('01234567890123')
         break
       case 'ean14':
-        setBarcodeText('01234567891234')
+        setBarcodeText('1234567890123')
+        break
+      case 'upc':
+        setBarcodeText('12345678901')
         break
       case 'upca':
         setBarcodeText('01234567890')
         break
+      case 'isbn':
+        setBarcodeText('9781234567890') // prefix "978" or "979"
+        break
       case 'isbn10':
-        setBarcodeText('1234567890')
+        setBarcodeText('123456789')
         break
       case 'isbn13':
-        setBarcodeText('9781234567890')
+        setBarcodeText('978123456789')
+        break
+      case 'gs1_128':
+        setBarcodeText('0101234567890128BAR-IT')
+        break
+      case 'gtin':
+        setBarcodeText('01234567890128')
         break
       case 'issn':
-        setBarcodeText('9771234567003')
+        setBarcodeText('1234567')
         break
       case 'pzn':
-        setBarcodeText('1234567')
+        setBarcodeText('123456')
         break
       default:
         setBarcodeText('Change Me!')
