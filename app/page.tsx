@@ -16,7 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useToast } from "@/components/ui/use-toast"
 import { CustomSelect } from "@/components/ui/custom-select"
 
-const apiDomain = process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com';
+const apiDomain = process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'http://localhost:8000'; // https://thebarcodeapi.com
 import packageJson from '../package.json';
 
 const apiVersion = packageJson.version || 'x.x.x';
