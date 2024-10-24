@@ -22,6 +22,14 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Verify Working Directory
+      run: |
+        cd /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI
+        if [ ! -f "package.json" ]; then
+          echo "Error: package.json not found!"
+          exit 1
+        fi
+
     - name: Use Node.js
       uses: actions/setup-node@v3
       with:
@@ -135,6 +143,13 @@ jobs:
     needs: frontend-deployment
     steps:
     - uses: actions/checkout@v3
+
+    - name: Verify Working Directory
+      run: |
+        if [ ! -d "/opt/thebarcodeapi/barcodeAPI" ]; then
+          echo "Error: /opt/thebarcodeapi/barcodeAPI directory not found!"
+          exit 1
+        fi
 
     - name: Create backend deployment script
       run: |
