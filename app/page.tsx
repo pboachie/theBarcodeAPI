@@ -137,7 +137,7 @@ export default function BarcodeGenerator() {
           setApiCallUrl(`/api/generate?data=${encodeURIComponent(text)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`);
         }
       }
-    }, 250);
+    }, 170);
   }, [isLimitExceeded]);
 
   useEffect(() => {
