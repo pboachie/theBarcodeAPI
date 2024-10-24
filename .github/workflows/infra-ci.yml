@@ -252,7 +252,7 @@ jobs:
 
           # Create .env file before Docker build
           cat > .env << EOL
-          API_VERSION=$(API_VERSION)
+          API_VERSION=${API_VERSION}
           SECRET_KEY=${API_SECRET_KEY}
           MASTER_API_KEY=${API_MASTER_KEY}
           ALGORITHM=HS256
