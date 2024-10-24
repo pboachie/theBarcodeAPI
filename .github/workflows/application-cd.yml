@@ -155,30 +155,30 @@ jobs:
 
     - name: Create backend deployment script
       run: |
+
+        source /tmp/env_vars
+
         cat << 'EOF' > deploy_backend.sh
         #!/bin/bash
         set -e
 
         source /tmp/env_vars
+        source /tmp/docker_vars
 
         echo "Starting backend deployment..."
+        echo "Using Docker Compose command: $DOCKER_COMPOSE"
 
         # Navigate to backend directory
         cd /opt/thebarcodeapi/barcodeAPI
 
         # Create backup directory if it doesn't exist
         BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
-        mkdir -p $BACKUP_DIR
+        sudo mkdir -p $BACKUP_DIR
 
-        # Backup current data if containers exist
-        if docker compose ps | grep -q "db"; then
+        # Use $DOCKER_COMPOSE instead of direct docker compose commands
+        if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
           echo "Backing up PostgreSQL data..."
-
-          if [ ! -s "$BACKUP_DIR/postgres_backup.sql" ]; then
-            echo "Warning: PostgreSQL backup appears to be empty"
-          fi
-
-          docker compose exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
+          $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
         fi
 
         if docker compose ps | grep -q "redis"; then
@@ -304,16 +304,46 @@ jobs:
         EOF
         chmod +x deploy_backend.sh
 
+    - name: Setup Docker permissions
+      run: |
+        # Add runner to docker group if not already added
+        if ! groups | grep -q docker; then
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
+          # Create a subshell with new group
+          exec sg docker -c "docker ps"
+        fi
+
+    - name: Fix Docker permissions
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
+
+    - name: Setup Docker Compose
+      run: |
+        # Check Docker Compose installation
+        if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
+          echo "Installing Docker Compose..."
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+          sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+        fi
+
+        # Set Docker Compose command
+        if docker compose version &> /dev/null; then
+          echo "DOCKER_COMPOSE='docker compose'" > /tmp/docker_vars
+        else
+          echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
+        fi
+
     - name: Deploy Backend
       run: |
+        # Source Docker Compose command
+        source /tmp/docker_vars
+
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
         echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
         echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
         echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
         echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
-
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_backend.sh
-        rm -f /tmp/env_vars
 
     - name: Run Database Migrations
       run: |

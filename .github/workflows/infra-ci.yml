@@ -652,6 +652,12 @@ jobs:
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S systemctl restart nginx
 
+    - name: Restart Docker
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S systemctl restart docker
+        # Wait for Docker to be ready
+        sleep 5
+
     - name: Print Environment Info (for debugging)
       run: |
         echo "Deployed to ${{ env.ENVIRONMENT }} environment"
