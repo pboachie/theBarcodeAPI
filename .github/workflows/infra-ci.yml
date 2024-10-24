@@ -58,6 +58,28 @@ jobs:
           command -v "$1" >/dev/null 2>&1
         }
 
+        # Function to install Docker Compose
+        install_docker_compose() {
+          echo "Installing Docker Compose..."
+
+          # Create plugin directories
+          mkdir -p ~/.docker/cli-plugins/
+          mkdir -p /usr/local/lib/docker/cli-plugins
+
+          # Download and install Docker Compose binary
+          COMPOSE_URL="https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)"
+          curl -L "$COMPOSE_URL" -o /usr/local/bin/docker-compose
+          chmod +x /usr/local/bin/docker-compose
+          ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
+
+          # Install as plugin
+          curl -L "$COMPOSE_URL" -o ~/.docker/cli-plugins/docker-compose
+          chmod +x ~/.docker/cli-plugins/docker-compose
+          cp ~/.docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
+        }
+
+        echo "Starting dependency installation check..."
+
         # Install Nginx if not present
         if ! command_exists nginx; then
           echo "Installing Nginx..."
@@ -83,105 +105,80 @@ jobs:
           echo "PM2 already installed"
         fi
 
-        # Install Docker and Docker Compose if not present
+        # Install Docker if not present
         if ! command_exists docker; then
           echo "Installing Docker..."
-          # Remove any old versions
-          apt-get remove -y docker docker.io containerd runc || true
-
           # Install prerequisites
           apt-get update
-          apt-get install -y \
-            ca-certificates \
-            curl \
-            gnupg \
-            lsb-release
+          apt-get install -y ca-certificates curl gnupg lsb-release
 
           # Add Docker's official GPG key
           mkdir -p /etc/apt/keyrings
           curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 
           # Add Docker repository
-          echo \
-            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-            $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+            tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-          # Install Docker Engine and Compose plugin
+          # Install Docker Engine
           apt-get update
-          apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-
-          # Add github-runner to docker group
-          usermod -aG docker github-runner
+          apt-get install -y docker-ce docker-ce-cli containerd.io
 
           # Start and enable Docker service
           systemctl start docker
           systemctl enable docker
+
+          # Add github-runner to docker group
+          usermod -aG docker github-runner
         else
           echo "Docker already installed"
-
-          # Ensure Docker Compose plugin is installed
-          if ! docker compose version > /dev/null 2>&1; then
-            echo "Installing Docker Compose plugin..."
-            apt-get update
-            apt-get install -y docker-compose-plugin
-          fi
         fi
 
-        # Verify installations with error handling
+        # Install Docker Compose if not present
+        if ! (docker compose version || docker-compose --version) &> /dev/null; then
+          install_docker_compose
+        else
+          echo "Docker Compose already installed"
+        fi
+
+        # Verify all installations
         echo "Verifying installations..."
 
-        if ! nginx -v; then
-          echo "Error: Nginx installation failed"
-          exit 1
-        fi
+        declare -A commands=(
+          ["Nginx"]="nginx -v"
+          ["Node.js"]="node -v"
+          ["PM2"]="pm2 --version"
+          ["Docker"]="docker --version"
+          ["Docker Compose"]="docker compose version || docker-compose --version"
+        )
 
-        if ! node -v; then
-          echo "Error: Node.js installation failed"
-          exit 1
-        fi
+        for name in "${!commands[@]}"; do
+          echo "Checking $name..."
+          if ! eval "${commands[$name]}" &> /dev/null; then
+            echo "Error: $name installation failed"
+            exit 1
+          fi
+        done
 
-        if ! pm2 --version; then
-          echo "Error: PM2 installation failed"
-          exit 1
-        fi
-
-        if ! docker --version; then
-          echo "Error: Docker installation failed"
-          exit 1
-        fi
-
-        if ! docker compose version; then
-          echo "Error: Docker Compose installation failed"
-          exit 1
-        fi
-
-        # Double-check docker group membership
+        # Ensure docker group membership
         if ! groups github-runner | grep -q docker; then
           echo "Adding github-runner to docker group..."
           usermod -aG docker github-runner
-          # Notify that a restart might be needed
           echo "Note: You may need to log out and back in for docker group changes to take effect"
         fi
 
         echo "All installations verified successfully"
+
+        # Display all versions
+        echo "Installed versions:"
+        nginx -v
+        node -v
+        pm2 --version
+        docker --version
+        docker compose version || docker-compose --version
         EOF
         chmod +x install_dependencies.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./install_dependencies.sh
-
-    - name: Verify Docker Compose
-      run: |
-        # Try to run docker compose directly
-        if ! docker compose version; then
-          echo "Attempting to fix Docker Compose..."
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S apt-get update
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S apt-get install -y docker-compose-plugin
-
-          # Verify again
-          if ! docker compose version; then
-            echo "Error: Docker Compose still not working after fix attempt"
-            exit 1
-          fi
-        fi
 
     - name: Configure Nginx
       run: |
