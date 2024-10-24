@@ -327,6 +327,13 @@ jobs:
           sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
         fi
 
+        # Create env vars
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
+        echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
+        echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
+        echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
+
         # Set Docker Compose command
         if docker compose version &> /dev/null; then
           echo "DOCKER_COMPOSE='docker compose'" > /tmp/docker_vars
@@ -334,16 +341,38 @@ jobs:
           echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
         fi
 
+        # Now create the deployment script
+        cat << 'EOF' > deploy_backend.sh
+        #!/bin/bash
+        set -e
+
+        # Source environment files
+        source /tmp/env_vars || {
+          echo "Error: Failed to source env_vars"
+          exit 1
+        }
+        source /tmp/docker_vars || {
+          echo "Error: Failed to source docker_vars"
+          exit 1
+        }
+
+        echo "Starting backend deployment..."
+        EOF
+        chmod +x deploy_backend.sh
+
     - name: Deploy Backend
       run: |
-        # Source Docker Compose command
-        source /tmp/docker_vars
+        # Verify files exist
+        if [ ! -f "/tmp/env_vars" ] || [ ! -f "/tmp/docker_vars" ]; then
+          echo "Error: Required environment files are missing"
+          exit 1
+        fi
 
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
-        echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
-        echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
-        echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
-        echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
+        # Execute deployment
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_backend.sh
+
+        # Clean up
+        rm -f /tmp/env_vars /tmp/docker_vars
 
     - name: Run Database Migrations
       run: |
