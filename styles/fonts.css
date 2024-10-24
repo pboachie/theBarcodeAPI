@@ -1,0 +1,13 @@
+
+@font-face {
+  font-family: 'GeistVF';
+  src: url('/fonts/GeistMonoVF.woff') format('woff'),
+       url('/fonts/GeistVF.woff') format('woff');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+body {
+  font-family: 'GeistVF', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';
+}

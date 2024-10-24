@@ -9,7 +9,8 @@ on:
 
 env:
   DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
-  ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
+  ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+  SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
 
 jobs:
   application-cd-job:
@@ -24,14 +25,14 @@ jobs:
         node-version: '20.x'
 
     - name: Install dependencies
-      run: npm ci
+      run:  |
+        npm ci
 
     - name: Run linter
       run: npm run lint
 
     - name: Build
       run: npm run build
-
 
     - name: Create deployment script
       run: |
@@ -44,24 +45,56 @@ jobs:
 
         echo "Starting deployment..."
 
+        # Create directories
         mkdir -p /opt/thebarcodeapi/$ENVIRONMENT/releases
         NEW_RELEASE="/opt/thebarcodeapi/$ENVIRONMENT/releases/release-$(date +%Y%m%d%H%M%S)"
-
         echo "Creating new release directory: $NEW_RELEASE"
         mkdir -p "$NEW_RELEASE"
 
+        # Copy Next.js build files
         echo "Copying build files to new release directory"
-        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/build/. "$NEW_RELEASE/"
+        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/.next "$NEW_RELEASE/"
+        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/public "$NEW_RELEASE/"
+        cp /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/package.json "$NEW_RELEASE/"
+        cp /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/package-lock.json "$NEW_RELEASE/"
 
+        # Change to the new release directory
+        cd "$NEW_RELEASE"
+
+        # Install production dependencies
+        npm ci --only=production --omit=dev
+
+        # Get the version from package.json
+        VERSION=$(node -p "require('./package.json').version")
+
+        # Update symlink
         echo "Creating symlink to new release"
         ln -sfn "$NEW_RELEASE" /opt/thebarcodeapi/$ENVIRONMENT/current
 
+        # Clean up old releases
         echo "Cleaning up old releases"
         cd /opt/thebarcodeapi/$ENVIRONMENT/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
 
-        echo "Reloading nginx"
-        systemctl reload nginx
+        echo "Starting/Restarting PM2 process with version $VERSION"
+        if pm2 list | grep -q "thebarcodeapi-$ENVIRONMENT"; then
+          pm2 reload "thebarcodeapi-$ENVIRONMENT" --update-env
+        else
+          pm2 start npm --name "thebarcodeapi-$ENVIRONMENT" -- start
+        fi
 
+        # Update the process with the version
+        pm2 set "thebarcodeapi-$ENVIRONMENT:APP_VERSION" $VERSION
+
+        # Save the new PM2 process list
+        pm2 save
+
+        echo "PM2 process started/restarted with version $VERSION"
+
+        # Reload Nginx
+        # echo "Reloading nginx"
+        # systemctl reload nginx
+
+        # Set permissions
         echo "Changing ownership of /opt/thebarcodeapi"
         chown -R www-data:www-data /opt/thebarcodeapi
 
@@ -79,7 +112,7 @@ jobs:
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
 
         # Run deployment script
-        sudo ./deploy.sh
+        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./deploy.sh
 
         # Clean up (in case the script didn't run to completion)
         rm -f /tmp/nginx_env_vars
@@ -97,11 +130,14 @@ jobs:
         echo "Checking /opt/thebarcodeapi/$ENVIRONMENT/current:"
         ls -la /opt/thebarcodeapi/$ENVIRONMENT/current
 
+        echo "Checking Next.js application status:"
+        pm2 list | grep thebarcodeapi-$ENVIRONMENT
+
+        # echo "Checking Nginx status:"
+        # systemctl status nginx
+
         # Clean up
         rm /tmp/nginx_env_vars
-
-        echo "Checking Nginx status:"
-        systemctl status nginx
 
         echo "Verification completed"
         EOF
@@ -114,7 +150,14 @@ jobs:
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
 
         # Run verification script
-        sudo ./verify_deployment.sh
+        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./verify_deployment.sh
 
         # Clean up (in case the script didn't run to completion)
         rm -f /tmp/nginx_env_vars
+
+    - name: Clean up build artifacts
+      run: |
+        rm -rf .next
+        rm -rf build
+        rm package.json
+        rm package-lock.json
