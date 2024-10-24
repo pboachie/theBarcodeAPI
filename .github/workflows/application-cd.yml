@@ -342,6 +342,176 @@ jobs:
           echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
         fi
 
+    - name: CreateCopy Backend Files Script
+      run: |
+        # Copy backend files to the target directory
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./barcodeAPI/* /opt/thebarcodeapi/barcodeAPI/
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi/barcodeAPI
+
+    - name: Verify Working Directory
+      run: |
+        if [ ! -d "/opt/thebarcodeapi/barcodeAPI" ]; then
+          echo "Error: /opt/thebarcodeapi/barcodeAPI directory not found!"
+          exit 1
+        fi
+
+    - name: Create backend deployment script
+      run: |
+        # Source the environment files we created earlier
+        if [ ! -f "/tmp/env_vars" ] || [ ! -f "/tmp/docker_vars" ]; then
+          echo "Error: Required environment files are missing"
+          exit 1
+        fi
+
+        source /tmp/env_vars
+        source /tmp/docker_vars
+
+        cat << 'EOF' > deploy_backend.sh
+        #!/bin/bash
+        set -e
+
+        source /tmp/env_vars
+        source /tmp/docker_vars
+
+        echo "Starting backend deployment..."
+        echo "Using Docker Compose command: $DOCKER_COMPOSE"
+
+        # Navigate to backend directory
+        cd /opt/thebarcodeapi/barcodeAPI
+
+        # Create backup directory if it doesn't exist
+        BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
+        sudo mkdir -p $BACKUP_DIR
+
+        # Use $DOCKER_COMPOSE instead of direct docker compose commands
+        if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
+          echo "Backing up PostgreSQL data..."
+          $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
+        fi
+
+        if docker compose ps | grep -q "redis"; then
+          echo "Backing up Redis data..."
+          docker compose exec -T redis redis-cli SAVE
+          docker compose cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
+        fi
+
+        # Copy current backend files
+        echo "Copying backend files..."
+        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
+
+        # Store current container states
+        OLD_CONTAINERS=$(docker compose ps -q)
+
+        # Stop current containers
+        echo "Stopping current containers..."
+        docker compose down || true
+
+        # Copy existing data volumes to temporary location if they exist
+        if [ -d "/opt/thebarcodeapi/data/postgres" ]; then
+          echo "Preserving PostgreSQL data..."
+          cp -R /opt/thebarcodeapi/data/postgres "$BACKUP_DIR/postgres_data"
+        fi
+
+        if [ -d "/opt/thebarcodeapi/data/redis" ]; then
+          echo "Preserving Redis data..."
+          cp -R /opt/thebarcodeapi/data/redis "$BACKUP_DIR/redis_data"
+        fi
+
+        # Build and start new containers
+        echo "Building and starting containers..."
+        docker compose build
+        docker compose up -d
+
+        # Wait for health checks
+        echo "Waiting for services to be healthy..."
+        TIMEOUT=300
+        HEALTHY=false
+
+        for i in $(seq 1 $TIMEOUT); do
+          if docker compose ps | grep "healthy" | wc -l | grep -q "3"; then
+            HEALTHY=true
+            break
+          fi
+          sleep 1
+        done
+
+        if [ "$HEALTHY" = false ]; then
+          echo "Services failed to become healthy within timeout. Rolling back..."
+
+          # Stop new containers
+          docker compose down
+
+          # Restore data from backup
+          if [ -d "$BACKUP_DIR/postgres_data" ]; then
+            rm -rf /opt/thebarcodeapi/data/postgres
+            cp -R "$BACKUP_DIR/postgres_data" /opt/thebarcodeapi/data/postgres
+          fi
+
+          if [ -d "$BACKUP_DIR/redis_data" ]; then
+            rm -rf /opt/thebarcodeapi/data/redis
+            cp -R "$BACKUP_DIR/redis_data" /opt/thebarcodeapi/data/redis
+          fi
+
+          # Start old containers
+          if [ ! -z "$OLD_CONTAINERS" ]; then
+            docker compose up -d
+          fi
+
+          exit 1
+        fi
+
+        # Verify database connectivity and restore data if needed
+        echo "Verifying database connectivity..."
+        if ! docker compose exec -T db pg_isready -U barcodeboachiefamily -d barcode_api; then
+          echo "Database connectivity failed. Restoring from backup..."
+          if [ -f "$BACKUP_DIR/postgres_backup.sql" ]; then
+            docker compose exec -T db psql -U postgres < "$BACKUP_DIR/postgres_backup.sql"
+          fi
+        fi
+
+        # Verify Redis connectivity and restore data if needed
+        echo "Verifying Redis connectivity..."
+        if ! docker compose exec -T redis redis-cli ping | grep -q "PONG"; then
+          echo "Redis connectivity failed. Restoring from backup..."
+          if [ -f "$BACKUP_DIR/redis_dump.rdb" ]; then
+            docker compose stop redis
+            docker compose cp "$BACKUP_DIR/redis_dump.rdb" redis:/data/dump.rdb
+            docker compose start redis
+          fi
+        fi
+
+        # Verify deployment
+        echo "Verifying deployment..."
+        if ! curl -f http://localhost:8000/health; then
+          echo "Health check failed. Rolling back..."
+          docker compose down
+
+          # Restore data from backup
+          if [ -d "$BACKUP_DIR/postgres_data" ]; then
+            rm -rf /opt/thebarcodeapi/data/postgres
+            cp -R "$BACKUP_DIR/postgres_data" /opt/thebarcodeapi/data/postgres
+          fi
+
+          if [ -d "$BACKUP_DIR/redis_data" ]; then
+            rm -rf /opt/thebarcodeapi/data/redis
+            cp -R "$BACKUP_DIR/redis_data" /opt/thebarcodeapi/data/redis
+          fi
+
+          # Start old containers
+          if [ ! -z "$OLD_CONTAINERS" ]; then
+            docker compose up -d
+          fi
+
+          exit 1
+        fi
+
+        # Clean up old backups (keep last 5)
+        find /opt/thebarcodeapi/backups -maxdepth 1 -type d -name "20*" | sort -r | tail -n +6 | xargs rm -rf
+
+        echo "Backend deployment completed successfully"
+        EOF
+        chmod +x deploy_backend.sh
+
     - name: Copy Backend Files
       run: |
         # Copy backend files to the target directory
