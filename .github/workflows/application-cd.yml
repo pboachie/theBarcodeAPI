@@ -146,6 +146,14 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Setup Initial Directories
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/data/postgres
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/data/redis
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/backups
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi
+
     - name: Verify Working Directory
       run: |
         if [ ! -d "/opt/thebarcodeapi/barcodeAPI" ]; then
