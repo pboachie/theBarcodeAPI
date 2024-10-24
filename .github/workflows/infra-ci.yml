@@ -473,76 +473,6 @@ jobs:
         # Clean up
         rm -f /tmp/env_vars
 
-    - name: Configure Backup Coordination
-      run: |
-        echo "Setting up backup coordination..."
-        cat << 'EOF' > setup_backup.sh
-        #!/bin/bash
-        set -e
-
-        # Create backup check script
-        echo "Creating pre-backup check script..."
-        cat << 'INNEREOF' > /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
-        #!/bin/bash
-        set -e
-
-        # Check if deployment is in progress
-        if [ -f "/opt/thebarcodeapi/deployment.lock" ]; then
-          echo "Deployment in progress, skipping backup"
-          exit 0
-        fi
-
-        # Proceed with backup
-        /opt/thebarcodeapi/barcodeAPI/backup.sh
-        INNEREOF
-
-        # Set proper permissions
-        chmod +x /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
-        chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
-
-        # Ensure backup script exists and is executable
-        if [ ! -x "/opt/thebarcodeapi/barcodeAPI/backup.sh" ]; then
-          echo "Error: backup.sh not found or not executable"
-          exit 1
-        fi
-
-        # Update cron job
-        # First, remove any existing backup jobs
-        (crontab -l 2>/dev/null | grep -v "backup.sh" | grep -v "pre-backup-check.sh") | crontab -
-
-        # Add new backup job with correct syntax
-        (crontab -l 2>/dev/null; echo "0 0 * * * /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh") | crontab -
-
-        # Verify cron job was added
-        if ! crontab -l | grep -q "pre-backup-check.sh"; then
-          echo "Error: Failed to add cron job"
-          exit 1
-        fi
-
-        echo "Backup coordination setup completed"
-        EOF
-        chmod +x setup_backup.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./setup_backup.sh
-
-    - name: Add Cleanup Routine
-      run: |
-        cat << 'EOF' > /opt/thebarcodeapi/cleanup.sh
-        #!/bin/bash
-
-        # Clean old frontend releases
-        find /opt/thebarcodeapi/${ENVIRONMENT}/releases -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
-
-        # Clean old backups (keep last 30 days)
-        find /opt/thebarcodeapi/backups -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
-
-        # Clean Docker
-        docker system prune -f --filter "until=168h"
-        EOF
-        chmod +x /opt/thebarcodeapi/cleanup.sh
-
-        # Add weekly cleanup to cron
-        (crontab -l 2>/dev/null; echo "0 0 * * 0 /opt/thebarcodeapi/cleanup.sh") | crontab -
-
     - name: Fix Permissions
       run: |
         echo "Fixing permissions..."
@@ -568,9 +498,11 @@ jobs:
         find /opt/thebarcodeapi -name "*.sh" -exec chmod +x {} \;
 
         # Ensure special permissions for sensitive files
-        chmod 600 /opt/thebarcodeapi/barcodeAPI/.env 2>/dev/null || true
+        if [ -f "/opt/thebarcodeapi/barcodeAPI/.env" ]; then
+          chmod 600 /opt/thebarcodeapi/barcodeAPI/.env
+        fi
 
-        # Set proper permissions for Docker socket if it exists
+        # Set proper permissions for Docker socket
         if [ -S /var/run/docker.sock ]; then
           chmod 666 /var/run/docker.sock
         fi
@@ -579,6 +511,70 @@ jobs:
         EOF
         chmod +x fix_permissions.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./fix_permissions.sh
+
+    - name: Configure Backup Coordination
+      run: |
+        echo "Setting up backup coordination..."
+        # First create script locally
+        cat << 'EOF' > pre-backup-check.sh
+        #!/bin/bash
+        set -e
+
+        # Check if deployment is in progress
+        if [ -f "/opt/thebarcodeapi/deployment.lock" ]; then
+          echo "Deployment in progress, skipping backup"
+          exit 0
+        fi
+
+        # Proceed with backup
+        /opt/thebarcodeapi/barcodeAPI/backup.sh
+        EOF
+        chmod +x pre-backup-check.sh
+
+        # Move to destination with sudo
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv pre-backup-check.sh /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 755 /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+
+        # Update cron job with sudo
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c '(crontab -l 2>/dev/null | grep -v "backup.sh" | grep -v "pre-backup-check.sh") | crontab -'
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c '(crontab -l 2>/dev/null; echo "0 0 * * * /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh") | crontab -'
+
+    - name: Add Cleanup Routine
+      run: |
+        # First create the script in current directory
+        cat << 'EOF' > cleanup.sh
+        #!/bin/bash
+        set -e
+
+        # Clean old frontend releases
+        find /opt/thebarcodeapi/${ENVIRONMENT}/releases -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
+
+        # Clean old backups (keep last 30 days)
+        find /opt/thebarcodeapi/backups -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
+
+        # Clean Docker
+        docker system prune -f --filter "until=168h"
+        EOF
+        chmod +x cleanup.sh
+
+        # Then move it to the target location with sudo
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv cleanup.sh /opt/thebarcodeapi/cleanup.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/cleanup.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 755 /opt/thebarcodeapi/cleanup.sh
+
+        # Add weekly cleanup to cron with sudo
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c '(crontab -l 2>/dev/null; echo "0 0 * * 0 /opt/thebarcodeapi/cleanup.sh") | crontab -'
+
+    - name: Error Check
+      run: |
+        # Check if critical files exist
+        for file in "/opt/thebarcodeapi/barcodeAPI/backup.sh" "/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh" "/opt/thebarcodeapi/cleanup.sh"; do
+          if [ ! -x "$file" ]; then
+            echo "Error: $file is not executable or doesn't exist"
+            exit 1
+          fi
+        done
 
     - name: Verify Setup
       run: |
