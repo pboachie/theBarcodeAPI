@@ -475,8 +475,16 @@ jobs:
 
     - name: Configure Backup Coordination
       run: |
-        cat << 'EOF' > /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+        echo "Setting up backup coordination..."
+        cat << 'EOF' > setup_backup.sh
         #!/bin/bash
+        set -e
+
+        # Create backup check script
+        echo "Creating pre-backup check script..."
+        cat << 'INNEREOF' > /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+        #!/bin/bash
+        set -e
 
         # Check if deployment is in progress
         if [ -f "/opt/thebarcodeapi/deployment.lock" ]; then
@@ -486,12 +494,35 @@ jobs:
 
         # Proceed with backup
         /opt/thebarcodeapi/barcodeAPI/backup.sh
-        EOF
-        chmod +x /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+        INNEREOF
 
-        # Update cron job to use pre-backup check
-        (crontab -l 2>/dev/null | grep -v "backup.sh") | crontab -
+        # Set proper permissions
+        chmod +x /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+        chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+
+        # Ensure backup script exists and is executable
+        if [ ! -x "/opt/thebarcodeapi/barcodeAPI/backup.sh" ]; then
+          echo "Error: backup.sh not found or not executable"
+          exit 1
+        fi
+
+        # Update cron job
+        # First, remove any existing backup jobs
+        (crontab -l 2>/dev/null | grep -v "backup.sh" | grep -v "pre-backup-check.sh") | crontab -
+
+        # Add new backup job with correct syntax
         (crontab -l 2>/dev/null; echo "0 0 * * * /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh") | crontab -
+
+        # Verify cron job was added
+        if ! crontab -l | grep -q "pre-backup-check.sh"; then
+          echo "Error: Failed to add cron job"
+          exit 1
+        fi
+
+        echo "Backup coordination setup completed"
+        EOF
+        chmod +x setup_backup.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./setup_backup.sh
 
     - name: Add Cleanup Routine
       run: |
@@ -514,38 +545,87 @@ jobs:
 
     - name: Fix Permissions
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi/data
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/data
+        echo "Fixing permissions..."
+        cat << 'EOF' > fix_permissions.sh
+        #!/bin/bash
+        set -e
 
-    - name: Verify setup
+        # Create required directories if they don't exist
+        mkdir -p /opt/thebarcodeapi/barcodeAPI
+        mkdir -p /opt/thebarcodeapi/data
+        mkdir -p /opt/thebarcodeapi/backups
+
+        # Set ownership
+        chown -R www-data:www-data /opt/thebarcodeapi
+
+        # Set directory permissions
+        find /opt/thebarcodeapi -type d -exec chmod 755 {} \;
+
+        # Set file permissions
+        find /opt/thebarcodeapi -type f -exec chmod 644 {} \;
+
+        # Make scripts executable
+        find /opt/thebarcodeapi -name "*.sh" -exec chmod +x {} \;
+
+        # Ensure special permissions for sensitive files
+        chmod 600 /opt/thebarcodeapi/barcodeAPI/.env 2>/dev/null || true
+
+        # Set proper permissions for Docker socket if it exists
+        if [ -S /var/run/docker.sock ]; then
+          chmod 666 /var/run/docker.sock
+        fi
+
+        echo "Permissions fixed successfully"
+        EOF
+        chmod +x fix_permissions.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./fix_permissions.sh
+
+    - name: Verify Setup
       run: |
-        echo "Creating verification script..."
+        echo "Verifying setup..."
         cat << 'EOF' > verify_setup.sh
         #!/bin/bash
         set -e
 
-        echo "Verifying installations and configurations..."
-
-        # Check installed services
-        echo "Checking service versions..."
-        nginx -v
-        node -v
-        pm2 --version
-        docker --version
-        docker compose version
-
-        # Check configurations
-        echo "Checking Nginx configuration..."
-        nginx -t
-
+        # Check directory structure
         echo "Checking directory structure..."
-        ls -la /opt/thebarcodeapi/barcodeAPI
-        ls -la /opt/thebarcodeapi/${ENVIRONMENT}
+        for dir in barcodeAPI data backups; do
+          if [ ! -d "/opt/thebarcodeapi/$dir" ]; then
+            echo "Error: Directory /opt/thebarcodeapi/$dir not found"
+            exit 1
+          fi
+        done
 
-        echo "Checking Docker network..."
-        docker network ls | grep barcodeapi_network || echo "Network not yet created"
+        echo "Checking wait-for-it script..."
+        if [ ! -x "/opt/thebarcodeapi/barcodeAPI/wait-for-it.sh" ]; then
+          echo "Error: wait-for-it.sh not executable"
+          exit 1
+        fi
 
-        echo "Verification completed"
+        # Check script permissions
+        echo "Checking script permissions..."
+        for script in backup.sh pre-backup-check.sh; do
+          if [ ! -x "/opt/thebarcodeapi/barcodeAPI/$script" ]; then
+            echo "Error: $script not executable"
+            exit 1
+          fi
+        done
+
+        # Check cron job
+        echo "Checking cron job..."
+        if ! crontab -l | grep -q "pre-backup-check.sh"; then
+          echo "Error: Backup cron job not found"
+          exit 1
+        fi
+
+        # Check ownership
+        echo "Checking ownership..."
+        if [ "$(stat -c %U:%G /opt/thebarcodeapi)" != "www-data:www-data" ]; then
+          echo "Error: Incorrect ownership on /opt/thebarcodeapi"
+          exit 1
+        fi
+
+        echo "Setup verified successfully"
         EOF
         chmod +x verify_setup.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_setup.sh
@@ -570,7 +650,7 @@ jobs:
     - name: Clean up scripts
       run: |
         echo "Cleaning up..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f update_system.sh install_dependencies.sh configure_nginx.sh configure_pm2.sh setup_docker.sh verify_setup.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f update_system.sh install_dependencies.sh configure_nginx.sh configure_pm2.sh setup_docker.sh verify_setup.sh setup_backup.sh fix_permissions.sh
 
     - name: Start Services
       run: |
