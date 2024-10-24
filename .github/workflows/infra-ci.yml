@@ -13,6 +13,7 @@ env:
   POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
   API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
   API_MASTER_KEY: ${{ secrets.API_MASTER_KEY }}
+  API_VERSION: ${{ vars.API_VERSION }}
 
 jobs:
   infra-ci-job:
@@ -227,106 +228,118 @@ jobs:
         # Clean up
         rm -f /tmp/env_vars
 
-    - name: Configure Backend Docker Environment
-      run: |
-        echo "Creating Docker environment setup script..."
-        cat << 'EOF' > setup_docker.sh
-        #!/bin/bash
-        set -e
+        - name: Configure Backend Docker Environment
+        run: |
+          echo "Creating Docker environment setup script..."
+          cat << 'EOF' > setup_docker.sh
+          #!/bin/bash
+          set -e
 
-        # Read environment variables from file
-        source /tmp/env_vars
+          # Read environment variables from file
+          source /tmp/env_vars
 
-        # Create necessary directories
-        mkdir -p /opt/thebarcodeapi/barcodeAPI
-        mkdir -p /opt/thebarcodeapi/data/postgres
-        mkdir -p /opt/thebarcodeapi/data/redis
-        mkdir -p /opt/thebarcodeapi/backups
+          # Create necessary directories
+          mkdir -p /opt/thebarcodeapi/barcodeAPI
+          mkdir -p /opt/thebarcodeapi/data/postgres
+          mkdir -p /opt/thebarcodeapi/data/redis
+          mkdir -p /opt/thebarcodeapi/backups
 
-        # Create .env file from template
-        cat > /opt/thebarcodeapi/barcodeAPI/.env << EOL
-        API_VERSION=0.1.1
-        SECRET_KEY=${API_SECRET_KEY}
-        MASTER_API_KEY=${API_MASTER_KEY}
-        ALGORITHM=HS256
-        ACCESS_TOKEN_EXPIRE_MINUTES=30
-        REDIS_URL=redis://redis:6379
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api
-        EOL
+          # Navigate to backend directory
+          cd /opt/thebarcodeapi/barcodeAPI
 
-        # Create docker-compose.yml
-        cat > /opt/thebarcodeapi/barcodeAPI/docker-compose.yml << EOL
-        version: '3.8'
+          # Copy backend files
+          cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
 
-        services:
-          api:
-            build: .
-            ports:
-              - "8000:8000"
-            depends_on:
-              db:
-                condition: service_healthy
-              redis:
-                condition: service_healthy
-            env_file:
-              - .env
-            volumes:
-              - ./app:/app/app
-              - ./alembic:/app/alembic
-            healthcheck:
-              test: ["CMD", "curl", "-f", "http://localhost:8000/health || exit 1"]
-              interval: 15s
-              timeout: 10s
-              retries: 3
-              start_period: 30s
+          # Create .env file before Docker build
+          cat > .env << EOL
+          API_VERSION=$(API_VERSION)
+          SECRET_KEY=${API_SECRET_KEY}
+          MASTER_API_KEY=${API_MASTER_KEY}
+          ALGORITHM=HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES=30
+          REDIS_URL=redis://redis:6379
+          DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api
+          PYTHONDONTWRITEBYTECODE=1
+          PYTHONUNBUFFERED=1
+          EOL
 
-            restart: unless-stopped
-            logging:
-              driver: "json-file"
-              options:
-                max-size: "10m"
-                max-file: "3"
+          # Create docker-compose.yml
+          cat > docker-compose.yml << EOL
+          version: '3.8'
 
-          redis:
-            image: redislabs/rejson:latest
-            ports:
-              - "6379:6379"
-            volumes:
-              - /opt/thebarcodeapi/data/redis:/data
-            healthcheck:
-              test: ["CMD", "redis-cli", "ping"]
-              interval: 5s
-              timeout: 30s
-              retries: 50
-            restart: unless-stopped
+          services:
+            api:
+              build:
+                context: .
+                dockerfile: Dockerfile
+                args:
+                  - PYTHON_ENV=production
+              ports:
+                - "8000:8000"
+              depends_on:
+                db:
+                  condition: service_healthy
+                redis:
+                  condition: service_healthy
+              env_file:
+                - .env
+              volumes:
+                - ./app:/app/app
+                - ./alembic:/app/alembic
+                # Don't mount .env as it's copied during build
+              healthcheck:
+                test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+                interval: 15s
+                timeout: 10s
+                retries: 3
+                start_period: 30s
+              restart: unless-stopped
+              logging:
+                driver: "json-file"
+                options:
+                  max-size: "10m"
+                  max-file: "3"
 
-          db:
-            image: postgres:13
-            volumes:
-              - /opt/thebarcodeapi/data/postgres:/var/lib/postgresql/data
-              - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
-            environment:
-              - POSTGRES_USER=postgres
-              - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-              - BARCODE_DB_USER=barcodeboachiefamily
-              - BARCODE_DB_PASSWORD=${DB_PASSWORD}
-              - BARCODE_DB_NAME=barcode_api
-            healthcheck:
-              test: ["CMD-SHELL", "pg_isready -U barcodeboachiefamily -d barcode_api"]
-              interval: 5s
-              timeout: 5s
-              retries: 5
-            restart: unless-stopped
-            logging:
-              driver: "json-file"
-              options:
-                max-size: "10m"
-                max-file: "3"
+            redis:
+              image: redislabs/rejson:latest
+              ports:
+                - "6379:6379"
+              volumes:
+                - /opt/thebarcodeapi/data/redis:/data
+              healthcheck:
+                test: ["CMD", "redis-cli", "ping"]
+                interval: 5s
+                timeout: 30s
+                retries: 50
+              restart: unless-stopped
 
-        networks:
-          default:
-            name: barcodeapi_network
-        EOL
+            db:
+              image: postgres:13
+              volumes:
+                - /opt/thebarcodeapi/data/postgres:/var/lib/postgresql/data
+                - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+              environment:
+                - POSTGRES_USER=postgres
+                - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+                - BARCODE_DB_USER=barcodeboachiefamily
+                - BARCODE_DB_PASSWORD=${DB_PASSWORD}
+                - BARCODE_DB_NAME=barcode_api
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U barcodeboachiefamily -d barcode_api"]
+                interval: 5s
+                timeout: 5s
+                retries: 5
+              restart: unless-stopped
+              logging:
+                driver: "json-file"
+                options:
+                  max-size: "10m"
+                  max-file: "3"
+
+          networks:
+            default:
+              name: barcodeapi_network
+          EOL
 
         # Create backup script
         cat > /opt/thebarcodeapi/barcodeAPI/backup.sh << EOL
@@ -350,23 +363,49 @@ jobs:
         # Set up cron job for backups
         (crontab -l 2>/dev/null; echo "0 0 * * * /opt/thebarcodeapi/barcodeAPI/backup.sh") | crontab -
 
-        # Set permissions
-        chown -R www-data:www-data /opt/thebarcodeapi
-        chmod -R 755 /opt/thebarcodeapi/barcodeAPI
-        EOF
-        chmod +x setup_docker.sh
+          # Ensure start.sh is executable
+          chmod +x start.sh
 
-        # Create environment variables file
-        echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" > /tmp/env_vars
-        echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
-        echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
-        echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
+          # Create wait-for-it script for startup coordination
+          cat > wait-for-it.sh << 'EOL'
+          #!/bin/bash
+          # wait-for-it.sh script to check service availability
 
-        # Run setup script
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./setup_docker.sh
+          host="$1"
+          port="$2"
+          shift 2
+          cmd="$@"
 
-        # Clean up
-        rm -f /tmp/env_vars
+          until nc -z "$host" "$port"; do
+            echo "Waiting for $host:$port..."
+            sleep 1
+          done
+
+          echo "$host:$port is available"
+          exec $cmd
+          EOL
+          chmod +x wait-for-it.sh
+
+          # Set permissions
+          chown -R www-data:www-data /opt/thebarcodeapi
+          chmod -R 755 /opt/thebarcodeapi/barcodeAPI
+
+          echo "Docker environment setup completed"
+          EOF
+          chmod +x setup_docker.sh
+
+          # Create environment variables file
+          echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" > /tmp/env_vars
+          echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
+          echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
+          echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
+          echo "API_VERSION=${{ env.API_VERSION }}" >> /tmp/env_vars
+
+          # Run setup script
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./setup_docker.sh
+
+          # Clean up
+          rm -f /tmp/env_vars
 
     - name: Configure Backup Coordination
       run: |
@@ -406,7 +445,7 @@ jobs:
 
         # Add weekly cleanup to cron
         (crontab -l 2>/dev/null; echo "0 0 * * 0 /opt/thebarcodeapi/cleanup.sh") | crontab -
-          
+
     - name: Fix Permissions
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi/data
