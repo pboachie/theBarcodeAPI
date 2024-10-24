@@ -48,8 +48,8 @@ jobs:
         echo "Starting frontend deployment..."
 
         # Create directories
-        mkdir -p /opt/thebarcodeapi/$ENVIRONMENT/releases
-        NEW_RELEASE="/opt/thebarcodeapi/$ENVIRONMENT/releases/release-$(date +%Y%m%d%H%M%S)"
+        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases
+        NEW_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/release-$(date +%Y%m%d%H%M%S)"
         echo "Creating new release directory: $NEW_RELEASE"
         mkdir -p "$NEW_RELEASE"
 
@@ -71,21 +71,21 @@ jobs:
 
         # Update symlink
         echo "Creating symlink to new release"
-        ln -sfn "$NEW_RELEASE" /opt/thebarcodeapi/$ENVIRONMENT/current
+        ln -sfn "$NEW_RELEASE" /opt/thebarcodeapi/${ENVIRONMENT}/current
 
         # Clean up old releases (keep last 5)
         echo "Cleaning up old releases"
-        cd /opt/thebarcodeapi/$ENVIRONMENT/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
+        cd /opt/thebarcodeapi/${ENVIRONMENT}/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
 
         echo "Starting/Restarting PM2 process with version $VERSION"
-        if pm2 list | grep -q "thebarcodeapi-frontend-$ENVIRONMENT"; then
-          pm2 reload "thebarcodeapi-frontend-$ENVIRONMENT" --update-env
+        if pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
+          pm2 reload "thebarcodeapi-frontend-${ENVIRONMENT}" --update-env
         else
-          pm2 start npm --name "thebarcodeapi-frontend-$ENVIRONMENT" -- start
+          pm2 start npm --name "thebarcodeapi-frontend-${ENVIRONMENT}" -- start
         fi
 
         # Update the process with the version
-        pm2 set "thebarcodeapi-frontend-$ENVIRONMENT:APP_VERSION" $VERSION
+        pm2 set "thebarcodeapi-frontend-${ENVIRONMENT}:APP_VERSION" $VERSION
 
         # Save the new PM2 process list
         pm2 save
@@ -114,10 +114,10 @@ jobs:
 
         echo "Verifying frontend deployment..."
         echo "Checking current symlink:"
-        ls -la /opt/thebarcodeapi/$ENVIRONMENT/current
+        ls -la /opt/thebarcodeapi/${ENVIRONMENT}/current
 
         echo "Checking Next.js application status:"
-        pm2 list | grep thebarcodeapi-frontend-$ENVIRONMENT
+        pm2 list | grep thebarcodeapi-frontend-${ENVIRONMENT}
 
         echo "Testing frontend health..."
         curl -I http://localhost:3000 || echo "Frontend not responding"
