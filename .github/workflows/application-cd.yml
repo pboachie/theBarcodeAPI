@@ -11,11 +11,14 @@ env:
   DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
   ENVIRONMENT: ${{ vars.ENVIRONMENT }}
   SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+  API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
+  API_MASTER_KEY: ${{ secrets.API_MASTER_KEY }}
 
 jobs:
-  application-cd-job:
+  frontend-deployment:
     runs-on: self-hosted
-
     steps:
     - uses: actions/checkout@v3
 
@@ -23,10 +26,10 @@ jobs:
       uses: actions/setup-node@v3
       with:
         node-version: '20.x'
+        cache: 'npm'
 
     - name: Install dependencies
-      run:  |
-        npm ci
+      run: npm ci
 
     - name: Run linter
       run: npm run lint
@@ -34,16 +37,15 @@ jobs:
     - name: Build
       run: npm run build
 
-    - name: Create deployment script
+    - name: Create frontend deployment script
       run: |
-        cat << 'EOF' > deploy.sh
+        cat << 'EOF' > deploy_frontend.sh
         #!/bin/bash
         set -e
 
-        # Read environment variables from file
-        source /tmp/nginx_env_vars
+        source /tmp/env_vars
 
-        echo "Starting deployment..."
+        echo "Starting frontend deployment..."
 
         # Create directories
         mkdir -p /opt/thebarcodeapi/$ENVIRONMENT/releases
@@ -71,93 +73,298 @@ jobs:
         echo "Creating symlink to new release"
         ln -sfn "$NEW_RELEASE" /opt/thebarcodeapi/$ENVIRONMENT/current
 
-        # Clean up old releases
+        # Clean up old releases (keep last 5)
         echo "Cleaning up old releases"
         cd /opt/thebarcodeapi/$ENVIRONMENT/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
 
         echo "Starting/Restarting PM2 process with version $VERSION"
-        if pm2 list | grep -q "thebarcodeapi-$ENVIRONMENT"; then
-          pm2 reload "thebarcodeapi-$ENVIRONMENT" --update-env
+        if pm2 list | grep -q "thebarcodeapi-frontend-$ENVIRONMENT"; then
+          pm2 reload "thebarcodeapi-frontend-$ENVIRONMENT" --update-env
         else
-          pm2 start npm --name "thebarcodeapi-$ENVIRONMENT" -- start
+          pm2 start npm --name "thebarcodeapi-frontend-$ENVIRONMENT" -- start
         fi
 
         # Update the process with the version
-        pm2 set "thebarcodeapi-$ENVIRONMENT:APP_VERSION" $VERSION
+        pm2 set "thebarcodeapi-frontend-$ENVIRONMENT:APP_VERSION" $VERSION
 
         # Save the new PM2 process list
         pm2 save
-
-        echo "PM2 process started/restarted with version $VERSION"
-
-        # Reload Nginx
-        # echo "Reloading nginx"
-        # systemctl reload nginx
 
         # Set permissions
         echo "Changing ownership of /opt/thebarcodeapi"
         chown -R www-data:www-data /opt/thebarcodeapi
 
-        # Clean up
-        rm /tmp/nginx_env_vars
-
-        echo "Deployment completed"
+        echo "Frontend deployment completed"
         EOF
-        chmod +x deploy.sh
+        chmod +x deploy_frontend.sh
 
-    - name: Deploy
+    - name: Deploy Frontend
       run: |
-        # Create a temporary file with environment variables
-        echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/nginx_env_vars
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_frontend.sh
+        rm -f /tmp/env_vars
 
-        # Run deployment script
-        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./deploy.sh
-
-        # Clean up (in case the script didn't run to completion)
-        rm -f /tmp/nginx_env_vars
-
-    - name: Create verification script
+    - name: Verify Frontend Deployment
       run: |
-        cat << 'EOF' > verify_deployment.sh
+        cat << 'EOF' > verify_frontend.sh
         #!/bin/bash
         set -e
 
-        # Read environment variables from file
-        source /tmp/nginx_env_vars
+        source /tmp/env_vars
 
-        echo "Verifying deployment..."
-        echo "Checking /opt/thebarcodeapi/$ENVIRONMENT/current:"
+        echo "Verifying frontend deployment..."
+        echo "Checking current symlink:"
         ls -la /opt/thebarcodeapi/$ENVIRONMENT/current
 
         echo "Checking Next.js application status:"
-        pm2 list | grep thebarcodeapi-$ENVIRONMENT
+        pm2 list | grep thebarcodeapi-frontend-$ENVIRONMENT
 
-        # echo "Checking Nginx status:"
-        # systemctl status nginx
+        echo "Testing frontend health..."
+        curl -I http://localhost:3000 || echo "Frontend not responding"
 
-        # Clean up
-        rm /tmp/nginx_env_vars
-
-        echo "Verification completed"
+        echo "Frontend verification completed"
         EOF
-        chmod +x verify_deployment.sh
+        chmod +x verify_frontend.sh
 
-    - name: Verify Deployment
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_frontend.sh
+        rm -f /tmp/env_vars
+
+  backend-deployment:
+    runs-on: self-hosted
+    needs: frontend-deployment
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Create backend deployment script
       run: |
-        # Create a temporary file with environment variables
-        echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/nginx_env_vars
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
+        cat << 'EOF' > deploy_backend.sh
+        #!/bin/bash
+        set -e
 
-        # Run verification script
-        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./verify_deployment.sh
+        source /tmp/env_vars
 
-        # Clean up (in case the script didn't run to completion)
-        rm -f /tmp/nginx_env_vars
+        echo "Starting backend deployment..."
+
+        # Navigate to backend directory
+        cd /opt/thebarcodeapi/barcodeAPI
+
+        # Create backup directory if it doesn't exist
+        BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
+        mkdir -p $BACKUP_DIR
+
+        # Backup current data if containers exist
+        if docker compose ps | grep -q "db"; then
+          echo "Backing up PostgreSQL data..."
+          docker compose exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
+        fi
+
+        if docker compose ps | grep -q "redis"; then
+          echo "Backing up Redis data..."
+          docker compose exec -T redis redis-cli SAVE
+          docker compose cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
+        fi
+
+        # Copy current backend files
+        echo "Copying backend files..."
+        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
+
+        # Store current container states
+        OLD_CONTAINERS=$(docker compose ps -q)
+
+        # Stop current containers
+        echo "Stopping current containers..."
+        docker compose down || true
+
+        # Copy existing data volumes to temporary location if they exist
+        if [ -d "/opt/thebarcodeapi/data/postgres" ]; then
+          echo "Preserving PostgreSQL data..."
+          cp -R /opt/thebarcodeapi/data/postgres "$BACKUP_DIR/postgres_data"
+        fi
+
+        if [ -d "/opt/thebarcodeapi/data/redis" ]; then
+          echo "Preserving Redis data..."
+          cp -R /opt/thebarcodeapi/data/redis "$BACKUP_DIR/redis_data"
+        fi
+
+        # Build and start new containers
+        echo "Building and starting containers..."
+        docker compose build
+        docker compose up -d
+
+        # Wait for health checks
+        echo "Waiting for services to be healthy..."
+        TIMEOUT=300
+        HEALTHY=false
+
+        for i in $(seq 1 $TIMEOUT); do
+          if docker compose ps | grep "healthy" | wc -l | grep -q "3"; then
+            HEALTHY=true
+            break
+          fi
+          sleep 1
+        done
+
+        if [ "$HEALTHY" = false ]; then
+          echo "Services failed to become healthy within timeout. Rolling back..."
+
+          # Stop new containers
+          docker compose down
+
+          # Restore data from backup
+          if [ -d "$BACKUP_DIR/postgres_data" ]; then
+            rm -rf /opt/thebarcodeapi/data/postgres
+            cp -R "$BACKUP_DIR/postgres_data" /opt/thebarcodeapi/data/postgres
+          fi
+
+          if [ -d "$BACKUP_DIR/redis_data" ]; then
+            rm -rf /opt/thebarcodeapi/data/redis
+            cp -R "$BACKUP_DIR/redis_data" /opt/thebarcodeapi/data/redis
+          fi
+
+          # Start old containers
+          if [ ! -z "$OLD_CONTAINERS" ]; then
+            docker compose up -d
+          fi
+
+          exit 1
+        fi
+
+        # Verify database connectivity and restore data if needed
+        echo "Verifying database connectivity..."
+        if ! docker compose exec -T db pg_isready -U barcodeboachiefamily -d barcode_api; then
+          echo "Database connectivity failed. Restoring from backup..."
+          if [ -f "$BACKUP_DIR/postgres_backup.sql" ]; then
+            docker compose exec -T db psql -U postgres < "$BACKUP_DIR/postgres_backup.sql"
+          fi
+        fi
+
+        # Verify Redis connectivity and restore data if needed
+        echo "Verifying Redis connectivity..."
+        if ! docker compose exec -T redis redis-cli ping | grep -q "PONG"; then
+          echo "Redis connectivity failed. Restoring from backup..."
+          if [ -f "$BACKUP_DIR/redis_dump.rdb" ]; then
+            docker compose stop redis
+            docker compose cp "$BACKUP_DIR/redis_dump.rdb" redis:/data/dump.rdb
+            docker compose start redis
+          fi
+        fi
+
+        # Verify deployment
+        echo "Verifying deployment..."
+        if ! curl -f http://localhost:8000/health; then
+          echo "Health check failed. Rolling back..."
+          docker compose down
+
+          # Restore data from backup
+          if [ -d "$BACKUP_DIR/postgres_data" ]; then
+            rm -rf /opt/thebarcodeapi/data/postgres
+            cp -R "$BACKUP_DIR/postgres_data" /opt/thebarcodeapi/data/postgres
+          fi
+
+          if [ -d "$BACKUP_DIR/redis_data" ]; then
+            rm -rf /opt/thebarcodeapi/data/redis
+            cp -R "$BACKUP_DIR/redis_data" /opt/thebarcodeapi/data/redis
+          fi
+
+          # Start old containers
+          if [ ! -z "$OLD_CONTAINERS" ]; then
+            docker compose up -d
+          fi
+
+          exit 1
+        fi
+
+        # Clean up old backups (keep last 5)
+        find /opt/thebarcodeapi/backups -maxdepth 1 -type d -name "20*" | sort -r | tail -n +6 | xargs rm -rf
+
+        echo "Backend deployment completed successfully"
+        EOF
+        chmod +x deploy_backend.sh
+
+    - name: Deploy Backend
+      run: |
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
+        echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
+        echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
+        echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
+
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_backend.sh
+        rm -f /tmp/env_vars
+
+    - name: Verify Backend Deployment
+      run: |
+        cat << 'EOF' > verify_backend.sh
+        #!/bin/bash
+        set -e
+
+        echo "Verifying backend deployment..."
+
+        echo "Checking Docker containers status:"
+        docker compose ps
+
+        echo "Checking container logs (last 10 lines):"
+        docker compose logs --tail=10
+
+        echo "Testing backend health:"
+        curl -f http://localhost:8000/health || echo "Backend not responding"
+
+        echo "Backend verification completed"
+        EOF
+        chmod +x verify_backend.sh
+
+        cd /opt/thebarcodeapi/barcodeAPI
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_backend.sh
+
+    - name: Clean up
+      run: |
+        rm -f deploy_backend.sh verify_backend.sh
+        docker system prune -f
+
+  final-verification:
+    runs-on: self-hosted
+    needs: [frontend-deployment, backend-deployment]
+    steps:
+    - name: Verify Full Deployment
+      run: |
+        cat << 'EOF' > verify_full_deployment.sh
+        #!/bin/bash
+        set -e
+
+        echo "Performing full deployment verification..."
+
+        echo "Checking frontend (Next.js):"
+        curl -I http://localhost:3000 || echo "Frontend not responding"
+
+        echo "Checking backend (API):"
+        curl -I http://localhost:8000/health || echo "Backend not responding"
+
+        echo "Checking PM2 processes:"
+        pm2 list
+
+        echo "Checking Docker containers:"
+        docker compose -f /opt/thebarcodeapi/barcodeAPI/docker-compose.yml ps
+
+        echo "Verifying Nginx configuration:"
+        nginx -t
+
+        echo "Full deployment verification completed"
+        EOF
+        chmod +x verify_full_deployment.sh
+
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_full_deployment.sh
 
     - name: Clean up build artifacts
+      if: always()
       run: |
         rm -rf .next
         rm -rf build
-        rm package.json
-        rm package-lock.json
+        rm -f package.json package-lock.json
+        rm -f verify_full_deployment.sh
+
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "Deployment failed! Check logs for details."
+        exit 1

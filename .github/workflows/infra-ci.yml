@@ -9,6 +9,10 @@ env:
   DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
   ENVIRONMENT: ${{ vars.ENVIRONMENT }}
   SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+  API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
+  API_MASTER_KEY: ${{ secrets.API_MASTER_KEY }}
 
 jobs:
   infra-ci-job:
@@ -41,240 +45,412 @@ jobs:
       run: echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./update_system.sh
       continue-on-error: true
 
-    - name: Create Nginx installation script
+    - name: Check and install dependencies
       run: |
-        echo "Creating Nginx installation script..."
-        cat << 'EOF' > install_nginx.sh
-        #!/bin/bash
-        set -e
-        echo "Installing Nginx..."
-        apt-get install -y nginx
-        echo "Nginx installation completed."
-        EOF
-        chmod +x install_nginx.sh
-
-    - name: Install Nginx
-      run: echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./install_nginx.sh
-
-    - name: Create Nginx configuration script
-      run: |
-        echo "Creating Nginx configuration script..."
-        cat << 'EOF' > nginx_config.sh
+        echo "Creating dependency installation script..."
+        cat << 'EOF' > install_dependencies.sh
         #!/bin/bash
         set -e
 
-        # Read environment variables from file
-        source /tmp/nginx_env_vars
+        # Function to check if a command exists
+        command_exists() {
+          command -v "$1" >/dev/null 2>&1
+        }
 
-        echo "Configuring Nginx for $DOMAIN_NAME in $ENVIRONMENT environment..."
+        # Install Nginx if not present
+        if ! command_exists nginx; then
+          echo "Installing Nginx..."
+          apt-get install -y nginx
+        else
+          echo "Nginx already installed"
+        fi
 
-        # Create Nginx configuration
-        # cat > /etc/nginx/sites-available/thebarcodeapi << EOL
-        # server {
-        #     listen 80;
-        #     listen [::]:80;
-        #     server_name $DOMAIN_NAME www.$DOMAIN_NAME 192.168.1.112;
-        #     server_tokens off;
+        # Install Node.js if not present
+        if ! command_exists node; then
+          echo "Installing Node.js 20.x..."
+          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          apt-get install -y nodejs
+        else
+          echo "Node.js already installed"
+        fi
 
-        #     location / {
-        #         proxy_pass http://localhost:3000;
-        #         proxy_http_version 1.1;
-        #         proxy_set_header Upgrade \$http_upgrade;
-        #         proxy_set_header Connection 'upgrade';
-        #         proxy_set_header Host \$host;
-        #         proxy_cache_bypass \$http_upgrade;
-        #     }
+        # Install PM2 if not present
+        if ! command_exists pm2; then
+          echo "Installing PM2..."
+          npm install -g pm2
+        else
+          echo "PM2 already installed"
+        fi
 
-        #     # Security headers
-        #     add_header X-Frame-Options "SAMEORIGIN" always;
-        #     add_header X-XSS-Protection "1; mode=block" always;
-        #     add_header X-Content-Type-Options "nosniff" always;
-        #     add_header Referrer-Policy "no-referrer-when-downgrade" always;
-        #     add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+        # Install Docker if not present
+        if ! command_exists docker; then
+          echo "Installing Docker..."
+          apt-get install -y ca-certificates curl gnupg
+          mkdir -p /etc/apt/keyrings
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+          apt-get update
+          apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 
-        #     # Logging
-        #     access_log /var/log/nginx/thebarcodeapi.access.log;
-        #     error_log /var/log/nginx/thebarcodeapi.error.log warn;
+          # Add github-runner to docker group
+          usermod -aG docker github-runner
 
-        #     # Optimize file serving
-        #     location ~* \.(jpg|jpeg|png|gif|ico|css|js)$ {
-        #         expires 1d;
-        #         add_header Cache-Control "public, no-transform";
-        #     }
-        # }
-        # EOL
+          # Start and enable Docker service
+          systemctl start docker
+          systemctl enable docker
+        else
+          echo "Docker already installed"
+        fi
 
-        echo "Created Nginx configuration file."
-
-        # Create symlink to sites-enabled
-        ln -sf /etc/nginx/sites-available/thebarcodeapi /etc/nginx/sites-enabled/
-        echo "Created symlink in sites-enabled."
-
-        # Test Nginx configuration
-        nginx -t
-        echo "Nginx configuration test passed."
-
-        # Reload Nginx
-        # systemctl reload nginx
-        # echo "Nginx reloaded successfully."
-
-        echo "Nginx configuration completed."
-
-        # Clean up
-        rm /tmp/nginx_env_vars
+        # Verify installations
+        echo "Verifying installations..."
+        nginx -v
+        node -v
+        pm2 --version
+        docker --version
+        docker compose version
         EOF
-        chmod +x nginx_config.sh
+        chmod +x install_dependencies.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./install_dependencies.sh
 
     - name: Configure Nginx
       run: |
-        echo "Preparing to run Nginx configuration script..."
-        # Create a temporary file with environment variables
-        echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/nginx_env_vars
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/nginx_env_vars
-
-        echo "Running Nginx configuration script..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./nginx_config.sh
-
-        # Clean up (in case the script didn't run to completion)
-        rm -f /tmp/nginx_env_vars
-
-    - name: Create Node.js installation script
-      run: |
-        echo "Creating Node.js installation script..."
-        cat << 'EOF' > install_nodejs.sh
-        #!/bin/bash
-        set -e
-
-        echo "Installing Node.js 20.x..."
-        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-        apt-get install -y nodejs
-
-        echo "Node.js installation completed."
-
-        echo "Installing PM2..."
-        npm install -g pm2
-
-        echo "PM2 installation completed."
-        EOF
-        chmod +x install_nodejs.sh
-
-    - name: Install Node.js and PM2
-      run: echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./install_nodejs.sh
-
-    - name: Create PM2 setup script
-      run: |
-        echo "Creating PM2 setup script..."
-        cat << 'EOF' > setup_pm2.sh
+        echo "Creating Nginx configuration script..."
+        cat << 'EOF' > configure_nginx.sh
         #!/bin/bash
         set -e
 
         # Read environment variables from file
-        source /tmp/nginx_env_vars
+        source /tmp/env_vars
 
-        echo "Setting up PM2 for $ENVIRONMENT environment..."
+        # Configure Nginx
+        echo "Configuring Nginx..."
+        cat > /etc/nginx/sites-available/thebarcodeapi << EOL
+        server {
+            listen 80;
+            listen [::]:80;
+            server_name 192.168.1.112;
+            server_tokens off;
 
-        # Create PM2 ecosystem file
-        cat > /opt/thebarcodeapi/$ENVIRONMENT/ecosystem.config.js << EOL
+            # Frontend Next.js application
+            location / {
+                proxy_pass http://localhost:3000;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade \$http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host \$host;
+                proxy_cache_bypass \$http_upgrade;
+            }
+
+            # Backend API
+            location /api {
+                proxy_pass http://localhost:8000;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade \$http_upgrade;
+                proxy_set_header Connection 'upgrade';
+                proxy_set_header Host \$host;
+                proxy_cache_bypass \$http_upgrade;
+            }
+
+            # Security headers
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-XSS-Protection "1; mode=block" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header Referrer-Policy "no-referrer-when-downgrade" always;
+            add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+
+            # Logging
+            access_log /var/log/nginx/thebarcodeapi.access.log;
+            error_log /var/log/nginx/thebarcodeapi.error.log warn;
+        }
+        EOL
+
+        ln -sf /etc/nginx/sites-available/thebarcodeapi /etc/nginx/sites-enabled/
+        nginx -t
+        EOF
+        chmod +x configure_nginx.sh
+
+        # Create environment variables file
+        echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/env_vars
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/env_vars
+
+        # Run configuration script
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_nginx.sh
+
+        # Clean up
+        rm -f /tmp/env_vars
+
+    - name: Configure PM2 for Frontend
+      run: |
+        echo "Creating PM2 configuration script..."
+        cat << 'EOF' > configure_pm2.sh
+        #!/bin/bash
+        set -e
+
+        # Read environment variables from file
+        source /tmp/env_vars
+
+        # Configure PM2
+        echo "Configuring PM2..."
+        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}
+        cat > /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js << EOL
         module.exports = {
-          apps : [{
-            name: 'thebarcodeapi-$ENVIRONMENT',
+          apps: [{
+            name: 'thebarcodeapi-frontend-${ENVIRONMENT}',
             script: 'npm',
             args: 'start',
-            cwd: '/opt/thebarcodeapi/$ENVIRONMENT/current',
+            cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
             instances: 'max',
             autorestart: true,
             watch: false,
-            post_update: ["npm install"],
-            max_memory_restart: '5G',
+            max_memory_restart: '1G',
             env: {
               NODE_ENV: 'production',
-              ENVIRONMENT: '$ENVIRONMENT'
-            },
-            pmx_module: {
-              script: "./pm2-version.js"
+              ENVIRONMENT: '${ENVIRONMENT}'
             }
-
           }]
         };
         EOL
 
-        echo "PM2 ecosystem file created."
-
-        # Start the application with PM2
-        pm2 start /opt/thebarcodeapi/$ENVIRONMENT/ecosystem.config.js
-
-        # Save the PM2 process list and environment
-        pm2 save
-
-        # Generate startup script
-        pm2 startup systemd -u github-runner --hp /home/github-runner
-
-        echo "PM2 setup completed for $ENVIRONMENT environment."
+        # Set permissions
+        chown -R www-data:www-data /opt/thebarcodeapi
+        chmod -R 755 /opt/thebarcodeapi
         EOF
-        chmod +x setup_pm2.sh
+        chmod +x configure_pm2.sh
 
-    - name: Setup PM2
-      run: |
-        # Create a temporary file with environment variables
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/nginx_env_vars
+        # Create environment variables file
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
 
-        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./setup_pm2.sh
+        # Run configuration script
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_pm2.sh
 
         # Clean up
-        rm -f /tmp/nginx_env_vars
+        rm -f /tmp/env_vars
 
-    - name: Create verification script
+    - name: Configure Backend Docker Environment
       run: |
-        echo "Creating verification script..."
-        cat << 'EOF' > verify_installation.sh
+        echo "Creating Docker environment setup script..."
+        cat << 'EOF' > setup_docker.sh
         #!/bin/bash
         set -e
 
-        echo "Verifying installations..."
-        echo "Nginx version:"
-        nginx -v
-        echo "Node.js version:"
-        node -v
-        echo "npm version:"
-        npm -v
-        echo "PM2 version:"
-        pm2 --version
+        # Read environment variables from file
+        source /tmp/env_vars
 
-        echo "Checking Nginx configuration..."
-        nginx -t
-        #echo "Checking Nginx status..."
-        #systemctl status nginx
+        # Create necessary directories
+        mkdir -p /opt/thebarcodeapi/barcodeAPI
+        mkdir -p /opt/thebarcodeapi/data/postgres
+        mkdir -p /opt/thebarcodeapi/data/redis
+        mkdir -p /opt/thebarcodeapi/backups
 
-        echo "Checking PM2 status..."
-        pm2 list | grep thebarcodeapi-$ENVIRONMENT
+        # Create .env file from template
+        cat > /opt/thebarcodeapi/barcodeAPI/.env << EOL
+        API_VERSION=0.1.1
+        SECRET_KEY=${API_SECRET_KEY}
+        MASTER_API_KEY=${API_MASTER_KEY}
+        ALGORITHM=HS256
+        ACCESS_TOKEN_EXPIRE_MINUTES=30
+        REDIS_URL=redis://redis:6379
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api
+        EOL
 
-        echo "Verification completed."
+        # Create docker-compose.yml
+        cat > /opt/thebarcodeapi/barcodeAPI/docker-compose.yml << EOL
+        version: '3.8'
+
+        services:
+          api:
+            build: .
+            ports:
+              - "8000:8000"
+            depends_on:
+              db:
+                condition: service_healthy
+              redis:
+                condition: service_healthy
+            env_file:
+              - .env
+            volumes:
+              - ./app:/app/app
+              - ./alembic:/app/alembic
+            healthcheck:
+              test: ["CMD", "curl", "-f", "http://localhost:8000/health || exit 1"]
+              interval: 15s
+              timeout: 10s
+              retries: 3
+              start_period: 30s
+
+            restart: unless-stopped
+            logging:
+              driver: "json-file"
+              options:
+                max-size: "10m"
+                max-file: "3"
+
+          redis:
+            image: redislabs/rejson:latest
+            ports:
+              - "6379:6379"
+            volumes:
+              - /opt/thebarcodeapi/data/redis:/data
+            healthcheck:
+              test: ["CMD", "redis-cli", "ping"]
+              interval: 5s
+              timeout: 30s
+              retries: 50
+            restart: unless-stopped
+
+          db:
+            image: postgres:13
+            volumes:
+              - /opt/thebarcodeapi/data/postgres:/var/lib/postgresql/data
+              - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+            environment:
+              - POSTGRES_USER=postgres
+              - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+              - BARCODE_DB_USER=barcodeboachiefamily
+              - BARCODE_DB_PASSWORD=${DB_PASSWORD}
+              - BARCODE_DB_NAME=barcode_api
+            healthcheck:
+              test: ["CMD-SHELL", "pg_isready -U barcodeboachiefamily -d barcode_api"]
+              interval: 5s
+              timeout: 5s
+              retries: 5
+            restart: unless-stopped
+            logging:
+              driver: "json-file"
+              options:
+                max-size: "10m"
+                max-file: "3"
+
+        networks:
+          default:
+            name: barcodeapi_network
+        EOL
+
+        # Create backup script
+        cat > /opt/thebarcodeapi/barcodeAPI/backup.sh << EOL
+        #!/bin/bash
+        TIMESTAMP=\$(date +%Y%m%d_%H%M%S)
+        BACKUP_DIR="/opt/thebarcodeapi/backups"
+
+        # Backup PostgreSQL
+        docker compose exec db pg_dump -U barcodeboachiefamily barcode_api > "\$BACKUP_DIR/db_backup_\$TIMESTAMP.sql"
+
+        # Backup Redis
+        docker compose exec redis redis-cli SAVE
+        cp /opt/thebarcodeapi/data/redis/dump.rdb "\$BACKUP_DIR/redis_backup_\$TIMESTAMP.rdb"
+
+        # Clean old backups (keep last 7 days)
+        find \$BACKUP_DIR -name "db_backup_*" -mtime +7 -delete
+        find \$BACKUP_DIR -name "redis_backup_*" -mtime +7 -delete
+        EOL
+        chmod +x /opt/thebarcodeapi/barcodeAPI/backup.sh
+
+        # Set up cron job for backups
+        (crontab -l 2>/dev/null; echo "0 0 * * * /opt/thebarcodeapi/barcodeAPI/backup.sh") | crontab -
+
+        # Set permissions
+        chown -R www-data:www-data /opt/thebarcodeapi
+        chmod -R 755 /opt/thebarcodeapi/barcodeAPI
         EOF
-        chmod +x verify_installation.sh
+        chmod +x setup_docker.sh
 
-    - name: Verify Installation
-      run: |
-        # Create a temporary file with environment variables
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/nginx_env_vars
+        # Create environment variables file
+        echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" > /tmp/env_vars
+        echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
+        echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
+        echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
 
-        echo ${{ env.SUDO_PASSWORD }} | sudo -S ./verify_installation.sh
+        # Run setup script
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./setup_docker.sh
 
         # Clean up
-        rm -f /tmp/nginx_env_vars
+        rm -f /tmp/env_vars
 
-    - name: Stop and disable Nginx
+    - name: Configure Backup Coordination
       run: |
-        #echo "Stopping Nginx..."
-        #systemctl stop nginx
-        echo "Disabling Nginx..."
-        echo ${{ env.SUDO_PASSWORD }} | sudo -S systemctl disable nginx
+        cat << 'EOF' > /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+        #!/bin/bash
 
-    - name: Clean up and remove scripts
+        # Check if deployment is in progress
+        if [ -f "/opt/thebarcodeapi/deployment.lock" ]; then
+          echo "Deployment in progress, skipping backup"
+          exit 0
+        fi
+
+        # Proceed with backup
+        /opt/thebarcodeapi/barcodeAPI/backup.sh
+        EOF
+        chmod +x /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+
+        # Update cron job to use pre-backup check
+        (crontab -l 2>/dev/null | grep -v "backup.sh") | crontab -
+        (crontab -l 2>/dev/null; echo "0 0 * * * /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh") | crontab -
+
+    - name: Add Cleanup Routine
+      run: |
+        cat << 'EOF' > /opt/thebarcodeapi/cleanup.sh
+        #!/bin/bash
+
+        # Clean old frontend releases
+        find /opt/thebarcodeapi/${ENVIRONMENT}/releases -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
+
+        # Clean old backups (keep last 30 days)
+        find /opt/thebarcodeapi/backups -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
+
+        # Clean Docker
+        docker system prune -f --filter "until=168h"
+        EOF
+        chmod +x /opt/thebarcodeapi/cleanup.sh
+
+        # Add weekly cleanup to cron
+        (crontab -l 2>/dev/null; echo "0 0 * * 0 /opt/thebarcodeapi/cleanup.sh") | crontab -
+          
+    - name: Fix Permissions
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi/data
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/data
+
+    - name: Verify setup
+      run: |
+        echo "Creating verification script..."
+        cat << 'EOF' > verify_setup.sh
+        #!/bin/bash
+        set -e
+
+        echo "Verifying installations and configurations..."
+
+        # Check installed services
+        echo "Checking service versions..."
+        nginx -v
+        node -v
+        pm2 --version
+        docker --version
+        docker compose version
+
+        # Check configurations
+        echo "Checking Nginx configuration..."
+        nginx -t
+
+        echo "Checking directory structure..."
+        ls -la /opt/thebarcodeapi/barcodeAPI
+        ls -la /opt/thebarcodeapi/${ENVIRONMENT}
+
+        echo "Checking Docker network..."
+        docker network ls | grep barcodeapi_network || echo "Network not yet created"
+
+        echo "Verification completed"
+        EOF
+        chmod +x verify_setup.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_setup.sh
+
+    - name: Clean up scripts
       run: |
         echo "Cleaning up..."
-        echo ${{ env.SUDO_PASSWORD }} | sudo -S rm -f update_system.sh install_nginx.sh nginx_config.sh install_nodejs.sh setup_pm2.sh verify_installation.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f update_system.sh install_dependencies.sh configure_nginx.sh configure_pm2.sh setup_docker.sh verify_setup.sh
 
-    - name: Print Environment Info
+    - name: Print Environment Info (for debugging)
       run: |
         echo "Deployed to ${{ env.ENVIRONMENT }} environment"
         echo "Domain: ${{ env.DOMAIN_NAME }}"
