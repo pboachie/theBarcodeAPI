@@ -171,8 +171,8 @@ jobs:
         echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
         echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
 
-        if docker compose version &> /dev/null; then
-          echo "DOCKER_COMPOSE='docker compose'" > /tmp/docker_vars
+        if $DOCKER_COMPOSE version &> /dev/null; then
+          echo "DOCKER_COMPOSE='$DOCKER_COMPOSE'" > /tmp/docker_vars
         else
           echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
         fi
@@ -190,7 +190,7 @@ jobs:
         source /tmp/docker_vars
 
         echo "Starting backend deployment..."
-        echo "Using Docker Compose command: $DOCKER_COMPOSE"
+        echo "Using $DOCKER_COMPOSE command: $DOCKER_COMPOSE"
 
         # Navigate to backend directory
         cd /opt/thebarcodeapi/barcodeAPI
@@ -199,16 +199,16 @@ jobs:
         BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
         sudo mkdir -p $BACKUP_DIR
 
-        # Use $DOCKER_COMPOSE instead of direct docker compose commands
+        # Use $DOCKER_COMPOSE instead of direct $DOCKER_COMPOSE commands
         if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
           echo "Backing up PostgreSQL data..."
           $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
         fi
 
-        if docker compose ps | grep -q "redis"; then
+        if $DOCKER_COMPOSE ps | grep -q "redis"; then
           echo "Backing up Redis data..."
-          docker compose exec -T redis redis-cli SAVE
-          docker compose cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
+          $DOCKER_COMPOSE exec -T redis redis-cli SAVE
+          $DOCKER_COMPOSE cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
         fi
 
         # Copy current backend files
@@ -216,11 +216,11 @@ jobs:
         cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
 
         # Store current container states
-        OLD_CONTAINERS=$(docker compose ps -q)
+        OLD_CONTAINERS=$($DOCKER_COMPOSE ps -q)
 
         # Stop current containers
         echo "Stopping current containers..."
-        docker compose down || true
+        $DOCKER_COMPOSE down || true
 
         # Copy existing data volumes to temporary location if they exist
         if [ -d "/opt/thebarcodeapi/data/postgres" ]; then
@@ -235,8 +235,8 @@ jobs:
 
         # Build and start new containers
         echo "Building and starting containers..."
-        docker compose build
-        docker compose up -d
+        $DOCKER_COMPOSE build
+        $DOCKER_COMPOSE up -d
 
         # Wait for health checks
         echo "Waiting for services to be healthy..."
@@ -244,7 +244,7 @@ jobs:
         HEALTHY=false
 
         for i in $(seq 1 $TIMEOUT); do
-          if docker compose ps | grep "healthy" | wc -l | grep -q "3"; then
+          if $DOCKER_COMPOSE ps | grep "healthy" | wc -l | grep -q "3"; then
             HEALTHY=true
             break
           fi
@@ -255,7 +255,7 @@ jobs:
           echo "Services failed to become healthy within timeout. Rolling back..."
 
           # Stop new containers
-          docker compose down
+          $DOCKER_COMPOSE down
 
           # Restore data from backup
           if [ -d "$BACKUP_DIR/postgres_data" ]; then
@@ -270,7 +270,7 @@ jobs:
 
           # Start old containers
           if [ ! -z "$OLD_CONTAINERS" ]; then
-            docker compose up -d
+            $DOCKER_COMPOSE up -d
           fi
 
           exit 1
@@ -278,21 +278,21 @@ jobs:
 
         # Verify database connectivity and restore data if needed
         echo "Verifying database connectivity..."
-        if ! docker compose exec -T db pg_isready -U barcodeboachiefamily -d barcode_api; then
+        if ! $DOCKER_COMPOSE exec -T db pg_isready -U barcodeboachiefamily -d barcode_api; then
           echo "Database connectivity failed. Restoring from backup..."
           if [ -f "$BACKUP_DIR/postgres_backup.sql" ]; then
-            docker compose exec -T db psql -U postgres < "$BACKUP_DIR/postgres_backup.sql"
+            $DOCKER_COMPOSE exec -T db psql -U postgres < "$BACKUP_DIR/postgres_backup.sql"
           fi
         fi
 
         # Verify Redis connectivity and restore data if needed
         echo "Verifying Redis connectivity..."
-        if ! docker compose exec -T redis redis-cli ping | grep -q "PONG"; then
+        if ! $DOCKER_COMPOSE exec -T redis redis-cli ping | grep -q "PONG"; then
           echo "Redis connectivity failed. Restoring from backup..."
           if [ -f "$BACKUP_DIR/redis_dump.rdb" ]; then
-            docker compose stop redis
-            docker compose cp "$BACKUP_DIR/redis_dump.rdb" redis:/data/dump.rdb
-            docker compose start redis
+            $DOCKER_COMPOSE stop redis
+            $DOCKER_COMPOSE cp "$BACKUP_DIR/redis_dump.rdb" redis:/data/dump.rdb
+            $DOCKER_COMPOSE start redis
           fi
         fi
 
@@ -300,7 +300,7 @@ jobs:
         echo "Verifying deployment..."
         if ! curl -f http://localhost:8000/health; then
           echo "Health check failed. Rolling back..."
-          docker compose down
+          $DOCKER_COMPOSE down
 
           # Restore data from backup
           if [ -d "$BACKUP_DIR/postgres_data" ]; then
@@ -315,7 +315,7 @@ jobs:
 
           # Start old containers
           if [ ! -z "$OLD_CONTAINERS" ]; then
-            docker compose up -d
+            $DOCKER_COMPOSE up -d
           fi
 
           exit 1
@@ -332,11 +332,11 @@ jobs:
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
 
-    - name: Setup Docker Compose
+    - name: Setup $DOCKER_COMPOSE
       run: |
-        # Check Docker Compose installation
-        if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
-          echo "Installing Docker Compose..."
+        # Check $DOCKER_COMPOSE installation
+        if ! command -v docker-compose &> /dev/null && ! $DOCKER_COMPOSE version &> /dev/null; then
+          echo "Installing $DOCKER_COMPOSE..."
           sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
           sudo chmod +x /usr/local/bin/docker-compose
           sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
@@ -349,9 +349,9 @@ jobs:
         echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
         echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
 
-        # Set Docker Compose command
-        if docker compose version &> /dev/null; then
-          echo "DOCKER_COMPOSE='docker compose'" > /tmp/docker_vars
+        # Set $DOCKER_COMPOSE command
+        if $DOCKER_COMPOSE version &> /dev/null; then
+          echo "DOCKER_COMPOSE='$DOCKER_COMPOSE'" > /tmp/docker_vars
         else
           echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
         fi
@@ -388,7 +388,7 @@ jobs:
         source /tmp/docker_vars
 
         echo "Starting backend deployment..."
-        echo "Using Docker Compose command: $DOCKER_COMPOSE"
+        echo "Using $DOCKER_COMPOSE command: $DOCKER_COMPOSE"
 
         # Navigate to backend directory
         cd /opt/thebarcodeapi/barcodeAPI
@@ -397,16 +397,16 @@ jobs:
         BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
         sudo mkdir -p $BACKUP_DIR
 
-        # Use $DOCKER_COMPOSE instead of direct docker compose commands
+        # Use $DOCKER_COMPOSE instead of direct $DOCKER_COMPOSE commands
         if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
           echo "Backing up PostgreSQL data..."
           $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
         fi
 
-        if docker compose ps | grep -q "redis"; then
+        if $DOCKER_COMPOSE ps | grep -q "redis"; then
           echo "Backing up Redis data..."
-          docker compose exec -T redis redis-cli SAVE
-          docker compose cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
+          $DOCKER_COMPOSE exec -T redis redis-cli SAVE
+          $DOCKER_COMPOSE cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
         fi
 
         # Copy current backend files
@@ -414,11 +414,11 @@ jobs:
         cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
 
         # Store current container states
-        OLD_CONTAINERS=$(docker compose ps -q)
+        OLD_CONTAINERS=$($DOCKER_COMPOSE ps -q)
 
         # Stop current containers
         echo "Stopping current containers..."
-        docker compose down || true
+        $DOCKER_COMPOSE down || true
 
         # Copy existing data volumes to temporary location if they exist
         if [ -d "/opt/thebarcodeapi/data/postgres" ]; then
@@ -433,8 +433,8 @@ jobs:
 
         # Build and start new containers
         echo "Building and starting containers..."
-        docker compose build
-        docker compose up -d
+        $DOCKER_COMPOSE build
+        $DOCKER_COMPOSE up -d
 
         # Wait for health checks
         echo "Waiting for services to be healthy..."
@@ -442,7 +442,7 @@ jobs:
         HEALTHY=false
 
         for i in $(seq 1 $TIMEOUT); do
-          if docker compose ps | grep "healthy" | wc -l | grep -q "3"; then
+          if $DOCKER_COMPOSE ps | grep "healthy" | wc -l | grep -q "3"; then
             HEALTHY=true
             break
           fi
@@ -453,7 +453,7 @@ jobs:
           echo "Services failed to become healthy within timeout. Rolling back..."
 
           # Stop new containers
-          docker compose down
+          $DOCKER_COMPOSE down
 
           # Restore data from backup
           if [ -d "$BACKUP_DIR/postgres_data" ]; then
@@ -468,7 +468,7 @@ jobs:
 
           # Start old containers
           if [ ! -z "$OLD_CONTAINERS" ]; then
-            docker compose up -d
+            $DOCKER_COMPOSE up -d
           fi
 
           exit 1
@@ -476,21 +476,21 @@ jobs:
 
         # Verify database connectivity and restore data if needed
         echo "Verifying database connectivity..."
-        if ! docker compose exec -T db pg_isready -U barcodeboachiefamily -d barcode_api; then
+        if ! $DOCKER_COMPOSE exec -T db pg_isready -U barcodeboachiefamily -d barcode_api; then
           echo "Database connectivity failed. Restoring from backup..."
           if [ -f "$BACKUP_DIR/postgres_backup.sql" ]; then
-            docker compose exec -T db psql -U postgres < "$BACKUP_DIR/postgres_backup.sql"
+            $DOCKER_COMPOSE exec -T db psql -U postgres < "$BACKUP_DIR/postgres_backup.sql"
           fi
         fi
 
         # Verify Redis connectivity and restore data if needed
         echo "Verifying Redis connectivity..."
-        if ! docker compose exec -T redis redis-cli ping | grep -q "PONG"; then
+        if ! $DOCKER_COMPOSE exec -T redis redis-cli ping | grep -q "PONG"; then
           echo "Redis connectivity failed. Restoring from backup..."
           if [ -f "$BACKUP_DIR/redis_dump.rdb" ]; then
-            docker compose stop redis
-            docker compose cp "$BACKUP_DIR/redis_dump.rdb" redis:/data/dump.rdb
-            docker compose start redis
+            $DOCKER_COMPOSE stop redis
+            $DOCKER_COMPOSE cp "$BACKUP_DIR/redis_dump.rdb" redis:/data/dump.rdb
+            $DOCKER_COMPOSE start redis
           fi
         fi
 
@@ -498,7 +498,7 @@ jobs:
         echo "Verifying deployment..."
         if ! curl -f http://localhost:8000/health; then
           echo "Health check failed. Rolling back..."
-          docker compose down
+          $DOCKER_COMPOSE down
 
           # Restore data from backup
           if [ -d "$BACKUP_DIR/postgres_data" ]; then
@@ -513,7 +513,7 @@ jobs:
 
           # Start old containers
           if [ ! -z "$OLD_CONTAINERS" ]; then
-            docker compose up -d
+            $DOCKER_COMPOSE up -d
           fi
 
           exit 1
@@ -567,7 +567,7 @@ jobs:
     - name: Run Database Migrations
       run: |
         cd /opt/thebarcodeapi/barcodeAPI
-        docker compose exec api alembic upgrade head
+        $DOCKER_COMPOSE exec api alembic upgrade head
 
     - name: Verify Backend Deployment
       run: |
@@ -578,10 +578,10 @@ jobs:
         echo "Verifying backend deployment..."
 
         echo "Checking Docker containers status:"
-        docker compose ps
+        $DOCKER_COMPOSE ps
 
         echo "Checking container logs (last 10 lines):"
-        docker compose logs --tail=10
+        $DOCKER_COMPOSE logs --tail=10
 
         echo "Testing backend health:"
         timeout 5 curl -f http://localhost:8000/health || echo "Backend not responding"
@@ -620,7 +620,7 @@ jobs:
         pm2 list
 
         echo "Checking Docker containers:"
-        docker compose -f /opt/thebarcodeapi/barcodeAPI/docker-compose.yml ps
+        $DOCKER_COMPOSE -f /opt/thebarcodeapi/barcodeAPI/docker-compose.yml ps
 
         echo "Verifying Nginx configuration:"
         nginx -t
