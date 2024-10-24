@@ -163,6 +163,20 @@ jobs:
           exec sg docker -c "docker ps"
         fi
 
+    - name: Create env vars and docker vars
+      run: |
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
+        echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
+        echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
+        echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
+
+        if docker compose version &> /dev/null; then
+          echo "DOCKER_COMPOSE='docker compose'" > /tmp/docker_vars
+        else
+          echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
+        fi
+
     - name: Create backend deployment script
       run: |
 
