@@ -154,11 +154,13 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/backups
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi
 
-    - name: Verify Working Directory
+    - name: Setup Docker permissions
       run: |
-        if [ ! -d "/opt/thebarcodeapi/barcodeAPI" ]; then
-          echo "Error: /opt/thebarcodeapi/barcodeAPI directory not found!"
-          exit 1
+        # Add runner to docker group if not already added
+        if ! groups | grep -q docker; then
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
+          # Create a subshell with new group
+          exec sg docker -c "docker ps"
         fi
 
     - name: Create backend deployment script
@@ -312,15 +314,6 @@ jobs:
         EOF
         chmod +x deploy_backend.sh
 
-    - name: Setup Docker permissions
-      run: |
-        # Add runner to docker group if not already added
-        if ! groups | grep -q docker; then
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
-          # Create a subshell with new group
-          exec sg docker -c "docker ps"
-        fi
-
     - name: Fix Docker permissions
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
@@ -349,24 +342,29 @@ jobs:
           echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
         fi
 
-        # Now create the deployment script
-        cat << 'EOF' > deploy_backend.sh
-        #!/bin/bash
-        set -e
+    - name: Copy Backend Files
+      run: |
+        # Copy backend files to the target directory
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./barcodeAPI/* /opt/thebarcodeapi/barcodeAPI/
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi/barcodeAPI
 
-        # Source environment files
-        source /tmp/env_vars || {
-          echo "Error: Failed to source env_vars"
+    - name: Verify Working Directory
+      run: |
+        if [ ! -d "/opt/thebarcodeapi/barcodeAPI" ]; then
+          echo "Error: /opt/thebarcodeapi/barcodeAPI directory not found!"
           exit 1
-        }
-        source /tmp/docker_vars || {
-          echo "Error: Failed to source docker_vars"
-          exit 1
-        }
+        fi
 
-        echo "Starting backend deployment..."
-        EOF
-        chmod +x deploy_backend.sh
+    - name: Create backend deployment script
+      run: |
+        # Source the environment files we created earlier
+        if [ ! -f "/tmp/env_vars" ] || [ ! -f "/tmp/docker_vars" ]; then
+          echo "Error: Required environment files are missing"
+          exit 1
+        fi
+
+        source /tmp/env_vars
+        source /tmp/docker_vars
 
     - name: Deploy Backend
       run: |
