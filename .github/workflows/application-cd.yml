@@ -171,6 +171,11 @@ jobs:
         # Backup current data if containers exist
         if docker compose ps | grep -q "db"; then
           echo "Backing up PostgreSQL data..."
+
+          if [ ! -s "$BACKUP_DIR/postgres_backup.sql" ]; then
+            echo "Warning: PostgreSQL backup appears to be empty"
+          fi
+
           docker compose exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
         fi
 
@@ -308,6 +313,11 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_backend.sh
         rm -f /tmp/env_vars
 
+    - name: Run Database Migrations
+      run: |
+        cd /opt/thebarcodeapi/barcodeAPI
+        docker compose exec api alembic upgrade head
+
     - name: Verify Backend Deployment
       run: |
         cat << 'EOF' > verify_backend.sh
@@ -323,7 +333,7 @@ jobs:
         docker compose logs --tail=10
 
         echo "Testing backend health:"
-        curl -f http://localhost:8000/health || echo "Backend not responding"
+        timeout 5 curl -f http://localhost:8000/health || echo "Backend not responding"
 
         echo "Backend verification completed"
         EOF
@@ -350,7 +360,7 @@ jobs:
         echo "Performing full deployment verification..."
 
         echo "Checking frontend (Next.js):"
-        curl -I http://localhost:3000 || echo "Frontend not responding"
+        timeout 5 curl -f http://localhost:3000 || echo "Frontend not responding"
 
         echo "Checking backend (API):"
         curl -I http://localhost:8000/health || echo "Backend not responding"
