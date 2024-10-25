@@ -24,7 +24,8 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
-
+        extra = "allow"
+        
     class RateLimit:
         unauthenticated: int = 10000
 
