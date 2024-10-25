@@ -203,7 +203,7 @@ jobs:
         # Function to safely backup PostgreSQL
         backup_postgres() {
             echo "Attempting PostgreSQL backup..."
-            if $DOCKER_COMPOSE ps | grep -q "db"; then
+            if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
                 # Check if container is running and healthy
                 if $DOCKER_COMPOSE exec db pg_isready -U postgres > /dev/null 2>&1; then
                     echo "PostgreSQL is ready, creating backup..."
@@ -215,39 +215,32 @@ jobs:
                     $DOCKER_COMPOSE exec -T db rm /tmp/backup.sql
                     echo "PostgreSQL backup completed successfully"
                     return 0
-                else
-                    echo "PostgreSQL is not ready, skipping backup"
-                    return 1
                 fi
-            else
-                echo "PostgreSQL container not found, skipping backup"
-                return 1
             fi
+            echo "No existing PostgreSQL container or not ready, skipping backup"
+            return 0  # Return success as this is expected for first deployment
         }
 
         # Function to safely backup Redis
         backup_redis() {
             echo "Attempting Redis backup..."
-            if $DOCKER_COMPOSE ps | grep -q "redis"; then
+            if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "redis"; then
                 if $DOCKER_COMPOSE exec -T redis redis-cli ping | grep -q "PONG"; then
                     echo "Redis is ready, creating backup..."
                     $DOCKER_COMPOSE exec -T redis redis-cli SAVE
                     $DOCKER_COMPOSE cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
                     echo "Redis backup completed successfully"
                     return 0
-                else
-                    echo "Redis is not ready, skipping backup"
-                    return 1
                 fi
-            else
-                echo "Redis container not found, skipping backup"
-                return 1
             fi
+            echo "No existing Redis container or not ready, skipping backup"
+            return 0  # Return success as this is expected for first deployment
         }
 
-        # Perform backups
-        backup_postgres || echo "Warning: PostgreSQL backup failed"
-        backup_redis || echo "Warning: Redis backup failed"
+        # Update the backup section to not fail if backups aren't possible
+        echo "Checking for existing containers to backup..."
+        backup_postgres || echo "Note: PostgreSQL backup skipped"
+        backup_redis || echo "Note: Redis backup skipped"
 
         # Store current container states
         OLD_CONTAINERS=$($DOCKER_COMPOSE ps -q)
@@ -395,15 +388,37 @@ jobs:
 
     - name: Deploy Backend
       run: |
+        cd /opt/thebarcodeapi/barcodeAPI
+
+        # Create the .env file first
+        echo "Creating .env file..."
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
+        DB_PASSWORD=${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
+        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        REDIS_URL=redis://redis:6379
+        ALGORITHM=HS256
+        ACCESS_TOKEN_EXPIRE_MINUTES=30
+        EOF'
+
+        # Set proper permissions
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data .env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 .env
+
+        # Check if env files exist
         if [ ! -f "/tmp/env_vars" ] || [ ! -f "/tmp/docker_vars" ]; then
           echo "Error: Required environment files are missing"
           exit 1
         fi
 
+        # Execute deployment
         set -x
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_backend.sh
         set +x
 
+        # Cleanup
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars /tmp/docker_vars
 
     - name: Run Database Migrations
