@@ -110,7 +110,7 @@ jobs:
 
     - name: Deploy Frontend
       run: |
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_frontend.sh
         rm -f /tmp/env_vars
 
