@@ -214,6 +214,12 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
+        # Validate required environment variables
+        if [ -z "$ENVIRONMENT" ]; then
+            echo "ENVIRONMENT variable is not set. Using default: production"
+            ENVIRONMENT="production"
+        fi
+
         # Navigate to backend directory
         cd /opt/thebarcodeapi/barcodeAPI
 
@@ -251,7 +257,7 @@ jobs:
         echo "Starting backend deployment..."
         echo "Using DOCKER_COMPOSE command: ${DOCKER_COMPOSE}"
 
-        BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
+        BACKUP_DIR="/opt/thebarcodeapi/backups/${ENVIRONMENT:-production}/$(date +%Y%m%d_%H%M%S)"
         sudo mkdir -p "${BACKUP_DIR}"
         sudo chown -R $USER:$USER "${BACKUP_DIR}"
 
@@ -483,6 +489,7 @@ jobs:
         BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
         echo "Creating backup directory: $BACKUP_DIR"
         sudo mkdir -p "$BACKUP_DIR"
+        sudo chown -R $USER:$USER "$BACKUP_DIR"
 
         # Backup existing data if containers are running
         if ${DOCKER_COMPOSE} ps 2>/dev/null | grep -q "db"; then
