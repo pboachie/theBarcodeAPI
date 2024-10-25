@@ -478,11 +478,11 @@ jobs:
         source /tmp/docker_vars
 
         echo "Starting backend deployment..."
-        echo "Using DOCKER_COMPOSE command: ${DOCKER_COMPOSE}"
 
         # Create backup directory
         BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
-        mkdir -p "$BACKUP_DIR"
+        echo "Creating backup directory: $BACKUP_DIR"
+        sudo mkdir -p "$BACKUP_DIR"
 
         # Backup existing data if containers are running
         if ${DOCKER_COMPOSE} ps 2>/dev/null | grep -q "db"; then
@@ -505,12 +505,12 @@ jobs:
         ${DOCKER_COMPOSE} down || true
 
         # Ensure data directories exist with correct permissions
-        mkdir -p /opt/thebarcodeapi/data/postgres
-        mkdir -p /opt/thebarcodeapi/data/redis
-        chown -R 999:999 /opt/thebarcodeapi/data/postgres
-        chmod -R 700 /opt/thebarcodeapi/data/postgres
-        chown -R 999:999 /opt/thebarcodeapi/data/redis
-        chmod -R 755 /opt/thebarcodeapi/data/redis
+        sudo mkdir -p /opt/thebarcodeapi/data/postgres
+        sudo mkdir -p /opt/thebarcodeapi/data/redis
+        sudo chown -R 999:999 /opt/thebarcodeapi/data/postgres
+        sudo chmod -R 700 /opt/thebarcodeapi/data/postgres
+        sudo chown -R 999:999 /opt/thebarcodeapi/data/redis
+        sudo chmod -R 755 /opt/thebarcodeapi/data/redis
 
         # Build and start containers
         echo "Building and starting containers..."
