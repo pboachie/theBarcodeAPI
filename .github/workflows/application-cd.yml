@@ -195,17 +195,33 @@ jobs:
 
     - name: Create env vars and docker vars
       run: |
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
-        echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
-        echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
-        echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
-        echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
-        echo "API_VERSION=${{ vars.API_VERSION }}" >> /tmp/env_vars
+        # Debug environment variables (optional, remove in production)
+        echo "Checking environment variables..."
+        if [ -z "${{ env.ENVIRONMENT }}" ]; then
+          echo "ENVIRONMENT is not set!"
+        fi
 
+        # Create env_vars with proper quoting
+        cat << EOF > /tmp/env_vars
+        ENVIRONMENT="${{ env.ENVIRONMENT }}"
+        DB_PASSWORD="${{ env.DB_PASSWORD }}"
+        POSTGRES_PASSWORD="${{ env.POSTGRES_PASSWORD }}"
+        API_SECRET_KEY="${{ env.API_SECRET_KEY }}"
+        API_MASTER_KEY="${{ env.API_MASTER_KEY }}"
+        API_VERSION="${{ vars.API_VERSION }}"
+        EOF
+
+        # Set docker compose command
         if command -v docker-compose &> /dev/null; then
-          echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
+          echo "DOCKER_COMPOSE=docker-compose" > /tmp/docker_vars
         else
-          echo "DOCKER_COMPOSE='docker compose'" > /tmp/docker_vars
+          echo "DOCKER_COMPOSE=docker compose" > /tmp/docker_vars
+        fi
+
+        # Verify files were created
+        if [ ! -f "/tmp/env_vars" ] || [ ! -f "/tmp/docker_vars" ]; then
+          echo "Error: Environment files not created properly"
+          exit 1
         fi
 
     - name: Create backend deployment script
@@ -455,9 +471,14 @@ jobs:
       run: |
         cd /opt/thebarcodeapi/barcodeAPI
 
+        # Debug environment
+        echo "Current directory: $(pwd)"
+        echo "Checking environment files:"
+        ls -la /tmp/env_vars /tmp/docker_vars || echo "Environment files not found!"
+
         # Create the .env file first
         echo "Creating .env file..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
+        cat << EOF > .env
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         API_SECRET_KEY=${{ env.API_SECRET_KEY }}
@@ -465,30 +486,42 @@ jobs:
         API_VERSION=${{ vars.API_VERSION }}
         DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
         REDIS_URL=redis://redis:6379
-        API_VERSION=${{ vars.API_VERSION }}
         ALGORITHM=HS256
         ACCESS_TOKEN_EXPIRE_MINUTES=30
-        EOF'
+        EOF
 
         # Set proper permissions for .env
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data .env
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 .env
+        sudo chown www-data:www-data .env
+        sudo chmod 644 .env
 
-        # Create deployment script
-        sudo bash -c 'cat << EOF > deploy_backend.sh
+        # Create and execute deployment script
+        cat << 'EOF' > deploy_backend.sh
         #!/bin/bash
         set -e
 
+        # Load environment variables
+        if [ ! -f "/tmp/env_vars" ]; then
+            echo "Error: /tmp/env_vars not found"
+            exit 1
+        fi
         source /tmp/env_vars
+
+        # Load docker compose command
+        if [ ! -f "/tmp/docker_vars" ]; then
+            echo "Error: /tmp/docker_vars not found"
+            exit 1
+        fi
         source /tmp/docker_vars
 
-        echo "Starting backend deployment..."
+        # Debug variables
+        echo "Environment: $ENVIRONMENT"
+        echo "Docker Compose Command: $DOCKER_COMPOSE"
 
-        # Create backup directory
-        BACKUP_DIR="/opt/thebarcodeapi/backups/${ENVIRONMENT:-production}/$(date +%Y%m%d_%H%M%S)"
+        # Create backup directory with explicit environment
+        BACKUP_DIR="/opt/thebarcodeapi/backups/${ENVIRONMENT}/$(date +%Y%m%d_%H%M%S)"
         echo "Creating backup directory: $BACKUP_DIR"
         sudo mkdir -p "$BACKUP_DIR"
-        sudo chown -R $USER:$USER "$BACKUP_DIR"
+        sudo chown -R "$USER:$USER" "$BACKUP_DIR"
 
         # Backup existing data if containers are running
         if ${DOCKER_COMPOSE} ps 2>/dev/null | grep -q "db"; then
