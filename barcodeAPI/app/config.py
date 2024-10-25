@@ -2,6 +2,9 @@
 import os
 from app.schemas import BatchPriority
 from pydantic_settings import BaseSettings
+from sqlalchemy import engine_from_config, pool
+from alembic.config import Config
+from alembic import context
 
 class Settings(BaseSettings):
     SECRET_KEY: str = os.getenv("SECRET_KEY")
@@ -37,3 +40,19 @@ class OperationConfig:
     def __init__(self, priority: BatchPriority, max_batch_size: int):
         self.priority = priority
         self.max_batch_size = max_batch_size
+
+def run_migrations_online() -> None:
+    alembic_config = Config()
+    configuration = alembic_config.get_section(alembic_config.config_ini_section)
+    configuration["sqlalchemy.url"] = settings.SYNC_DATABASE_URL  # Use synchronous database URL
+    connectable = engine_from_config(
+        configuration,
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
+
+    with connectable.connect() as connection:
+        context.configure(connection=connection, target_metadata=target_metadata)
+
+        with context.begin_transaction():
+            context.run_migrations()
