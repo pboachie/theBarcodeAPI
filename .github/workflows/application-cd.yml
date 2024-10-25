@@ -605,7 +605,7 @@ jobs:
       run: |
         cd /opt/thebarcodeapi/barcodeAPI
 
-        # Determine which compose command to use
+        # Determine docker compose command
         if command -v docker-compose &> /dev/null; then
           COMPOSE_CMD="docker-compose"
         else
@@ -614,30 +614,46 @@ jobs:
 
         echo "Using compose command: $COMPOSE_CMD"
 
-        # Check if containers are running
-        if ! $COMPOSE_CMD ps | grep -q "api"; then
-          echo "Error: API container is not running!"
-          $COMPOSE_CMD ps
+        # Create temporary env file for docker-compose
+        echo "Creating temporary environment file..."
+        cat << EOF > docker-compose.env
+        DB_PASSWORD=${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
+        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        EOF
+
+        # Run migrations with the temporary env file
+        echo "Running migrations..."
+        $COMPOSE_CMD --env-file docker-compose.env exec -T api alembic upgrade head
+
+        # Check migration status
+        if [ $? -eq 0 ]; then
+          echo "Database migrations completed successfully"
+        else
+          echo "Migration failed! Checking logs..."
+          $COMPOSE_CMD --env-file docker-compose.env logs api
           exit 1
         fi
 
-        # Run migrations with error handling
-        echo "Running database migrations..."
-        if ! $COMPOSE_CMD exec -T api alembic upgrade head; then
-          echo "Migration failed! Checking container logs..."
-          $COMPOSE_CMD logs api
-          exit 1
-        fi
-
-        echo "Database migrations completed successfully"
+        # Cleanup
+        rm -f docker-compose.env
 
     - name: Verify Backend Deployment
       run: |
-        cat << 'EOF' > verify_backend.sh
-        #!/bin/bash
-        set -e
+        cd /opt/thebarcodeapi/barcodeAPI
 
-        # Determine which compose command to use
+        # Create temporary env file for docker-compose
+        cat << EOF > docker-compose.env
+        DB_PASSWORD=${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
+        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        EOF
+
+        # Determine docker compose command
         if command -v docker-compose &> /dev/null; then
           COMPOSE_CMD="docker-compose"
         else
@@ -647,16 +663,10 @@ jobs:
         echo "Verifying backend deployment..."
 
         echo "Checking Docker containers status:"
-        $COMPOSE_CMD ps || {
-          echo "Error: Failed to get container status"
-          exit 1
-        }
+        $COMPOSE_CMD --env-file docker-compose.env ps
 
         echo "Checking container logs (last 10 lines):"
-        $COMPOSE_CMD logs --tail=10 || {
-          echo "Error: Failed to get container logs"
-          exit 1
-        }
+        $COMPOSE_CMD --env-file docker-compose.env logs --tail=10
 
         echo "Testing backend health:"
         MAX_RETRIES=3
@@ -669,20 +679,20 @@ jobs:
 
         if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
           echo "Backend health check failed after $MAX_RETRIES attempts"
+          $COMPOSE_CMD --env-file docker-compose.env logs api
           exit 1
         fi
 
         echo "Backend verification completed successfully"
-        EOF
-        chmod +x verify_backend.sh
 
-        cd /opt/thebarcodeapi/barcodeAPI
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_backend.sh
+        # Cleanup
+        rm -f docker-compose.env
 
     - name: Clean up
       if: always()
       run: |
-        rm -f deploy_backend.sh verify_backend.sh
+        cd /opt/thebarcodeapi/barcodeAPI
+        rm -f docker-compose.env
         docker system prune -f --volumes
 
   final-verification:
