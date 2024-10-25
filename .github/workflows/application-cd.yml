@@ -403,9 +403,14 @@ jobs:
         ACCESS_TOKEN_EXPIRE_MINUTES=30
         EOF'
 
-        # Set proper permissions
+        # Set proper permissions for .env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data .env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 .env
+
+        # Copy deployment script to the backend directory
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ../deploy_backend.sh .
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data deploy_backend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_backend.sh
 
         # Check if env files exist
         if [ ! -f "/tmp/env_vars" ] || [ ! -f "/tmp/docker_vars" ]; then
@@ -420,6 +425,7 @@ jobs:
 
         # Cleanup
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars /tmp/docker_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f deploy_backend.sh
 
     - name: Run Database Migrations
       run: |
