@@ -49,7 +49,7 @@ jobs:
 
     - name: Create frontend deployment script
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << 'EOF' > deploy_frontend.sh
+        cat << 'EOF' > deploy_frontend.sh
         #!/bin/bash
         set -e
 
@@ -105,7 +105,7 @@ jobs:
         chown -R www-data:www-data /opt/thebarcodeapi
 
         echo "Frontend deployment completed"
-        EOF'
+        EOF
         chmod +x deploy_frontend.sh
 
     - name: Deploy Frontend
@@ -116,7 +116,7 @@ jobs:
 
     - name: Verify Frontend Deployment
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << 'EOF' > verify_frontend.sh
+        cat << 'EOF' > verify_frontend.sh
         #!/bin/bash
         set -e
 
@@ -133,7 +133,7 @@ jobs:
         curl -I http://localhost:3000 || echo "Frontend not responding"
 
         echo "Frontend verification completed"
-        EOF'
+        EOF
         chmod +x verify_frontend.sh
 
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
@@ -146,7 +146,7 @@ jobs:
 
     - name: Verify Frontend Deployment
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << 'EOF' > verify_frontend.sh
+        cat << 'EOF' > verify_frontend.sh
         #!/bin/bash
         set -e
 
@@ -163,7 +163,7 @@ jobs:
         curl -I http://localhost:3000 || echo "Frontend not responding"
 
         echo "Frontend verification completed"
-        EOF'
+        EOF
         chmod +x verify_frontend.sh
 
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
