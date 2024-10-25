@@ -341,7 +341,7 @@ jobs:
 
         echo "Backend deployment completed successfully"
         EOF
-        chmod +x deploy_backend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_backend.sh
 
     - name: Fix Docker permissions
       run: |
