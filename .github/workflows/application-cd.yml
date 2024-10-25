@@ -212,7 +212,7 @@ jobs:
                     # Create backup using postgres user inside container
                     $DOCKER_COMPOSE exec -T db bash -c 'pg_dumpall -U postgres > /tmp/backup.sql'
                     # Copy the backup file from container to host
-                    $DOCKER_COMPOSE cp db:/tmp/backup.sql "$BACKUP_DIR/postgres_backup.sql"
+                    docker cp $(docker-compose ps -q db):/tmp/backup.sql "$BACKUP_DIR/postgres_backup.sql"
                     # Clean up temporary file in container
                     $DOCKER_COMPOSE exec -T db rm /tmp/backup.sql
                     echo "PostgreSQL backup completed successfully"
@@ -230,7 +230,7 @@ jobs:
                 if $DOCKER_COMPOSE exec -T redis redis-cli ping | grep -q "PONG"; then
                     echo "Redis is ready, creating backup..."
                     $DOCKER_COMPOSE exec -T redis redis-cli SAVE
-                    $DOCKER_COMPOSE cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
+                    docker cp $(docker-compose ps -q redis):/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
                     echo "Redis backup completed successfully"
                     return 0
                 fi
