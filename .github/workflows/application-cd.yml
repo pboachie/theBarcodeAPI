@@ -181,7 +181,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/data/postgres
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/data/redis
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/backups
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/backups/
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
     - name: Setup Docker permissions
@@ -400,7 +400,7 @@ jobs:
         done
 
         # Clean up old backups (keep last 5)
-        find /opt/thebarcodeapi/backups -maxdepth 1 -type d -name "20*" | sort -r | tail -n +6 | xargs sudo rm -rf
+        find /opt/thebarcodeapi/backups/${ENVIRONMENT:-production} -maxdepth 1 -type d -name "20*" | sort -r | tail -n +6 | xargs sudo rm -rf
 
         echo "Backend deployment completed successfully"
         EOF
@@ -451,7 +451,6 @@ jobs:
           exit 1
         fi
 
-    # Backend Deployment Step
     - name: Deploy Backend
       run: |
         cd /opt/thebarcodeapi/barcodeAPI
@@ -486,7 +485,7 @@ jobs:
         echo "Starting backend deployment..."
 
         # Create backup directory
-        BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
+        BACKUP_DIR="/opt/thebarcodeapi/backups/${ENVIRONMENT:-production}/$(date +%Y%m%d_%H%M%S)"
         echo "Creating backup directory: $BACKUP_DIR"
         sudo mkdir -p "$BACKUP_DIR"
         sudo chown -R $USER:$USER "$BACKUP_DIR"
