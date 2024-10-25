@@ -169,7 +169,7 @@ jobs:
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_frontend.sh
         rm -f /tmp/env_vars
-        
+
   backend-deployment:
     runs-on: self-hosted
     needs: frontend-deployment
@@ -422,6 +422,7 @@ jobs:
           exit 1
         fi
 
+    # Backend Deployment Step
     - name: Deploy Backend
       run: |
         cd /opt/thebarcodeapi/barcodeAPI
@@ -432,9 +433,7 @@ jobs:
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         API_SECRET_KEY=${{ env.API_SECRET_KEY }}
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        SECRET_KEY=${{ env.API_SECRET_KEY }}
-        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
+        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
         API_VERSION=${{ vars.API_VERSION }}
         DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
         REDIS_URL=redis://redis:6379
@@ -442,20 +441,88 @@ jobs:
         ACCESS_TOKEN_EXPIRE_MINUTES=30
         EOF'
 
-        # Set proper permissions
+        # Set proper permissions for .env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data .env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 .env
 
-        # Check if env files exist
-        if [ ! -f "/tmp/env_vars" ] || [ ! -f "/tmp/docker_vars" ]; then
-          echo "Error: Required environment files are missing"
-          exit 1
+        # Create deployment script
+        cat << 'EOF' > deploy_backend.sh
+        #!/bin/bash
+        set -e
+
+        source /tmp/env_vars
+        source /tmp/docker_vars
+
+        echo "Starting backend deployment..."
+        echo "Using $DOCKER_COMPOSE command: $DOCKER_COMPOSE"
+
+        # Create backup directory
+        BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
+        mkdir -p "$BACKUP_DIR"
+
+        # Backup existing data if containers are running
+        if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
+          if $DOCKER_COMPOSE exec -T db pg_isready -U postgres > /dev/null 2>&1; then
+            echo "Creating PostgreSQL backup..."
+            $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
+          fi
         fi
 
+        if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "redis"; then
+          if $DOCKER_COMPOSE exec -T redis redis-cli ping | grep -q "PONG"; then
+            echo "Creating Redis backup..."
+            $DOCKER_COMPOSE exec -T redis redis-cli SAVE
+            $DOCKER_COMPOSE cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
+          fi
+        fi
+
+        # Stop current containers
+        echo "Stopping existing containers..."
+        $DOCKER_COMPOSE down || true
+
+        # Ensure data directories exist with correct permissions
+        mkdir -p /opt/thebarcodeapi/data/postgres
+        mkdir -p /opt/thebarcodeapi/data/redis
+        chown -R 999:999 /opt/thebarcodeapi/data/postgres
+        chmod -R 700 /opt/thebarcodeapi/data/postgres
+        chown -R 999:999 /opt/thebarcodeapi/data/redis
+        chmod -R 755 /opt/thebarcodeapi/data/redis
+
+        # Build and start containers
+        echo "Building and starting containers..."
+        $DOCKER_COMPOSE build --no-cache api
+        $DOCKER_COMPOSE up -d
+
+        # Wait for services to be healthy
+        for service in "db" "redis" "api"; do
+          echo "Waiting for $service to be healthy..."
+          attempts=0
+          max_attempts=30
+          while [ $attempts -lt $max_attempts ]; do
+            if $DOCKER_COMPOSE ps $service | grep -q "healthy"; then
+              echo "$service is healthy"
+              break
+            fi
+            echo "Attempt $((attempts+1))/$max_attempts: $service not healthy yet..."
+            sleep 10
+            attempts=$((attempts+1))
+          done
+
+          if [ $attempts -eq $max_attempts ]; then
+            echo "$service failed to become healthy"
+            $DOCKER_COMPOSE logs $service > "$BACKUP_DIR/${service}_failed.log"
+            exit 1
+          fi
+        done
+
+        echo "Backend deployment completed successfully"
+        EOF
+
+        # Make script executable
+        chmod +x deploy_backend.sh
+
         # Execute deployment
-        set -x
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_backend.sh
-        set +x
 
         # Cleanup
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars /tmp/docker_vars

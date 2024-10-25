@@ -31,7 +31,8 @@ COPY . .
 COPY .env .
 
 # Update alembic.ini
-RUN sed -i "s|<POSTGRES_URL>|$(grep DATABASE_URL .env | cut -d '=' -f2)|g" alembic.ini
+RUN DATABASE_URL=$(grep DATABASE_URL .env | cut -d '=' -f2) && \
+    sed -i "s|<POSTGRES_URL>|${DATABASE_URL}|g" alembic.ini
 
 # Set up the startup script
 COPY start.sh .
