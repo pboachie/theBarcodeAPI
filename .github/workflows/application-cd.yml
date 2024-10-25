@@ -478,7 +478,7 @@ jobs:
 
         # Create the .env file first
         echo "Creating .env file..."
-        cat << EOF > .env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > .env
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         API_SECRET_KEY=${{ env.API_SECRET_KEY }}
@@ -488,14 +488,14 @@ jobs:
         REDIS_URL=redis://redis:6379
         ALGORITHM=HS256
         ACCESS_TOKEN_EXPIRE_MINUTES=30
-        EOF
+        EOF'
 
         # Set proper permissions for .env
         sudo chown www-data:www-data .env
         sudo chmod 644 .env
 
         # Create and execute deployment script
-        cat << 'EOF' > deploy_backend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << 'EOF' > deploy_backend.sh
         #!/bin/bash
         set -e
 
