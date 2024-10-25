@@ -507,11 +507,14 @@ jobs:
           chmod 666 /var/run/docker.sock
         fi
 
-        # seth theBarcodeAPI directory permissions
+        # set theBarcodeAPI directory permissions
         chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
+        # set ownership for backup folder
+        chown www-data:www-data /opt/thebarcodeapi/backups
         echo "Permissions fixed successfully"
         EOF
+        
         chmod +x fix_permissions.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./fix_permissions.sh
 
