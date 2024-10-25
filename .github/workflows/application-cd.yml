@@ -170,6 +170,7 @@ jobs:
         echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
         echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
         echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
+        echo "API_VERSION=${{ env.API_VERSION }}" >> /tmp/env_vars
 
         if $DOCKER_COMPOSE version &> /dev/null; then
           echo "DOCKER_COMPOSE='$DOCKER_COMPOSE'" > /tmp/docker_vars
@@ -401,7 +402,10 @@ jobs:
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         API_SECRET_KEY=${{ env.API_SECRET_KEY }}
-        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        SECRET_KEY=${{ env.API_SECRET_KEY }}
+        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
+        API_VERSION=${{ vars.API_VERSION }}
         DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
         REDIS_URL=redis://redis:6379
         ALGORITHM=HS256
