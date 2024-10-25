@@ -179,6 +179,10 @@ jobs:
 
     - name: Create backend deployment script
       run: |
+        # Ensure the backend directory has the correct permissions
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
+
         # Navigate to backend directory
         cd /opt/thebarcodeapi/barcodeAPI
 
