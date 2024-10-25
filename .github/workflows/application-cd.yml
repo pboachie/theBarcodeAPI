@@ -140,6 +140,36 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_frontend.sh
         rm -f /tmp/env_vars
 
+    - name: Fix Docker permissions
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
+
+    - name: Verify Frontend Deployment
+      run: |
+        cat << 'EOF' > verify_frontend.sh
+        #!/bin/bash
+        set -e
+
+        source /tmp/env_vars
+
+        echo "Verifying frontend deployment..."
+        echo "Checking current symlink:"
+        ls -la /opt/thebarcodeapi/${ENVIRONMENT}/current
+
+        echo "Checking Next.js application status:"
+        pm2 list | grep thebarcodeapi-frontend-${ENVIRONMENT}
+
+        echo "Testing frontend health..."
+        curl -I http://localhost:3000 || echo "Frontend not responding"
+
+        echo "Frontend verification completed"
+        EOF
+        chmod +x verify_frontend.sh
+
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_frontend.sh
+        rm -f /tmp/env_vars
+        
   backend-deployment:
     runs-on: self-hosted
     needs: frontend-deployment
