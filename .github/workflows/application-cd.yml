@@ -356,7 +356,7 @@ jobs:
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
 
-    - name: Setup $DOCKER_COMPOSE
+    - name: Setup DOCKER COMPOSE
       run: |
         # Check $DOCKER_COMPOSE installation
         if ! command -v docker-compose &> /dev/null && ! $DOCKER_COMPOSE version &> /dev/null; then
