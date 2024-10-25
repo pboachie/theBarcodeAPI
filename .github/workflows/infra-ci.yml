@@ -281,6 +281,7 @@ jobs:
 
         # Set permissions
         chown -R www-data:www-data /opt/thebarcodeapi
+        chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/
         chmod -R 755 /opt/thebarcodeapi
         EOF
         chmod +x configure_pm2.sh
@@ -452,6 +453,7 @@ jobs:
 
         # Set permissions
         chown -R www-data:www-data /opt/thebarcodeapi
+        chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
         chmod -R 755 /opt/thebarcodeapi/barcodeAPI
 
         echo "Docker environment setup completed"
@@ -504,6 +506,9 @@ jobs:
         if [ -S /var/run/docker.sock ]; then
           chmod 666 /var/run/docker.sock
         fi
+
+        # seth theBarcodeAPI directory permissions
+        chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
         echo "Permissions fixed successfully"
         EOF
