@@ -200,12 +200,12 @@ jobs:
         echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
         echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
         echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
-        echo "API_VERSION=${{ env.API_VERSION }}" >> /tmp/env_vars
+        echo "API_VERSION=${{ vars.API_VERSION }}" >> /tmp/env_vars
 
-        if $DOCKER_COMPOSE version &> /dev/null; then
-          echo "DOCKER_COMPOSE='$DOCKER_COMPOSE'" > /tmp/docker_vars
-        else
+        if command -v docker-compose &> /dev/null; then
           echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
+        else
+          echo "DOCKER_COMPOSE='docker compose'" > /tmp/docker_vars
         fi
 
     - name: Create backend deployment script
@@ -225,7 +225,7 @@ jobs:
         source /tmp/docker_vars
 
         echo "Starting backend deployment..."
-        echo "Using $DOCKER_COMPOSE command: $DOCKER_COMPOSE"
+        echo "Using DOCKER_COMPOSE command: $DOCKER_COMPOSE"
 
         # Create backup directory if it doesn't exist
         BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
@@ -404,7 +404,7 @@ jobs:
 
         # Set $DOCKER_COMPOSE command
         if $DOCKER_COMPOSE version &> /dev/null; then
-          echo "DOCKER_COMPOSE='$DOCKER_COMPOSE'" > /tmp/docker_vars
+          echo "DOCKER_COMPOSE='docker compose'" > /tmp/docker_vars
         else
           echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
         fi
@@ -454,7 +454,7 @@ jobs:
         source /tmp/docker_vars
 
         echo "Starting backend deployment..."
-        echo "Using $DOCKER_COMPOSE command: $DOCKER_COMPOSE"
+        echo "Using DOCKER_COMPOSE command: $DOCKER_COMPOSE"
 
         # Create backup directory
         BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
@@ -751,7 +751,7 @@ jobs:
 
         echo "Full deployment verification completed successfully"
         EOF'
-        
+
         chmod +x verify_full_deployment.sh
 
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_full_deployment.sh
