@@ -179,7 +179,6 @@ jobs:
 
     - name: Create backend deployment script
       run: |
-
         # Navigate to backend directory
         cd /opt/thebarcodeapi/barcodeAPI
 
@@ -341,13 +340,15 @@ jobs:
 
         echo "Backend deployment completed successfully"
         EOF
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_backend.sh
+
+        # Make the script executable with the correct user
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x /opt/thebarcodeapi/barcodeAPI/deploy_backend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/deploy_backend.sh
 
     - name: Fix Docker permissions
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/deploy_backend.sh
-
 
     - name: Setup DOCKER COMPOSE
       run: |
