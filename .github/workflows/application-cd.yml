@@ -397,16 +397,43 @@ jobs:
         BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
         sudo mkdir -p $BACKUP_DIR
 
-        # Use $DOCKER_COMPOSE instead of direct $DOCKER_COMPOSE commands
+        # Function to check individual container health
+        check_container_health() {
+            local container=$1
+            local max_attempts=$2
+            local attempt=1
+
+            echo "Checking health of $container..."
+
+            while [ $attempt -le $max_attempts ]; do
+                if $DOCKER_COMPOSE ps $container | grep -q "healthy"; then
+                    echo "$container is healthy"
+                    return 0
+                fi
+                echo "Attempt $attempt/$max_attempts: $container not healthy yet, waiting..."
+
+                # Print container logs for debugging
+                echo "Recent logs for $container:"
+                $DOCKER_COMPOSE logs --tail=50 $container
+
+                sleep 10
+                attempt=$((attempt + 1))
+            done
+
+            echo "$container failed to become healthy within timeout"
+            return 1
+        }
+
+        # Backup existing data
         if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
-          echo "Backing up PostgreSQL data..."
-          $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
+            echo "Backing up PostgreSQL data..."
+            $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
         fi
 
         if $DOCKER_COMPOSE ps | grep -q "redis"; then
-          echo "Backing up Redis data..."
-          $DOCKER_COMPOSE exec -T redis redis-cli SAVE
-          $DOCKER_COMPOSE cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
+            echo "Backing up Redis data..."
+            $DOCKER_COMPOSE exec -T redis redis-cli SAVE
+            $DOCKER_COMPOSE cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
         fi
 
         # Copy current backend files
@@ -420,15 +447,15 @@ jobs:
         echo "Stopping current containers..."
         $DOCKER_COMPOSE down || true
 
-        # Copy existing data volumes to temporary location if they exist
+        # Preserve existing data
         if [ -d "/opt/thebarcodeapi/data/postgres" ]; then
-          echo "Preserving PostgreSQL data..."
-          cp -R /opt/thebarcodeapi/data/postgres "$BACKUP_DIR/postgres_data"
+            echo "Preserving PostgreSQL data..."
+            cp -R /opt/thebarcodeapi/data/postgres "$BACKUP_DIR/postgres_data"
         fi
 
         if [ -d "/opt/thebarcodeapi/data/redis" ]; then
-          echo "Preserving Redis data..."
-          cp -R /opt/thebarcodeapi/data/redis "$BACKUP_DIR/redis_data"
+            echo "Preserving Redis data..."
+            cp -R /opt/thebarcodeapi/data/redis "$BACKUP_DIR/redis_data"
         fi
 
         # Build and start new containers
@@ -436,93 +463,91 @@ jobs:
         $DOCKER_COMPOSE build
         $DOCKER_COMPOSE up -d
 
-        # Wait for health checks
-        echo "Waiting for services to be healthy..."
-        TIMEOUT=300
-        HEALTHY=false
+        # Check health of each service independently
+        echo "Checking service health..."
+        TIMEOUT=60  # Timeout for each service (in attempts, 10 seconds each)
 
-        for i in $(seq 1 $TIMEOUT); do
-          if $DOCKER_COMPOSE ps | grep "healthy" | wc -l | grep -q "3"; then
-            HEALTHY=true
-            break
-          fi
-          sleep 1
-        done
-
-        if [ "$HEALTHY" = false ]; then
-          echo "Services failed to become healthy within timeout. Rolling back..."
-
-          # Stop new containers
-          $DOCKER_COMPOSE down
-
-          # Restore data from backup
-          if [ -d "$BACKUP_DIR/postgres_data" ]; then
-            rm -rf /opt/thebarcodeapi/data/postgres
-            cp -R "$BACKUP_DIR/postgres_data" /opt/thebarcodeapi/data/postgres
-          fi
-
-          if [ -d "$BACKUP_DIR/redis_data" ]; then
-            rm -rf /opt/thebarcodeapi/data/redis
-            cp -R "$BACKUP_DIR/redis_data" /opt/thebarcodeapi/data/redis
-          fi
-
-          # Start old containers
-          if [ ! -z "$OLD_CONTAINERS" ]; then
-            $DOCKER_COMPOSE up -d
-          fi
-
-          exit 1
+        # Check Redis first
+        if ! check_container_health redis $TIMEOUT; then
+            echo "Redis failed health check. Rolling back..."
+            $DOCKER_COMPOSE down
+            # Restore data and exit
+            perform_rollback
+            exit 1
         fi
+
+        # Then check PostgreSQL
+        if ! check_container_health db $TIMEOUT; then
+            echo "PostgreSQL failed health check. Rolling back..."
+            $DOCKER_COMPOSE down
+            # Restore data and exit
+            perform_rollback
+            exit 1
+        fi
+
+        # Finally check API
+        if ! check_container_health api $TIMEOUT; then
+            echo "API failed health check. Rolling back..."
+            $DOCKER_COMPOSE down
+            # Restore data and exit
+            perform_rollback
+            exit 1
+        fi
+
+        # Function to perform rollback
+        perform_rollback() {
+            echo "Performing rollback..."
+
+            # Restore data from backup
+            if [ -d "$BACKUP_DIR/postgres_data" ]; then
+                rm -rf /opt/thebarcodeapi/data/postgres
+                cp -R "$BACKUP_DIR/postgres_data" /opt/thebarcodeapi/data/postgres
+            fi
+
+            if [ -d "$BACKUP_DIR/redis_data" ]; then
+                rm -rf /opt/thebarcodeapi/data/redis
+                cp -R "$BACKUP_DIR/redis_data" /opt/thebarcodeapi/data/redis
+            fi
+
+            # Start old containers if they existed
+            if [ ! -z "$OLD_CONTAINERS" ]; then
+                $DOCKER_COMPOSE up -d
+            fi
+        }
 
         # Verify database connectivity and restore data if needed
         echo "Verifying database connectivity..."
         if ! $DOCKER_COMPOSE exec -T db pg_isready -U barcodeboachiefamily -d barcode_api; then
-          echo "Database connectivity failed. Restoring from backup..."
-          if [ -f "$BACKUP_DIR/postgres_backup.sql" ]; then
-            $DOCKER_COMPOSE exec -T db psql -U postgres < "$BACKUP_DIR/postgres_backup.sql"
-          fi
+            echo "Database connectivity failed. Restoring from backup..."
+            if [ -f "$BACKUP_DIR/postgres_backup.sql" ]; then
+                $DOCKER_COMPOSE exec -T db psql -U postgres < "$BACKUP_DIR/postgres_backup.sql"
+            fi
         fi
 
-        # Verify Redis connectivity and restore data if needed
+        # Verify Redis connectivity
         echo "Verifying Redis connectivity..."
         if ! $DOCKER_COMPOSE exec -T redis redis-cli ping | grep -q "PONG"; then
-          echo "Redis connectivity failed. Restoring from backup..."
-          if [ -f "$BACKUP_DIR/redis_dump.rdb" ]; then
-            $DOCKER_COMPOSE stop redis
-            $DOCKER_COMPOSE cp "$BACKUP_DIR/redis_dump.rdb" redis:/data/dump.rdb
-            $DOCKER_COMPOSE start redis
-          fi
+            echo "Redis connectivity failed. Restoring from backup..."
+            if [ -f "$BACKUP_DIR/redis_dump.rdb" ]; then
+                $DOCKER_COMPOSE stop redis
+                $DOCKER_COMPOSE cp "$BACKUP_DIR/redis_dump.rdb" redis:/data/dump.rdb
+                $DOCKER_COMPOSE start redis
+            fi
         fi
 
-        # Verify deployment
-        echo "Verifying deployment..."
+        # Final verification
+        echo "Performing final verification..."
         if ! curl -f http://localhost:8000/health; then
-          echo "Health check failed. Rolling back..."
-          $DOCKER_COMPOSE down
-
-          # Restore data from backup
-          if [ -d "$BACKUP_DIR/postgres_data" ]; then
-            rm -rf /opt/thebarcodeapi/data/postgres
-            cp -R "$BACKUP_DIR/postgres_data" /opt/thebarcodeapi/data/postgres
-          fi
-
-          if [ -d "$BACKUP_DIR/redis_data" ]; then
-            rm -rf /opt/thebarcodeapi/data/redis
-            cp -R "$BACKUP_DIR/redis_data" /opt/thebarcodeapi/data/redis
-          fi
-
-          # Start old containers
-          if [ ! -z "$OLD_CONTAINERS" ]; then
-            $DOCKER_COMPOSE up -d
-          fi
-
-          exit 1
+            echo "Final health check failed. Rolling back..."
+            perform_rollback
+            exit 1
         fi
 
         # Clean up old backups (keep last 5)
         find /opt/thebarcodeapi/backups -maxdepth 1 -type d -name "20*" | sort -r | tail -n +6 | xargs rm -rf
 
         echo "Backend deployment completed successfully"
+
         EOF
         chmod +x deploy_backend.sh
 
@@ -559,8 +584,10 @@ jobs:
         fi
 
         # Execute deployment
+        set -x
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_backend.sh
-
+        set +x
+        
         # Clean up
         rm -f /tmp/env_vars /tmp/docker_vars
 
