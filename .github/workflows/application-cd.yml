@@ -604,7 +604,32 @@ jobs:
     - name: Run Database Migrations
       run: |
         cd /opt/thebarcodeapi/barcodeAPI
-        $DOCKER_COMPOSE exec api alembic upgrade head
+
+        # Determine which compose command to use
+        if command -v docker-compose &> /dev/null; then
+          COMPOSE_CMD="docker-compose"
+        else
+          COMPOSE_CMD="docker compose"
+        fi
+
+        echo "Using compose command: $COMPOSE_CMD"
+
+        # Check if containers are running
+        if ! $COMPOSE_CMD ps | grep -q "api"; then
+          echo "Error: API container is not running!"
+          $COMPOSE_CMD ps
+          exit 1
+        fi
+
+        # Run migrations with error handling
+        echo "Running database migrations..."
+        if ! $COMPOSE_CMD exec -T api alembic upgrade head; then
+          echo "Migration failed! Checking container logs..."
+          $COMPOSE_CMD logs api
+          exit 1
+        fi
+
+        echo "Database migrations completed successfully"
 
     - name: Verify Backend Deployment
       run: |
@@ -612,18 +637,42 @@ jobs:
         #!/bin/bash
         set -e
 
+        # Determine which compose command to use
+        if command -v docker-compose &> /dev/null; then
+          COMPOSE_CMD="docker-compose"
+        else
+          COMPOSE_CMD="docker compose"
+        fi
+
         echo "Verifying backend deployment..."
 
         echo "Checking Docker containers status:"
-        $DOCKER_COMPOSE ps
+        $COMPOSE_CMD ps || {
+          echo "Error: Failed to get container status"
+          exit 1
+        }
 
         echo "Checking container logs (last 10 lines):"
-        $DOCKER_COMPOSE logs --tail=10
+        $COMPOSE_CMD logs --tail=10 || {
+          echo "Error: Failed to get container logs"
+          exit 1
+        }
 
         echo "Testing backend health:"
-        timeout 5 curl -f http://localhost:8000/health || echo "Backend not responding"
+        MAX_RETRIES=3
+        RETRY_COUNT=0
+        until curl -f http://localhost:8000/health || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+          echo "Backend health check failed, retrying in 5 seconds..."
+          sleep 5
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+        done
 
-        echo "Backend verification completed"
+        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+          echo "Backend health check failed after $MAX_RETRIES attempts"
+          exit 1
+        fi
+
+        echo "Backend verification completed successfully"
         EOF
         chmod +x verify_backend.sh
 
@@ -631,9 +680,10 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_backend.sh
 
     - name: Clean up
+      if: always()
       run: |
         rm -f deploy_backend.sh verify_backend.sh
-        docker system prune -f
+        docker system prune -f --volumes
 
   final-verification:
     runs-on: self-hosted
@@ -645,24 +695,76 @@ jobs:
         #!/bin/bash
         set -e
 
+        # Determine which compose command to use
+        if command -v docker-compose &> /dev/null; then
+          COMPOSE_CMD="docker-compose"
+        else
+          COMPOSE_CMD="docker compose"
+        fi
+
         echo "Performing full deployment verification..."
 
-        echo "Checking frontend (Next.js):"
-        timeout 5 curl -f http://localhost:3000 || echo "Frontend not responding"
+        # Function to check endpoint health with retries
+        check_endpoint() {
+          local name=$1
+          local url=$2
+          local max_retries=3
+          local retry_count=0
+          local wait_time=5
 
-        echo "Checking backend (API):"
-        curl -I http://localhost:8000/health || echo "Backend not responding"
+          echo "Checking $name..."
+          until curl -f "$url" || [ $retry_count -eq $max_retries ]; do
+            echo "$name not responding, retrying in $wait_time seconds..."
+            sleep $wait_time
+            retry_count=$((retry_count + 1))
+          done
+
+          if [ $retry_count -eq $max_retries ]; then
+            echo "$name health check failed after $max_retries attempts"
+            return 1
+          fi
+          return 0
+        }
+
+        # Check frontend
+        check_endpoint "frontend" "http://localhost:3000" || {
+          echo "Frontend verification failed"
+          pm2 logs thebarcodeapi-frontend-production --lines 50
+          exit 1
+        }
+
+        # Check backend
+        check_endpoint "backend" "http://localhost:8000/health" || {
+          echo "Backend verification failed"
+          $COMPOSE_CMD logs api --tail 50
+          exit 1
+        }
 
         echo "Checking PM2 processes:"
-        pm2 list
+        pm2 list || {
+          echo "Error: Failed to list PM2 processes"
+          exit 1
+        }
 
         echo "Checking Docker containers:"
-        $DOCKER_COMPOSE -f /opt/thebarcodeapi/barcodeAPI/docker-compose.yml ps
+        $COMPOSE_CMD -f /opt/thebarcodeapi/barcodeAPI/docker-compose.yml ps || {
+          echo "Error: Failed to list Docker containers"
+          exit 1
+        }
 
         echo "Verifying Nginx configuration:"
-        nginx -t
+        if ! nginx -t; then
+          echo "Error: Nginx configuration test failed"
+          exit 1
+        fi
 
-        echo "Full deployment verification completed"
+        # Verify Nginx is running
+        if ! systemctl is-active --quiet nginx; then
+          echo "Error: Nginx is not running"
+          exit 1
+        fi
+
+        echo "Full deployment verification completed successfully"
         EOF
         chmod +x verify_full_deployment.sh
 
@@ -675,9 +777,27 @@ jobs:
         rm -rf build
         rm -f package.json package-lock.json
         rm -f verify_full_deployment.sh
+        # Clean docker unused resources
+        docker system prune -f --volumes
 
     - name: Notify on failure
       if: failure()
       run: |
-        echo "Deployment failed! Check logs for details."
+        echo "============================================"
+        echo "Deployment failed! Collecting diagnostic information..."
+        echo "============================================"
+
+        echo "PM2 Status:"
+        pm2 list || true
+
+        echo "Docker Container Status:"
+        docker ps -a || true
+
+        echo "Recent Docker Logs:"
+        docker-compose -f /opt/thebarcodeapi/barcodeAPI/docker-compose.yml logs --tail=50 || true
+
+        echo "Nginx Status:"
+        systemctl status nginx || true
+
+        echo "============================================"
         exit 1
