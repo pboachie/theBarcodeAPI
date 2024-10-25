@@ -614,31 +614,37 @@ jobs:
 
         echo "Using compose command: $COMPOSE_CMD"
 
-        # Create temporary env file for docker-compose
+        # Create temporary env file
         echo "Creating temporary environment file..."
-        cat << EOF > docker-compose.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/docker-compose.env
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         API_SECRET_KEY=${{ env.API_SECRET_KEY }}
         API_MASTER_KEY=${{ env.API_MASTER_KEY }}
         DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        EOF
+        EOF'
+
+        # Set proper permissions
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/docker-compose.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/docker-compose.env
 
         # Run migrations with the temporary env file
         echo "Running migrations..."
-        $COMPOSE_CMD --env-file docker-compose.env exec -T api alembic upgrade head
+        $COMPOSE_CMD --env-file /opt/thebarcodeapi/barcodeAPI/docker-compose.env exec -T api alembic upgrade head
 
         # Check migration status
-        if [ $? -eq 0 ]; then
+        MIGRATION_STATUS=$?
+        if [ $MIGRATION_STATUS -eq 0 ]; then
           echo "Database migrations completed successfully"
         else
           echo "Migration failed! Checking logs..."
-          $COMPOSE_CMD --env-file docker-compose.env logs api
+          $COMPOSE_CMD --env-file /opt/thebarcodeapi/barcodeAPI/docker-compose.env logs api
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/docker-compose.env
           exit 1
         fi
 
         # Cleanup
-        rm -f docker-compose.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/docker-compose.env
 
     - name: Verify Backend Deployment
       run: |
