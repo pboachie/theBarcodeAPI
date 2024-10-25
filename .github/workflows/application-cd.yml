@@ -446,7 +446,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 .env
 
         # Create deployment script
-        cat << 'EOF' > deploy_backend.sh
+        sudo bash -c 'cat << EOF > deploy_backend.sh
         #!/bin/bash
         set -e
 
@@ -516,7 +516,7 @@ jobs:
         done
 
         echo "Backend deployment completed successfully"
-        EOF
+        EOF'
 
         # Make script executable
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_backend.sh
@@ -676,7 +676,7 @@ jobs:
     steps:
     - name: Verify Full Deployment
       run: |
-        cat << 'EOF' > verify_full_deployment.sh
+        sudo bash -c 'cat << 'EOF' > verify_full_deployment.sh
         #!/bin/bash
         set -e
 
@@ -750,7 +750,8 @@ jobs:
         fi
 
         echo "Full deployment verification completed successfully"
-        EOF
+        EOF'
+        
         chmod +x verify_full_deployment.sh
 
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_full_deployment.sh
