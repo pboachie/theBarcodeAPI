@@ -180,7 +180,8 @@ jobs:
     - name: Create backend deployment script
       run: |
 
-        source /tmp/env_vars
+        # Navigate to backend directory
+        cd /opt/thebarcodeapi/barcodeAPI
 
         cat << 'EOF' > deploy_backend.sh
         #!/bin/bash
@@ -191,9 +192,6 @@ jobs:
 
         echo "Starting backend deployment..."
         echo "Using $DOCKER_COMPOSE command: $DOCKER_COMPOSE"
-
-        # Navigate to backend directory
-        cd /opt/thebarcodeapi/barcodeAPI
 
         # Create backup directory if it doesn't exist
         BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
