@@ -393,201 +393,6 @@ jobs:
           exit 1
         fi
 
-    # - name: Create backend deployment script
-    #   run: |
-    #     # Source the environment files we created earlier
-    #     if [ ! -f "/tmp/env_vars" ] || [ ! -f "/tmp/docker_vars" ]; then
-    #       echo "Error: Required environment files are missing"
-    #       exit 1
-    #     fi
-
-    #     source /tmp/env_vars
-    #     source /tmp/docker_vars
-
-    #     cat << 'EOF' > deploy_backend.sh
-    #     #!/bin/bash
-    #     set -e
-
-    #     source /tmp/env_vars
-    #     source /tmp/docker_vars
-
-    #     echo "Starting backend deployment..."
-    #     echo "Using $DOCKER_COMPOSE command: $DOCKER_COMPOSE"
-
-    #     # Navigate to backend directory
-    #     cd /opt/thebarcodeapi/barcodeAPI
-
-    #     # Create backup directory if it doesn't exist
-    #     BACKUP_DIR="/opt/thebarcodeapi/backups/$(date +%Y%m%d_%H%M%S)"
-    #     sudo mkdir -p $BACKUP_DIR
-
-    #     # Function to check individual container health
-    #     check_container_health() {
-    #         local container=$1
-    #         local max_attempts=$2
-    #         local attempt=1
-
-    #         echo "Checking health of $container..."
-
-    #         while [ $attempt -le $max_attempts ]; do
-    #             if $DOCKER_COMPOSE ps $container | grep -q "healthy"; then
-    #                 echo "$container is healthy"
-    #                 return 0
-    #             fi
-    #             echo "Attempt $attempt/$max_attempts: $container not healthy yet, waiting..."
-
-    #             # Print container logs for debugging
-    #             echo "Recent logs for $container:"
-    #             $DOCKER_COMPOSE logs --tail=50 $container
-
-    #             sleep 10
-    #             attempt=$((attempt + 1))
-    #         done
-
-    #         echo "$container failed to become healthy within timeout"
-    #         return 1
-    #     }
-
-    #     # Backup existing data
-    #     if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
-    #         echo "Backing up PostgreSQL data..."
-    #         $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
-    #     fi
-
-    #     if $DOCKER_COMPOSE ps | grep -q "redis"; then
-    #         echo "Backing up Redis data..."
-    #         $DOCKER_COMPOSE exec -T redis redis-cli SAVE
-    #         $DOCKER_COMPOSE cp redis:/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
-    #     fi
-
-    #     # Copy current backend files
-    #     echo "Copying backend files..."
-    #     cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
-
-    #     # Store current container states
-    #     OLD_CONTAINERS=$($DOCKER_COMPOSE ps -q)
-
-    #     # Stop current containers
-    #     echo "Stopping current containers..."
-    #     $DOCKER_COMPOSE down || true
-
-    #     # Preserve existing data
-    #     if [ -d "/opt/thebarcodeapi/data/postgres" ]; then
-    #         echo "Preserving PostgreSQL data..."
-    #         cp -R /opt/thebarcodeapi/data/postgres "$BACKUP_DIR/postgres_data"
-    #     fi
-
-    #     if [ -d "/opt/thebarcodeapi/data/redis" ]; then
-    #         echo "Preserving Redis data..."
-    #         cp -R /opt/thebarcodeapi/data/redis "$BACKUP_DIR/redis_data"
-    #     fi
-
-    #     # Build and start new containers
-    #     echo "Building and starting containers..."
-    #     $DOCKER_COMPOSE build
-    #     $DOCKER_COMPOSE up -d
-
-    #     # Check health of each service independently
-    #     echo "Checking service health..."
-    #     TIMEOUT=60  # Timeout for each service (in attempts, 10 seconds each)
-
-    #     # Check Redis first
-    #     if ! check_container_health redis $TIMEOUT; then
-    #         echo "Redis failed health check. Rolling back..."
-    #         $DOCKER_COMPOSE down
-    #         # Restore data and exit
-    #         perform_rollback
-    #         exit 1
-    #     fi
-
-    #     # Then check PostgreSQL
-    #     if ! check_container_health db $TIMEOUT; then
-    #         echo "PostgreSQL failed health check. Rolling back..."
-    #         $DOCKER_COMPOSE down
-    #         # Restore data and exit
-    #         perform_rollback
-    #         exit 1
-    #     fi
-
-    #     # Finally check API
-    #     if ! check_container_health api $TIMEOUT; then
-    #         echo "API failed health check. Rolling back..."
-    #         $DOCKER_COMPOSE down
-    #         # Restore data and exit
-    #         perform_rollback
-    #         exit 1
-    #     fi
-
-    #     # Function to perform rollback
-    #     perform_rollback() {
-    #         echo "Performing rollback..."
-
-    #         # Restore data from backup
-    #         if [ -d "$BACKUP_DIR/postgres_data" ]; then
-    #             rm -rf /opt/thebarcodeapi/data/postgres
-    #             cp -R "$BACKUP_DIR/postgres_data" /opt/thebarcodeapi/data/postgres
-    #         fi
-
-    #         if [ -d "$BACKUP_DIR/redis_data" ]; then
-    #             rm -rf /opt/thebarcodeapi/data/redis
-    #             cp -R "$BACKUP_DIR/redis_data" /opt/thebarcodeapi/data/redis
-    #         fi
-
-    #         # Start old containers if they existed
-    #         if [ ! -z "$OLD_CONTAINERS" ]; then
-    #             $DOCKER_COMPOSE up -d
-    #         fi
-    #     }
-
-    #     # Verify database connectivity and restore data if needed
-    #     echo "Verifying database connectivity..."
-    #     if ! $DOCKER_COMPOSE exec -T db pg_isready -U barcodeboachiefamily -d barcode_api; then
-    #         echo "Database connectivity failed. Restoring from backup..."
-    #         if [ -f "$BACKUP_DIR/postgres_backup.sql" ]; then
-    #             $DOCKER_COMPOSE exec -T db psql -U postgres < "$BACKUP_DIR/postgres_backup.sql"
-    #         fi
-    #     fi
-
-    #     # Verify Redis connectivity
-    #     echo "Verifying Redis connectivity..."
-    #     if ! $DOCKER_COMPOSE exec -T redis redis-cli ping | grep -q "PONG"; then
-    #         echo "Redis connectivity failed. Restoring from backup..."
-    #         if [ -f "$BACKUP_DIR/redis_dump.rdb" ]; then
-    #             $DOCKER_COMPOSE stop redis
-    #             $DOCKER_COMPOSE cp "$BACKUP_DIR/redis_dump.rdb" redis:/data/dump.rdb
-    #             $DOCKER_COMPOSE start redis
-    #         fi
-    #     fi
-
-    #     # Final verification
-    #     echo "Performing final verification..."
-    #     if ! curl -f http://localhost:8000/health; then
-    #         echo "Final health check failed. Rolling back..."
-    #         perform_rollback
-    #         exit 1
-    #     fi
-
-    #     # Clean up old backups (keep last 5)
-    #     find /opt/thebarcodeapi/backups -maxdepth 1 -type d -name "20*" | sort -r | tail -n +6 | xargs rm -rf
-
-    #     echo "Backend deployment completed successfully"
-
-    #     EOF
-    #     chmod +x deploy_backend.sh
-
-    # - name: Copy Backend Files
-    #   run: |
-    #     # Copy backend files to the target directory
-    #     echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./barcodeAPI/* /opt/thebarcodeapi/barcodeAPI/
-    #     echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi/barcodeAPI
-
-    # - name: Verify Working Directory
-    #   run: |
-    #     if [ ! -d "/opt/thebarcodeapi/barcodeAPI" ]; then
-    #       echo "Error: /opt/thebarcodeapi/barcodeAPI directory not found!"
-    #       exit 1
-    #     fi
-
     - name: Deploy Backend
       run: |
         if [ ! -f "/tmp/env_vars" ] || [ ! -f "/tmp/docker_vars" ]; then
@@ -650,6 +455,63 @@ jobs:
         # Exit with migration status
         exit $MIGRATION_STATUS
 
+        - name: Verify Backend Deployment
+        run: |
+          cd /opt/thebarcodeapi/barcodeAPI
+
+          # Determine docker compose command
+          if command -v docker-compose &> /dev/null; then
+            COMPOSE_CMD="docker-compose"
+          else
+            COMPOSE_CMD="docker compose"
+          fi
+
+          # Create temporary env file with sudo
+          echo "Creating temporary environment file..."
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
+          DB_PASSWORD=${{ env.DB_PASSWORD }}
+          POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+          API_SECRET_KEY=${{ env.API_SECRET_KEY }}
+          API_MASTER_KEY=${{ env.API_MASTER_KEY }}
+          DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+          REDIS_URL=redis://redis:6379
+          ALGORITHM=HS256
+          ACCESS_TOKEN_EXPIRE_MINUTES=30
+          EOF'
+
+          # Set proper permissions
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
+
+          echo "Verifying backend deployment..."
+
+          echo "Checking Docker containers status:"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD ps
+
+          echo "Checking container logs (last 10 lines):"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail=10
+
+          echo "Testing backend health:"
+          MAX_RETRIES=3
+          RETRY_COUNT=0
+          until curl -f http://localhost:8000/health || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+            echo "Backend health check failed, retrying in 5 seconds..."
+            sleep 5
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+          done
+
+          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+            echo "Backend health check failed after $MAX_RETRIES attempts"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs api
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
+            exit 1
+          fi
+
+          echo "Backend verification completed successfully"
+
+          # Cleanup
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
+
     - name: Clean up
       if: always()
       run: |
@@ -657,60 +519,35 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f .env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
 
-    - name: Verify Backend Deployment
+    - name: Final Status Check
       run: |
-        cd /opt/thebarcodeapi/barcodeAPI
+        echo "Performing final status check..."
 
-        # Create temporary env file for docker-compose
-        cat << EOF > docker-compose.env
-        DB_PASSWORD=${{ env.DB_PASSWORD }}
-        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
-        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        EOF
-
-        # Determine docker compose command
-        if command -v docker-compose &> /dev/null; then
-          COMPOSE_CMD="docker-compose"
-        else
-          COMPOSE_CMD="docker compose"
-        fi
-
-        echo "Verifying backend deployment..."
-
-        echo "Checking Docker containers status:"
-        $COMPOSE_CMD --env-file docker-compose.env ps
-
-        echo "Checking container logs (last 10 lines):"
-        $COMPOSE_CMD --env-file docker-compose.env logs --tail=10
-
-        echo "Testing backend health:"
-        MAX_RETRIES=3
-        RETRY_COUNT=0
-        until curl -f http://localhost:8000/health || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
-          echo "Backend health check failed, retrying in 5 seconds..."
-          sleep 5
-          RETRY_COUNT=$((RETRY_COUNT + 1))
-        done
-
-        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-          echo "Backend health check failed after $MAX_RETRIES attempts"
-          $COMPOSE_CMD --env-file docker-compose.env logs api
+        # Check app containers
+        if ! docker ps | grep -q "barcodeapi_api"; then
+          echo "API container is not running!"
           exit 1
         fi
 
-        echo "Backend verification completed successfully"
+        # Check Redis
+        if ! docker ps | grep -q "barcodeapi_redis"; then
+          echo "Redis container is not running!"
+          exit 1
+        fi
 
-        # Cleanup
-        rm -f docker-compose.env
+        # Check Database
+        if ! docker ps | grep -q "barcodeapi_db"; then
+          echo "Database container is not running!"
+          exit 1
+        fi
 
-    - name: Clean up
-      if: always()
-      run: |
-        cd /opt/thebarcodeapi/barcodeAPI
-        rm -f docker-compose.env
-        docker system prune -f --volumes
+        # Check API health
+        if ! curl -s -f http://localhost:8000/health > /dev/null; then
+          echo "API health check failed!"
+          exit 1
+        fi
+
+        echo "All services are running correctly!"
 
   final-verification:
     runs-on: self-hosted
