@@ -325,8 +325,6 @@ jobs:
         ACCESS_TOKEN_EXPIRE_MINUTES=30
         REDIS_URL=redis://redis:6379
         DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api
-        PYTHONDONTWRITEBYTECODE=1
-        PYTHONUNBUFFERED=1
         EOL
 
         # Create docker-compose.yml
