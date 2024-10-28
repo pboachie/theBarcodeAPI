@@ -112,7 +112,7 @@ jobs:
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_frontend.sh
-        rm -f /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
 
     - name: Verify Frontend Deployment
       run: |
@@ -134,11 +134,11 @@ jobs:
 
         echo "Frontend verification completed"
         EOF
-        chmod +x verify_frontend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x verify_frontend.sh
 
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_frontend.sh
-        rm -f /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
 
     - name: Fix Docker permissions
       run: |
@@ -168,7 +168,7 @@ jobs:
 
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_frontend.sh
-        rm -f /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
 
   backend-deployment:
     runs-on: self-hosted
@@ -214,9 +214,9 @@ jobs:
 
         # Debug output
         echo "Environment file contents:"
-        cat /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/env_vars
         echo "Docker compose file contents:"
-        cat /tmp/docker_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/docker_vars
 
     - name: Create backend deployment script
       run: |
@@ -570,10 +570,10 @@ jobs:
         EOF'
 
         # Make script executable
-        sudo chmod +x deploy_backend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_backend.sh
 
         # Execute deployment script with environment preservation
-        sudo --preserve-env=ENVIRONMENT,DB_PASSWORD,POSTGRES_PASSWORD,API_SECRET_KEY,API_MASTER_KEY ./deploy_backend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S --preserve-env=ENVIRONMENT,DB_PASSWORD,POSTGRES_PASSWORD,API_SECRET_KEY,API_MASTER_KEY ./deploy_backend.sh
 
     - name: Run Database Migrations
       run: |
