@@ -253,11 +253,10 @@ jobs:
                 if ${DOCKER_COMPOSE} exec db pg_isready -U postgres > /dev/null 2>&1; then
                     echo "PostgreSQL is ready, creating backup..."
                     # Create backup using postgres user inside container
-                    ${DOCKER_COMPOSE} exec -T db bash -c 'pg_dumpall -U postgres > /tmp/backup.sql' || { echo "Failed to create backup.sql"; touch /tmp/backup.sql; exit 1; }
-                    # Copy the backup file from container to host
-                    docker cp $(${DOCKER_COMPOSE} ps -q db):/tmp/backup.sql "$BACKUP_DIR/postgres_backup.sql"
-                    # Clean up temporary file in container
-                    ${DOCKER_COMPOSE} exec -T db rm /tmp/backup.sql
+                    ${DOCKER_COMPOSE} exec -T db pg_dumpall -U postgres > "${BACKUP_DIR}/postgres_backup.sql" || {
+                        echo "Failed to create backup"
+                        return 1
+                    }
                     echo "PostgreSQL backup completed successfully"
                     return 0
                 fi
@@ -272,8 +271,20 @@ jobs:
             if ${DOCKER_COMPOSE} ps 2>/dev/null | grep -q "redis"; then
                 if ${DOCKER_COMPOSE} exec -T redis redis-cli ping | grep -q "PONG"; then
                     echo "Redis is ready, creating backup..."
-                    ${DOCKER_COMPOSE} exec -T redis redis-cli SAVE || { echo "Failed to save Redis dump"; exit 1; }
-                    docker cp $(${DOCKER_COMPOSE} ps -q redis):/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
+                    ${DOCKER_COMPOSE} exec -T redis redis-cli SAVE || {
+                        echo "Failed to save Redis dump"
+                        return 1
+                    }
+                    REDIS_CONTAINER=$(${DOCKER_COMPOSE} ps -q redis)
+                    if [ ! -z "$REDIS_CONTAINER" ]; then
+                        docker cp "${REDIS_CONTAINER}:/data/dump.rdb" "${BACKUP_DIR}/redis_dump.rdb" || {
+                            echo "Failed to copy Redis dump"
+                            return 1
+                        }
+                    else
+                        echo "Could not find Redis container"
+                        return 1
+                    }
                     echo "Redis backup completed successfully"
                     return 0
                 fi
@@ -297,12 +308,12 @@ jobs:
         # Preserve existing data
         if [ -d "/opt/thebarcodeapi/data/postgres" ]; then
             echo "Preserving PostgreSQL data..."
-            sudo cp -R /opt/thebarcodeapi/data/postgres "$BACKUP_DIR/postgres_data"
+            sudo cp -R /opt/thebarcodeapi/data/postgres "${BACKUP_DIR}/postgres_data"
         fi
 
         if [ -d "/opt/thebarcodeapi/data/redis" ]; then
             echo "Preserving Redis data..."
-            sudo cp -R /opt/thebarcodeapi/data/redis "$BACKUP_DIR/redis_data"
+            sudo cp -R /opt/thebarcodeapi/data/redis "${BACKUP_DIR}/redis_data"
         fi
 
         # Ensure correct permissions on data directories
