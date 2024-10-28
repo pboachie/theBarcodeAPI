@@ -51,15 +51,23 @@ jobs:
       run: |
         cat << 'EOF' > deploy_frontend.sh
         #!/bin/bash
+        # deploy_frontend.sh
         set -e
+
+        # Ensure environment variables are set
+        if [ ! -f "/tmp/env_vars" ]; then
+            echo "Error: /tmp/env_vars not found"
+            exit 1
+        fi
 
         source /tmp/env_vars
 
         echo "Starting frontend deployment..."
 
         # Create directories
-        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases
-        NEW_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/release-$(date +%Y%m%d%H%M%S)"
+        DEPLOY_ROOT="/opt/thebarcodeapi/${ENVIRONMENT}"
+        mkdir -p "${DEPLOY_ROOT}/releases"
+        NEW_RELEASE="${DEPLOY_ROOT}/releases/release-$(date +%Y%m%d%H%M%S)"
         echo "Creating new release directory: $NEW_RELEASE"
         mkdir -p "$NEW_RELEASE"
 
@@ -74,35 +82,56 @@ jobs:
         cd "$NEW_RELEASE"
 
         # Install production dependencies
-        npm ci --only=production --omit=dev
+        npm ci --omit=dev
 
         # Get the version from package.json
         VERSION=$(node -p "require('./package.json').version")
 
+        # Create PM2 ecosystem file
+        cat > ecosystem.config.js << EOF
+        module.exports = {
+          apps: [{
+            name: "thebarcodeapi-frontend-${ENVIRONMENT}",
+            script: "npm",
+            args: "start",
+            env: {
+              NODE_ENV: "production",
+              PORT: 3000,
+              APP_VERSION: "${VERSION}"
+            },
+            wait_ready: true,
+            listen_timeout: 10000,
+            kill_timeout: 3000
+          }]
+        }
+        EOF
+
         # Update symlink
         echo "Creating symlink to new release"
-        ln -sfn "$NEW_RELEASE" /opt/thebarcodeapi/${ENVIRONMENT}/current
+        ln -sfn "$NEW_RELEASE" "${DEPLOY_ROOT}/current"
 
         # Clean up old releases (keep last 5)
         echo "Cleaning up old releases"
-        cd /opt/thebarcodeapi/${ENVIRONMENT}/releases && ls -1dt */ | tail -n +6 | xargs rm -rf
+        cd "${DEPLOY_ROOT}/releases" && ls -1dt */ | tail -n +6 | xargs rm -rf
 
         echo "Starting/Restarting PM2 process with version $VERSION"
+        # Stop any existing process
         if pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
-          pm2 reload "thebarcodeapi-frontend-${ENVIRONMENT}" --update-env
-        else
-          pm2 start npm --name "thebarcodeapi-frontend-${ENVIRONMENT}" -- start
+            pm2 stop "thebarcodeapi-frontend-${ENVIRONMENT}"
+            pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}"
         fi
 
-        # Update the process with the version
-        pm2 set "thebarcodeapi-frontend-${ENVIRONMENT}:APP_VERSION" $VERSION
+        # Start new process with ecosystem file
+        cd "$NEW_RELEASE"
+        pm2 start ecosystem.config.js
 
-        # Save the new PM2 process list
+        # Save the PM2 process list
         pm2 save
 
         # Set permissions
-        echo "Changing ownership of /opt/thebarcodeapi"
-        chown -R www-data:www-data /opt/thebarcodeapi
+        echo "Setting permissions on deployed files"
+        chown -R www-data:www-data "${DEPLOY_ROOT}"
+        chmod -R 755 "${DEPLOY_ROOT}"
 
         echo "Frontend deployment completed"
         EOF
@@ -122,21 +151,58 @@ jobs:
       run: |
         cat << 'EOF' > verify_frontend.sh
         #!/bin/bash
+        # verify_frontend.sh
         set -e
+
+        if [ ! -f "/tmp/env_vars" ]; then
+            echo "Error: /tmp/env_vars not found"
+            exit 1
+        fi
 
         source /tmp/env_vars
 
         echo "Verifying frontend deployment..."
-        echo "Checking current symlink:"
-        ls -la /opt/thebarcodeapi/${ENVIRONMENT}/current
 
+        # Check current symlink
+        echo "Checking current symlink:"
+        ls -la "/opt/thebarcodeapi/${ENVIRONMENT}/current"
+
+        # Check PM2 process status
         echo "Checking Next.js application status:"
-        pm2 list | grep thebarcodeapi-frontend-${ENVIRONMENT}
+        pm2 list | grep "thebarcodeapi-frontend-${ENVIRONMENT}" || {
+            echo "ERROR: PM2 process not found!"
+            exit 1
+        }
+
+        # Function to test frontend health with timeout and retries
+        check_frontend_health() {
+            local max_attempts=12  # 1 minute total (5s * 12)
+            local attempt=1
+
+            while [ $attempt -le $max_attempts ]; do
+                echo "Health check attempt $attempt of $max_attempts..."
+                if curl -s -f "http://localhost:3000/" > /dev/null; then
+                    echo "Frontend is responding successfully!"
+                    return 0
+                fi
+                echo "Frontend not ready yet, waiting 5 seconds..."
+                sleep 5
+                attempt=$((attempt + 1))
+            done
+
+            echo "ERROR: Frontend failed to respond after 1 minute"
+            return 1
+        }
 
         echo "Testing frontend health..."
-        curl -I http://localhost:3000 || echo "Frontend not responding"
+        if ! check_frontend_health; then
+            echo "DEPLOYMENT VERIFICATION FAILED"
+            echo "Recent PM2 logs:"
+            pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+            exit 1
+        fi
 
-        echo "Frontend verification completed"
+        echo "Frontend verification completed successfully"
         EOF
         chmod +x verify_frontend.sh
 
