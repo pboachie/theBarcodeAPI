@@ -110,8 +110,8 @@ jobs:
 
     - name: Deploy Frontend
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_frontend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars'
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c './deploy_frontend.sh'
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
 
     - name: Verify Frontend Deployment
