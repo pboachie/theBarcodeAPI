@@ -51,7 +51,6 @@ jobs:
       run: |
         cat << 'EOF' > deploy_frontend.sh
         #!/bin/bash
-        # deploy_frontend.sh
         set -e
 
         # Ensure environment variables are set
@@ -64,19 +63,23 @@ jobs:
 
         echo "Starting frontend deployment..."
 
-        # Create directories
+        # Create directories with sudo
         DEPLOY_ROOT="/opt/thebarcodeapi/${ENVIRONMENT}"
-        mkdir -p "${DEPLOY_ROOT}/releases"
+        echo "Creating deployment directories..."
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${DEPLOY_ROOT}/releases"
         NEW_RELEASE="${DEPLOY_ROOT}/releases/release-$(date +%Y%m%d%H%M%S)"
         echo "Creating new release directory: $NEW_RELEASE"
-        mkdir -p "$NEW_RELEASE"
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$NEW_RELEASE"
+
+        # Set permissions for the new directory
+        echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner "$NEW_RELEASE"
 
         # Copy Next.js build files
         echo "Copying build files to new release directory"
-        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/.next "$NEW_RELEASE/"
-        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/public "$NEW_RELEASE/"
-        cp /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/package.json "$NEW_RELEASE/"
-        cp /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/package-lock.json "$NEW_RELEASE/"
+        echo "$SUDO_PASSWORD" | sudo -S cp -R ./.next "$NEW_RELEASE/"
+        echo "$SUDO_PASSWORD" | sudo -S cp -R ./public "$NEW_RELEASE/"
+        echo "$SUDO_PASSWORD" | sudo -S cp ./package.json "$NEW_RELEASE/"
+        echo "$SUDO_PASSWORD" | sudo -S cp ./package-lock.json "$NEW_RELEASE/"
 
         # Change to the new release directory
         cd "$NEW_RELEASE"
@@ -106,36 +109,41 @@ jobs:
         }
         EOF
 
-        # Update symlink
+        # Update symlink with absolute paths
         echo "Creating symlink to new release"
-        ln -sfn "$NEW_RELEASE" "${DEPLOY_ROOT}/current"
+        echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$NEW_RELEASE" "${DEPLOY_ROOT}/current"
 
         # Clean up old releases (keep last 5)
         echo "Cleaning up old releases"
-        cd "${DEPLOY_ROOT}/releases" && ls -1dt */ | tail -n +6 | xargs rm -rf
+        cd "${DEPLOY_ROOT}/releases"
+        OLD_RELEASES=$(ls -1dt */ | tail -n +6)
+        if [ ! -z "$OLD_RELEASES" ]; then
+            echo "$SUDO_PASSWORD" | sudo -S rm -rf $OLD_RELEASES
+        fi
 
         echo "Starting/Restarting PM2 process with version $VERSION"
         # Stop any existing process
         if pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
-            pm2 stop "thebarcodeapi-frontend-${ENVIRONMENT}"
-            pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}"
+            pm2 stop "thebarcodeapi-frontend-${ENVIRONMENT}" || true
+            pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
         fi
 
         # Start new process with ecosystem file
         cd "$NEW_RELEASE"
-        pm2 start ecosystem.config.js
+        PM2_HOME="/home/github-runner/.pm2" pm2 start ecosystem.config.js
 
         # Save the PM2 process list
-        pm2 save
+        PM2_HOME="/home/github-runner/.pm2" pm2 save
 
-        # Set permissions
+        # Set final permissions
         echo "Setting permissions on deployed files"
-        chown -R www-data:www-data "${DEPLOY_ROOT}"
-        chmod -R 755 "${DEPLOY_ROOT}"
+        echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data "${DEPLOY_ROOT}"
+        echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "${DEPLOY_ROOT}"
 
         echo "Frontend deployment completed"
+
         EOF
-        chmod +x deploy_frontend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_frontend.sh
 
     - name: Fix Docker permissions
       run: |
@@ -143,8 +151,20 @@ jobs:
 
     - name: Deploy Frontend
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars'
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c './deploy_frontend.sh'
+        # Create env vars file
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /tmp/env_vars
+        ENVIRONMENT=${{ env.ENVIRONMENT }}
+        NODE_ENV=production
+        SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
+        EOF'
+
+        # Make the script executable
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_frontend.sh
+
+        # Run the deployment script
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_frontend.sh
+
+        # Cleanup
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
 
     - name: Verify Frontend Deployment
