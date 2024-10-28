@@ -108,41 +108,15 @@ jobs:
         EOF
         chmod +x deploy_frontend.sh
 
+    - name: Fix Docker permissions
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
+
     - name: Deploy Frontend
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars'
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c './deploy_frontend.sh'
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
-
-    - name: Verify Frontend Deployment
-      run: |
-        cat << 'EOF' > verify_frontend.sh
-        #!/bin/bash
-        set -e
-
-        source /tmp/env_vars
-
-        echo "Verifying frontend deployment..."
-        echo "Checking current symlink:"
-        ls -la /opt/thebarcodeapi/${ENVIRONMENT}/current
-
-        echo "Checking Next.js application status:"
-        pm2 list | grep thebarcodeapi-frontend-${ENVIRONMENT}
-
-        echo "Testing frontend health..."
-        curl -I http://localhost:3000 || echo "Frontend not responding"
-
-        echo "Frontend verification completed"
-        EOF
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x verify_frontend.sh
-
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_frontend.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
-
-    - name: Fix Docker permissions
-      run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
 
     - name: Verify Frontend Deployment
       run: |
@@ -279,7 +253,7 @@ jobs:
                 if ${DOCKER_COMPOSE} exec db pg_isready -U postgres > /dev/null 2>&1; then
                     echo "PostgreSQL is ready, creating backup..."
                     # Create backup using postgres user inside container
-                    ${DOCKER_COMPOSE} exec -T db bash -c 'pg_dumpall -U postgres > /tmp/backup.sql' || { echo "Failed to create backup.sql"; exit 1; }
+                    ${DOCKER_COMPOSE} exec -T db bash -c 'pg_dumpall -U postgres > /tmp/backup.sql' || { echo "Failed to create backup.sql"; touch /tmp/backup.sql; exit 1; }
                     # Copy the backup file from container to host
                     docker cp $(${DOCKER_COMPOSE} ps -q db):/tmp/backup.sql "$BACKUP_DIR/postgres_backup.sql"
                     # Clean up temporary file in container
