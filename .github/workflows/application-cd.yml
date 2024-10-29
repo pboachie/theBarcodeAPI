@@ -126,10 +126,16 @@ jobs:
             script: "npm",
             args: "start",
             env: {
-              NODE_ENV: "production",
+              NODE_ENV: "${ENVIRONMENT}",
+              ENVIRONMENT: '${ENVIRONMENT}'
               PORT: 3000,
               APP_VERSION: "${VERSION}"
             },
+            cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
+            instances: 'max',
+            autorestart: true,
+            watch: false,
+            max_memory_restart: '1G',
             wait_ready: true,
             listen_timeout: 10000,
             kill_timeout: 3000
