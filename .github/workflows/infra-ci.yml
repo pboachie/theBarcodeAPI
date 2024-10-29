@@ -14,6 +14,8 @@ env:
   API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
   API_MASTER_KEY: ${{ secrets.API_MASTER_KEY }}
   API_VERSION: ${{ vars.API_VERSION }}
+  DOCKER_CLIENT_TIMEOUT: 120
+  COMPOSE_HTTP_TIMEOUT: 120
 
 jobs:
   infra-ci-job:
@@ -25,6 +27,7 @@ jobs:
 
     - name: Install Docker Compose V2
       run: |
+        set -e
         # Remove any existing docker-compose installations
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /usr/local/bin/docker-compose
 
@@ -38,28 +41,35 @@ jobs:
         docker compose version
 
     - name: Setup Initial Directories
+      shell: bash
       run: |
-        for dir in \
-          /opt/thebarcodeapi/barcodeAPI \
-          /opt/thebarcodeapi/data/postgres \
-          /opt/thebarcodeapi/data/redis \
-          /opt/thebarcodeapi/backups \
+        set -e
+        DIRS=(
+          "/opt/thebarcodeapi/barcodeAPI"
+          "/opt/thebarcodeapi/data/postgres"
+          "/opt/thebarcodeapi/data/redis"
+          "/opt/thebarcodeapi/backups"
           "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
-        do
+        )
+
+        for dir in "${DIRS[@]}"; do
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "$dir"
         done
+
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
 
     - name: Configure sudoers
+      shell: bash
       run: |
+        set -e
         echo "Configuring sudoers..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /etc/sudoers.d/github-runner << EOF
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2, /usr/bin/npm, /usr/bin/docker, /usr/local/bin/docker-compose, /usr/bin/docker compose
-        EOF'
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /etc/sudoers.d/github-runner << EOF github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2, /usr/bin/npm, /usr/bin/docker, /usr/local/bin/docker-compose, /usr/bin/docker compose EOF'
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 0440 /etc/sudoers.d/github-runner
 
     - name: Install and Configure Dependencies
+      shell: bash
       run: |
+        set -e
         # Update package list
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S apt-get update
 
@@ -80,6 +90,8 @@ jobs:
           sudo usermod -aG docker $USER
           sudo systemctl enable docker
           sudo systemctl start docker
+          # Wait for Docker to be ready
+          sleep 10
         fi
 
         # Install Nginx if not present
@@ -87,22 +99,31 @@ jobs:
           sudo apt-get install -y nginx
         fi
 
-    - name: Setup Docker Operations Timeout
+    - name: Setup Docker Network
+      shell: bash
       run: |
-        # Set Docker timeouts
-        echo "export DOCKER_CLIENT_TIMEOUT=120" >> $HOME/.bashrc
-        echo "export COMPOSE_HTTP_TIMEOUT=120" >> $HOME/.bashrc
+        set -e
+        echo "Setting up Docker network..."
 
-        # Set for current session
-        export DOCKER_CLIENT_TIMEOUT=120
-        export COMPOSE_HTTP_TIMEOUT=120
+        # Check if network exists
+        if ! docker network ls | grep -q "barcodeapi_network"; then
+          echo "Creating barcodeapi_network..."
+          docker network create barcodeapi_network || {
+            echo "Failed to create network"
+            exit 1
+          }
+        else
+          echo "Network barcodeapi_network already exists"
+        fi
 
     - name: Configure Docker Environment
+      shell: bash
       run: |
+        set -e
         echo "Configuring Docker environment..."
 
         # Create docker-compose.yml
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /opt/thebarcodeapi/barcodeAPI/docker-compose.yml << EOF
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /opt/thebarcodeapi/barcodeAPI/docker-compose.yml << 'EOF'
         version: '3.8'
 
         services:
@@ -131,11 +152,8 @@ jobs:
               retries: 3
               start_period: 30s
             restart: unless-stopped
-            logging:
-              driver: 'json-file'
-              options:
-                max-size: '10m'
-                max-file: '3'
+            networks:
+              - barcodeapi_network
 
           redis:
             image: redislabs/rejson:latest
@@ -149,6 +167,8 @@ jobs:
               timeout: 30s
               retries: 50
             restart: unless-stopped
+            networks:
+              - barcodeapi_network
 
           db:
             image: postgres:13
@@ -167,15 +187,12 @@ jobs:
               timeout: 5s
               retries: 5
             restart: unless-stopped
-            logging:
-              driver: 'json-file'
-              options:
-                max-size: '10m'
-                max-file: '3'
+            networks:
+              - barcodeapi_network
 
         networks:
-          default:
-            name: barcodeapi_network
+          barcodeapi_network:
+            external: true
         EOF"
 
         # Create .env file for Docker services
@@ -213,73 +230,26 @@ jobs:
         # Make init script executable
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x /opt/thebarcodeapi/barcodeAPI/init-db.sh
 
-        # Configure Docker daemon settings
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /etc/docker/daemon.json << EOF
-        {
-          \"log-driver\": \"json-file\",
-          \"log-opts\": {
-            \"max-size\": \"10m\",
-            \"max-file\": \"3\"
-          },
-          \"default-address-pools\": [
-            {
-              \"base\": \"172.17.0.0/16\",
-              \"size\": 24
-            }
-          ]
-        }
-        EOF"
 
-        # Create Docker registry configuration
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /etc/docker/certs.d
-
-        # Set proper permissions
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R root:root /etc/docker
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /etc/docker/daemon.json
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 700 /etc/docker/certs.d
-
-        # Restart Docker to apply changes
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S systemctl restart docker
-        sleep 5
-
-    - name: Setup Docker Network
+    - name: Verify Docker Configuration
+      shell: bash
       run: |
-        # Create Docker network if it doesn't exist
-        if ! docker network ls | grep -q "barcodeapi_network"; then
-          docker network create barcodeapi_network
+        set -e
+
+        # Check if Docker is running
+        if ! systemctl is-active --quiet docker; then
+          echo "Error: Docker is not running"
+          exit 1
         fi
 
-        - name: Verify Docker Configuration
-        run: |
-          # Check if Docker is running
-          if ! systemctl is-active --quiet docker; then
-            echo "Error: Docker is not running"
-            exit 1
-          fi
+        # Verify Docker Compose config
+        cd /opt/thebarcodeapi/barcodeAPI
+        if ! docker compose config; then
+          echo "Error: Invalid docker-compose.yml configuration"
+          exit 1
+        fi
 
-          # Check if configuration files exist
-          for file in "docker-compose.yml" ".env" "init-db.sh"; do
-            if [ ! -f "/opt/thebarcodeapi/barcodeAPI/$file" ]; then
-              echo "Error: $file not found"
-              exit 1
-            fi
-          done
-
-          # Check if Docker network exists
-          if ! docker network ls | grep -q "barcodeapi_network"; then
-            echo "Error: barcodeapi_network not found"
-            exit 1
-          fi
-
-          # Verify Docker Compose configuration
-          cd /opt/thebarcodeapi/barcodeAPI
-          if ! docker compose config; then
-            echo "Error: Invalid docker-compose.yml configuration"
-            exit 1
-          fi
-
-          echo "Docker configuration verified successfully"
-
+        echo "Docker configuration verified successfully"
     - name: Configure Nginx
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /etc/nginx/sites-available/thebarcodeapi << 'EOF'
