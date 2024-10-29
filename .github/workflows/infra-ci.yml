@@ -271,12 +271,12 @@ jobs:
         cat > /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js << EEOF
         module.exports = {
           apps: [{
-            name: "thebarcodeapi-frontend-${ENVIRONMENT}",
-            script: "npm",
-            args: "start",
+            name: 'thebarcodeapi-frontend-${ENVIRONMENT}',
+            script: 'npm',
+            args: 'start',
             env: {
-              NODE_ENV: "${ENVIRONMENT}",
-              ENVIRONMENT: '${ENVIRONMENT}'
+              NODE_ENV: '${ENVIRONMENT}',
+              ENVIRONMENT: '${ENVIRONMENT}',
               PORT: 3000
             },
             cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
@@ -288,7 +288,7 @@ jobs:
             listen_timeout: 10000,
             kill_timeout: 3000
           }]
-        }
+        };
         EEOF
 
         # Manage PM2 process
