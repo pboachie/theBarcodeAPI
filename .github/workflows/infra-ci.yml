@@ -545,7 +545,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./setup_docker.sh
 
         # Clean up
-        rm -f /tmp/env_vars
+        echo "$SUDO_PASSWORD" | sudo -S  rm -f /tmp/env_vars
 
     - name: Fix Permissions
       run: |
