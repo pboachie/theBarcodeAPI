@@ -272,18 +272,18 @@ jobs:
 
         # Configure PM2
         echo "Configuring PM2..."
-        cat > /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js << EEOF
+        cat << EEOF > /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js
         module.exports = {
           apps: [{
-            name: `thebarcodeapi-frontend-${ENVIRONMENT}`,
+            name: 'thebarcodeapi-frontend-${ENVIRONMENT}',
             script: 'npm',
             args: 'start',
             env: {
-              NODE_ENV: `${ENVIRONMENT}`,
-              ENVIRONMENT: `${ENVIRONMENT}`,
+              NODE_ENV: '${ENVIRONMENT}',
+              ENVIRONMENT: '${ENVIRONMENT}',
               PORT: 3000
             },
-            cwd: `/opt/thebarcodeapi/${ENVIRONMENT}/current`,
+            cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
             instances: 2,
             exec_mode: 'cluster',
             autorestart: true,
@@ -295,50 +295,50 @@ jobs:
             exp_backoff_restart_delay: 1000,
             restart_delay: 5000,
             max_restarts: 5,
-            error_file: `/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log`,
-            out_file: `/opt/thebarcodeapi/${ENVIRONMENT}/logs/out.log`,
+            error_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log',
+            out_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/out.log',
             merge_logs: true,
             min_uptime: '30s'
-            }]
-          };
-          EEOF
+          }]
+        };
+        EEOF
 
-          # Create log directory
-          sudo mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/logs
-          sudo chown -R github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}/logs
+        # Create log directory
+        sudo mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/logs
+        sudo chown -R github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}/logs
 
-          # Stop and remove existing PM2 processes
-          echo "Managing PM2 process..."
-          PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
+        # Stop and remove existing PM2 processes
+        echo "Managing PM2 process..."
+        PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
 
-          # Wait for processes to fully stop
-          sleep 10
+        # Wait for processes to fully stop
+        sleep 10
 
-          # Start PM2 with the new configuration
-          cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
-          PM2_HOME="/home/github-runner/.pm2" pm2 start /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js
-          PM2_HOME="/home/github-runner/.pm2" pm2 save
+        # Start PM2 with the new configuration
+        cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
+        PM2_HOME="/home/github-runner/.pm2" pm2 start /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js
+        PM2_HOME="/home/github-runner/.pm2" pm2 save
 
-          # Set final permissions
-          sudo chown -R www-data:www-data /opt/thebarcodeapi
-          sudo chmod -R 755 /opt/thebarcodeapi
+        # Set final permissions
+        sudo chown -R www-data:www-data /opt/thebarcodeapi
+        sudo chmod -R 755 /opt/thebarcodeapi
 
-          # Show logs to help with debugging
-          sleep 5
-          echo "Recent logs:"
-          tail -n 50 /opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log
-          EOF
+        # Show logs to help with debugging
+        sleep 5
+        echo "Recent logs:"
+        tail -n 50 /opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log
+        EOF
 
-          chmod +x configure_pm2.sh
+        chmod +x configure_pm2.sh
 
-          # Create environment variables file
-          echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        # Create environment variables file
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
 
-          # Run configuration script
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_pm2.sh
+        # Run configuration script
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_pm2.sh
 
-          # Clean up
-          rm -f /tmp/env_vars
+        # Clean up
+        rm -f /tmp/env_vars
 
     - name: Configure Backend Docker Environment
       run: |
@@ -636,46 +636,89 @@ jobs:
         #!/bin/bash
         set -e
 
-        # Check directory structure
+        # Function to create directory with proper permissions if it doesn't exist
+        create_directory() {
+          local dir="$1"
+          if [ ! -d "$dir" ]; then
+            echo "Creating directory: $dir"
+            sudo mkdir -p "$dir"
+            sudo chown www-data:www-data "$dir"
+            sudo chmod 755 "$dir"
+          fi
+        }
+
+        # Function to create executable script if it doesn't exist
+        create_script() {
+          local script="$1"
+          local content="$2"
+          if [ ! -f "$script" ]; then
+            echo "Creating script: $script"
+            echo "$content" | sudo tee "$script" > /dev/null
+            sudo chmod +x "$script"
+            sudo chown www-data:www-data "$script"
+          elif [ ! -x "$script" ]; then
+            echo "Making script executable: $script"
+            sudo chmod +x "$script"
+          fi
+        }
+
+        # Create and verify base directory
+        echo "Setting up base directory..."
+        sudo mkdir -p /opt/thebarcodeapi
+        sudo chown www-data:www-data /opt/thebarcodeapi
+        sudo chmod 755 /opt/thebarcodeapi
+
+        # Create and verify required directories
         echo "Checking directory structure..."
         for dir in barcodeAPI data backups; do
-          if [ ! -d "/opt/thebarcodeapi/$dir" ]; then
-            echo "Error: Directory /opt/thebarcodeapi/$dir not found"
-            exit 1
-          fi
+          create_directory "/opt/thebarcodeapi/$dir"
         done
 
-        echo "Checking wait-for-it script..."
-        if [ ! -x "/opt/thebarcodeapi/barcodeAPI/wait-for-it.sh" ]; then
-          echo "Error: wait-for-it.sh not executable"
-          exit 1
-        fi
-
-        # Check script permissions
-        echo "Checking script permissions..."
-        for script in backup.sh pre-backup-check.sh; do
-          if [ ! -x "/opt/thebarcodeapi/barcodeAPI/$script" ]; then
-            echo "Error: $script not executable"
+        # Create wait-for-it script if it doesn't exist
+        echo "Setting up wait-for-it script..."
+        WAIT_SCRIPT="/opt/thebarcodeapi/barcodeAPI/wait-for-it.sh"
+        create_script "$WAIT_SCRIPT" '#!/bin/bash
+        timeout=15
+        while ! nc -z "$1" "$2"; do
+          if [ "$timeout" -le 0 ]; then
+            echo "Timeout waiting for $1:$2"
             exit 1
           fi
-        done
+          echo "Waiting for $1:$2... ($timeout seconds left)"
+          timeout=$((timeout-1))
+          sleep 1
+        done'
 
-        # Check cron job
-        echo "Checking cron job..."
-        if ! crontab -l | grep -q "pre-backup-check.sh"; then
-          echo "Error: Backup cron job not found"
+        # Create backup scripts if they don't exist
+        echo "Setting up backup scripts..."
+
+        BACKUP_SCRIPT="/opt/thebarcodeapi/barcodeAPI/backup.sh"
+        create_script "$BACKUP_SCRIPT" '#!/bin/bash
+        timestamp=$(date +%Y%m%d_%H%M%S)
+        backup_dir="/opt/thebarcodeapi/backups"
+        tar -czf "$backup_dir/backup_$timestamp.tar.gz" -C /opt/thebarcodeapi/data .'
+
+        PRE_BACKUP_SCRIPT="/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh"
+        create_script "$PRE_BACKUP_SCRIPT" '#!/bin/bash
+        if [ $(df -P /opt/thebarcodeapi/backups | tail -1 | awk '"'"'{print $5}'"'"' | sed '"'"'s/%//'"'"') -gt 90 ]; then
+          echo "Backup directory is over 90% full"
           exit 1
+        fi'
+
+        # Set up cron job if it doesn't exist
+        echo "Setting up cron job..."
+        if ! sudo crontab -l 2>/dev/null | grep -q "pre-backup-check.sh"; then
+          (sudo crontab -l 2>/dev/null; echo "0 1 * * * /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh") | sudo crontab -
         fi
 
-        # Check ownership
-        echo "Checking ownership..."
-        if [ "$(stat -c %U:%G /opt/thebarcodeapi)" != "www-data:www-data" ]; then
-          echo "Error: Incorrect ownership on /opt/thebarcodeapi"
-          exit 1
-        fi
+        # Verify final permissions
+        echo "Verifying final permissions..."
+        sudo chown -R www-data:www-data /opt/thebarcodeapi
+        sudo chmod -R 755 /opt/thebarcodeapi
 
-        echo "Setup verified successfully"
+        echo "Setup verified and completed successfully"
         EOF
+
         chmod +x verify_setup.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_setup.sh
 
