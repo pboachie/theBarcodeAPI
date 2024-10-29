@@ -65,6 +65,9 @@ jobs:
         SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
         EOF'
 
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /tmp/env_vars
+
         # Create deployment script
         cat > deploy_frontend.sh << 'EOF'
         #!/bin/bash
@@ -115,9 +118,6 @@ jobs:
         # Install production dependencies
         npm ci --omit=dev
 
-        # Get version from package.json
-        # VERSION=$(node -p "require('./package.json').version")
-
         # Create and verify current directory exists
         CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$(dirname "$CURRENT_DIR")"
@@ -145,15 +145,10 @@ jobs:
         # Manage PM2 process
         echo "Managing PM2 process..."
         if pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
-            # restat PM2 process
             PM2_HOME="/home/github-runner/.pm2" pm2 restart "thebarcodeapi-frontend-${ENVIRONMENT}" || true
-            #PM2_HOME="/home/github-runner/.pm2" pm2 stop "thebarcodeapi-frontend-${ENVIRONMENT}" || true
-            #PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
         fi
 
         cd "$CURRENT_DIR"
-        #PM2_HOME="/home/github-runner/.pm2" pm2 start ecosystem.config.js
-        #PM2_HOME="/home/github-runner/.pm2" pm2 save --force
 
         # Set final permissions
         echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data "/opt/thebarcodeapi/${ENVIRONMENT}"
