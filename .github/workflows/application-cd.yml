@@ -59,11 +59,11 @@ jobs:
     - name: Deploy Frontend
       run: |
         # Create env vars file
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /tmp/env_vars << EOF
         ENVIRONMENT=${{ env.ENVIRONMENT }}
         NODE_ENV=production
         SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
-        EOF"
+        EOF'
 
         # Create deployment script
         cat > deploy_frontend.sh << 'EOF'
