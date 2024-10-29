@@ -268,12 +268,17 @@ jobs:
         # Configure PM2
         echo "Configuring PM2..."
         mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}
-        cat > /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js << EOL
+        cat > /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js << EEOF
         module.exports = {
           apps: [{
             name: "thebarcodeapi-frontend-${ENVIRONMENT}",
             script: "npm",
             args: "start",
+            env: {
+              NODE_ENV: "${ENVIRONMENT}",
+              ENVIRONMENT: '${ENVIRONMENT}'
+              PORT: 3000
+            },
             cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
             instances: 'max',
             autorestart: true,
@@ -282,14 +287,9 @@ jobs:
             wait_ready: true,
             listen_timeout: 10000,
             kill_timeout: 3000
-            env: {
-              NODE_ENV: 'production',
-              ENVIRONMENT: '${ENVIRONMENT}',
-              PORT: 3000
-            }
           }]
-        };
-        EOL
+        }
+        EEOF
 
         # Manage PM2 process
         echo "Managing PM2 process..."
