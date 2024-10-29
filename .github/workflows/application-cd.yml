@@ -256,89 +256,72 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/backups/
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
-    - name: Setup Docker permissions
+        - name: Setup Docker and Environment
+        run: |
+          # Fix docker socket permissions
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
+
+          # Add runner to docker group if not already added
+          if ! groups | grep -q docker; then
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
+            # Reload groups without logging out
+            exec sg docker newgrp docker
+          fi
+
+          # Create env_vars file
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
+          ENVIRONMENT=production
+          DB_PASSWORD=${{ env.DB_PASSWORD }}
+          POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+          API_SECRET_KEY=${{ env.API_SECRET_KEY }}
+          API_MASTER_KEY=${{ env.API_MASTER_KEY }}
+          API_VERSION=${{ vars.API_VERSION }}
+          EOF"
+
+          # Determine and set docker compose command
+          if command -v docker-compose &> /dev/null; then
+              echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "DOCKER_COMPOSE=docker-compose" > /tmp/docker_vars'
+          elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
+              echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "DOCKER_COMPOSE=docker compose" > /tmp/docker_vars'
+          else
+              echo "Neither docker-compose nor docker compose found!"
+              exit 1
+          fi
+
+          # Debug output
+          echo "Environment file contents:"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/env_vars
+          echo "Docker compose file contents:"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/docker_vars
+
+          # Verify Docker access
+          docker ps
+
+    - name: Create and run backend deployment script
       run: |
-        # Add runner to docker group if not already added
-        if ! groups | grep -q docker; then
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
-          # Create a subshell with new group
-          exec sg docker -c "docker ps"
-        fi
-
-    - name: Create env vars and docker vars
-      run: |
-        # Create env_vars without quotes
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /tmp/env_vars
-        ENVIRONMENT=production
-        DB_PASSWORD=${{ env.DB_PASSWORD }}
-        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
-        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
-        API_VERSION=${{ vars.API_VERSION }}
-        EOF'
-
-        # Create docker_vars without quotes
-        if command -v docker-compose &> /dev/null; then
-          echo "DOCKER_COMPOSE=docker-compose" > /tmp/docker_vars
-        else
-          echo "DOCKER_COMPOSE=docker compose" > /tmp/docker_vars
-        fi
-
-        # Debug output
-        echo "Environment file contents:"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/env_vars
-        echo "Docker compose file contents:"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/docker_vars
-
-    - name: Create backend deployment script
-      run: |
-        # Ensure the backend directory has the correct permissions
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
-
-        # Validate required environment variables
-        if [ -z "$ENVIRONMENT" ]; then
-            echo "ENVIRONMENT variable is not set. Using default: production"
-            ENVIRONMENT="production"
-        fi
-
-        # Navigate to backend directory
-        cd /opt/thebarcodeapi/barcodeAPI
-
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << 'EOF' > deploy_backend.sh
+        # Create deployment script
+        cat > deploy_backend.sh << 'EOF'
         #!/bin/bash
         set -e
 
-        # Ensure environment variables file exists
+        # Source environment variables
         if [ ! -f "/tmp/env_vars" ]; then
             echo "Error: /tmp/env_vars not found"
             exit 1
         fi
+        source /tmp/env_vars
 
-        # Ensure docker variables file exists
+        # Source docker compose command
         if [ ! -f "/tmp/docker_vars" ]; then
             echo "Error: /tmp/docker_vars not found"
             exit 1
         fi
-
-        # Source environment variables
-        source /tmp/env_vars
-
-        # Set DOCKER_COMPOSE with a fallback
-        if [ -f "/tmp/docker_vars" ]; then
-            source /tmp/docker_vars
-        else
-            # Fallback detection of docker compose
-            if command -v docker-compose &> /dev/null; then
-                DOCKER_COMPOSE="docker-compose"
-            else
-                DOCKER_COMPOSE="docker compose"
-            fi
-        fi
+        source /tmp/docker_vars
 
         echo "Starting backend deployment..."
         echo "Using DOCKER_COMPOSE command: ${DOCKER_COMPOSE}"
 
+        # Create backup directory
         BACKUP_DIR="/opt/thebarcodeapi/backups/${ENVIRONMENT:-production}/$(date +%Y%m%d_%H%M%S)"
         sudo mkdir -p "${BACKUP_DIR}"
         sudo chown -R $USER:$USER "${BACKUP_DIR}"
@@ -346,12 +329,10 @@ jobs:
         # Function to safely backup PostgreSQL
         backup_postgres() {
             echo "Attempting PostgreSQL backup..."
-            if ${DOCKER_COMPOSE} ps 2>/dev/null | grep -q "db"; then
-                # Check if container is running and healthy
-                if ${DOCKER_COMPOSE} exec db pg_isready -U postgres > /dev/null 2>&1; then
+            if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
+                if $DOCKER_COMPOSE exec -T db pg_isready -U postgres > /dev/null 2>&1; then
                     echo "PostgreSQL is ready, creating backup..."
-                    # Create backup using postgres user inside container
-                    ${DOCKER_COMPOSE} exec -T db pg_dumpall -U postgres > "${BACKUP_DIR}/postgres_backup.sql" || {
+                    $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "${BACKUP_DIR}/postgres_backup.sql" || {
                         echo "Failed to create backup"
                         return 1
                     }
@@ -360,48 +341,50 @@ jobs:
                 fi
             fi
             echo "No existing PostgreSQL container or not ready, skipping backup"
-            return 0  # Return success as this is expected for first deployment
+            return 0
         }
 
         # Function to safely backup Redis
         backup_redis() {
             echo "Attempting Redis backup..."
-            if ${DOCKER_COMPOSE} ps 2>/dev/null | grep -q "redis"; then
-                if ${DOCKER_COMPOSE} exec -T redis redis-cli ping | grep -q "PONG"; then
+            if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "redis"; then
+                if $DOCKER_COMPOSE exec -T redis redis-cli ping | grep -q "PONG"; then
                     echo "Redis is ready, creating backup..."
-                    ${DOCKER_COMPOSE} exec -T redis redis-cli SAVE || {
+                    $DOCKER_COMPOSE exec -T redis redis-cli SAVE || {
                         echo "Failed to save Redis dump"
                         return 1
                     }
-                    REDIS_CONTAINER=$(${DOCKER_COMPOSE} ps -q redis)
-                    if [ ! -z "$REDIS_CONTAINER" ]; then
-                        docker cp "${REDIS_CONTAINER}:/data/dump.rdb" "${BACKUP_DIR}/redis_dump.rdb" || {
+
+                    REDIS_ID=$($DOCKER_COMPOSE ps -q redis)
+                    if [ ! -z "$REDIS_ID" ]; then
+                        docker cp "${REDIS_ID}:/data/dump.rdb" "${BACKUP_DIR}/redis_dump.rdb" || {
                             echo "Failed to copy Redis dump"
                             return 1
                         }
                     else
                         echo "Could not find Redis container"
                         return 1
-                    }
+                    fi
+
                     echo "Redis backup completed successfully"
                     return 0
                 fi
             fi
             echo "No existing Redis container or not ready, skipping backup"
-            return 0  # Return success as this is expected for first deployment
+            return 0
         }
 
-        # Update the backup section to not fail if backups aren't possible
+        # Perform backups
         echo "Checking for existing containers to backup..."
         backup_postgres || echo "Note: PostgreSQL backup skipped"
         backup_redis || echo "Note: Redis backup skipped"
 
-        # Store current container states
-        OLD_CONTAINERS=$(${DOCKER_COMPOSE} ps -q)
+        # Store current container IDs
+        OLD_CONTAINERS=$($DOCKER_COMPOSE ps -q 2>/dev/null || echo "")
 
         # Stop current containers
         echo "Stopping current containers..."
-        ${DOCKER_COMPOSE} down || true
+        $DOCKER_COMPOSE down || true
 
         # Preserve existing data
         if [ -d "/opt/thebarcodeapi/data/postgres" ]; then
@@ -414,8 +397,8 @@ jobs:
             sudo cp -R /opt/thebarcodeapi/data/redis "${BACKUP_DIR}/redis_data"
         fi
 
-        # Ensure correct permissions on data directories
-        echo "Setting up data directories and permissions..."
+        # Set up data directories
+        echo "Setting up data directories..."
         sudo mkdir -p /opt/thebarcodeapi/data/postgres
         sudo mkdir -p /opt/thebarcodeapi/data/redis
         sudo chown -R 999:999 /opt/thebarcodeapi/data/postgres
@@ -423,240 +406,60 @@ jobs:
         sudo chown -R 999:999 /opt/thebarcodeapi/data/redis
         sudo chmod -R 755 /opt/thebarcodeapi/data/redis
 
-        # Build and start new containers
-        echo "Building and starting containers..."
-        ${DOCKER_COMPOSE} build --no-cache api
-        ${DOCKER_COMPOSE} up -d
-
-        # Function to check container health
-        check_container_health() {
-            local container=$1
-            local max_attempts=$2
-            local attempt=1
-
-            echo "Checking health of $container..."
-
-            while [ $attempt -le $max_attempts ]; do
-                if ${DOCKER_COMPOSE} ps $container | grep -q "healthy"; then
-                    echo "$container is healthy"
-                    return 0
-                fi
-                echo "Attempt $attempt/$max_attempts: $container not healthy yet, waiting..."
-
-                # Print container logs for debugging
-                echo "Recent logs for $container:"
-                ${DOCKER_COMPOSE} logs --tail=50 $container
-
-                sleep 10
-                attempt=$((attempt + 1))
-            done
-
-            echo "$container failed to become healthy within timeout"
-            return 1
-        }
-
-        # Function to perform rollback
-        perform_rollback() {
-            echo "Performing rollback..."
-
-            ${DOCKER_COMPOSE} down
-
-            # Restore data from backup with correct permissions
-            if [ -d "$BACKUP_DIR/postgres_data" ]; then
-                sudo rm -rf /opt/thebarcodeapi/data/postgres
-                sudo cp -R "$BACKUP_DIR/postgres_data" /opt/thebarcodeapi/data/postgres
-                sudo chown -R 999:999 /opt/thebarcodeapi/data/postgres
-                sudo chmod -R 700 /opt/thebarcodeapi/data/postgres
-            fi
-
-            if [ -d "$BACKUP_DIR/redis_data" ]; then
-                sudo rm -rf /opt/thebarcodeapi/data/redis
-                sudo cp -R "$BACKUP_DIR/redis_data" /opt/thebarcodeapi/data/redis
-                sudo chown -R 999:999 /opt/thebarcodeapi/data/redis
-                sudo chmod -R 755 /opt/thebarcodeapi/data/redis
-            fi
-
-            if [ ! -z "$OLD_CONTAINERS" ]; then
-                ${DOCKER_COMPOSE} up -d
-            fi
-        }
-
-        # Check services health
-        TIMEOUT=60
-
-        for service in "db" "redis" "api"; do
-            if ! check_container_health $service $TIMEOUT; then
-                echo "$service failed health check. Rolling back..."
-                perform_rollback
-                exit 1
-            fi
-        done
-
-        # Clean up old backups (keep last 5)
-        find /opt/thebarcodeapi/backups/${ENVIRONMENT:-production} -maxdepth 1 -type d -name "20*" | sort -r | tail -n +6 | xargs sudo rm -rf
-
-        echo "Backend deployment completed successfully"
-        EOF'
-
-        # Make the script executable with the correct user
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x /opt/thebarcodeapi/barcodeAPI/deploy_backend.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/deploy_backend.sh
-
-    - name: Fix Docker permissions
-      run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/deploy_backend.sh
-
-    - name: Setup DOCKER COMPOSE
-      run: |
-        # Check DOCKER_COMPOSE installation
-        if ! command -v docker-compose &> /dev/null && ! ${DOCKER_COMPOSE} version &> /dev/null; then
-          echo "Installing ${DOCKER_COMPOSE}..."
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
-          sudo ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
-        fi
-
-        # Create env vars
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
-        echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
-        echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
-        echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" >> /tmp/env_vars
-        echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
-
-        # Set DOCKER_COMPOSE command
-        if ${DOCKER_COMPOSE} version &> /dev/null; then
-          echo "DOCKER_COMPOSE='docker compose'" > /tmp/docker_vars
-        else
-          echo "DOCKER_COMPOSE='docker-compose'" > /tmp/docker_vars
-        fi
-
-    - name: CreateCopy Backend Files Script
-      run: |
-        # Copy backend files to the target directory
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./barcodeAPI/* /opt/thebarcodeapi/barcodeAPI/
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
-
-    - name: Verify Working Directory
-      run: |
-        if [ ! -d "/opt/thebarcodeapi/barcodeAPI" ]; then
-          echo "Error: /opt/thebarcodeapi/barcodeAPI directory not found!"
-          exit 1
-        fi
-
-    - name: Deploy Backend
-      run: |
-        cd /opt/thebarcodeapi/barcodeAPI
-
-        # Debug environment
-        echo "Current directory: $(pwd)"
-        echo "Checking environment files:"
-        cat /tmp/env_vars
-        cat /tmp/docker_vars
-
-        # Create deployment script with proper environment handling
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << 'EOF' > deploy_backend.sh
-        #!/bin/bash
-        set -e
-
-        # Source environment files with proper error handling
-        if [ ! -f "/tmp/env_vars" ]; then
-            echo "Error: /tmp/env_vars not found"
-            exit 1
-        fi
-
-        # Load the variables without executing the file
-        set -a
-        source /tmp/env_vars
-        set +a
-
-        # Load docker compose command
-        if [ ! -f "/tmp/docker_vars" ]; then
-            echo "Error: /tmp/docker_vars not found"
-            exit 1
-        fi
-        DOCKER_COMPOSE=$(cat /tmp/docker_vars | grep DOCKER_COMPOSE | cut -d'=' -f2 | tr -d "'")
-
-        # Debug loaded variables
-        echo "Environment: $ENVIRONMENT"
-        echo "Docker Compose Command: $DOCKER_COMPOSE"
-
-        # Ensure ENVIRONMENT is set with a default
-        ENVIRONMENT=${ENVIRONMENT:-production}
-
-        # Create backup directory with explicit environment
-        BACKUP_DIR="/opt/thebarcodeapi/backups/${ENVIRONMENT}/$(date +%Y%m%d_%H%M%S)"
-        echo "Creating backup directory: $BACKUP_DIR"
-        sudo mkdir -p "$BACKUP_DIR"
-        sudo chown -R "$USER:$USER" "$BACKUP_DIR"
-
-        # Existing containers backup
-        if [ ! -z "$DOCKER_COMPOSE" ]; then
-            if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
-                if $DOCKER_COMPOSE exec -T db pg_isready -U postgres > /dev/null 2>&1; then
-                    echo "Creating PostgreSQL backup..."
-                    $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "$BACKUP_DIR/postgres_backup.sql"
-                fi
-            fi
-
-            if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "redis"; then
-                if $DOCKER_COMPOSE exec -T redis redis-cli ping | grep -q "PONG"; then
-                    echo "Creating Redis backup..."
-                    $DOCKER_COMPOSE exec -T redis redis-cli SAVE
-                    docker cp $($DOCKER_COMPOSE ps -q redis):/data/dump.rdb "$BACKUP_DIR/redis_dump.rdb"
-                fi
-            fi
-        fi
-
-        # Ensure data directories exist with correct permissions
-        sudo mkdir -p /opt/thebarcodeapi/data/postgres
-        sudo mkdir -p /opt/thebarcodeapi/data/redis
-        sudo chown -R 999:999 /opt/thebarcodeapi/data/postgres
-        sudo chmod -R 700 /opt/thebarcodeapi/data/postgres
-        sudo chown -R 999:999 /opt/thebarcodeapi/data/redis
-        sudo chmod -R 755 /opt/thebarcodeapi/data/redis
-
-        # Stop existing containers
-        if [ ! -z "$DOCKER_COMPOSE" ]; then
-            echo "Stopping existing containers..."
-            $DOCKER_COMPOSE down || true
-        fi
-
-        # Build and start new containers
+        # Build and start containers
         echo "Building and starting containers..."
         $DOCKER_COMPOSE build --no-cache api
         $DOCKER_COMPOSE up -d
 
-        # Wait for services
-        for service in "db" "redis" "api"; do
-            echo "Waiting for $service to be healthy..."
-            attempts=0
-            max_attempts=30
-            while [ $attempts -lt $max_attempts ]; do
-                if $DOCKER_COMPOSE ps $service | grep -q "healthy"; then
-                    echo "$service is healthy"
-                    break
+        # Check container health
+        check_container_health() {
+            local container=$1
+            local timeout=$2
+            local start_time=$(date +%s)
+            local end_time=$((start_time + timeout))
+
+            while [ $(date +%s) -lt $end_time ]; do
+                if $DOCKER_COMPOSE ps $container 2>/dev/null | grep -q "healthy"; then
+                    echo "$container is healthy"
+                    return 0
                 fi
-                echo "Attempt $((attempts+1))/$max_attempts: $service not healthy yet..."
-                sleep 10
-                attempts=$((attempts+1))
+                echo "Waiting for $container to become healthy..."
+                sleep 5
             done
 
-            if [ $attempts -eq $max_attempts ]; then
-                echo "$service failed to become healthy"
-                $DOCKER_COMPOSE logs $service > "$BACKUP_DIR/${service}_failed.log"
+            echo "$container failed to become healthy within $timeout seconds"
+            return 1
+        }
+
+        # Check all services
+        for service in "db" "redis" "api"; do
+            if ! check_container_health "$service" 300; then
+                echo "Service $service failed health check"
+                $DOCKER_COMPOSE logs $service
                 exit 1
             fi
         done
 
         echo "Backend deployment completed successfully"
-        EOF'
+        EOF
 
         # Make script executable
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_backend.sh
+        chmod +x deploy_backend.sh
 
-        # Execute deployment script with environment preservation
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S --preserve-env=ENVIRONMENT,DB_PASSWORD,POSTGRES_PASSWORD,API_SECRET_KEY,API_MASTER_KEY ./deploy_backend.sh
+        # Run deployment script
+        sudo --preserve-env=ENVIRONMENT,DB_PASSWORD,POSTGRES_PASSWORD,API_SECRET_KEY,API_MASTER_KEY ./deploy_backend.sh
+
+    - name: Verify deployment
+      run: |
+        # Check container status
+        docker ps | grep -E "barcodeapi_(api|db|redis)"
+
+        # Check API health
+        curl -f http://localhost:8000/health || {
+            echo "API health check failed"
+            docker logs barcodeapi_api
+            exit 1
+        }
 
     - name: Run Database Migrations
       run: |
