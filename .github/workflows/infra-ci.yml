@@ -267,8 +267,8 @@ jobs:
 
         # Create required directories with proper permissions
         echo "Creating required directories..."
-        sudo mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/current
-        sudo chown -R github-runner:github-runner /opt/thebarcodeapi
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/current
+        echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
 
         # Configure PM2
         echo "Configuring PM2..."
@@ -307,8 +307,8 @@ jobs:
         EEOF
 
         # Create log directory
-        sudo mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/logs
-        sudo chown -R github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}/logs
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/logs
+        echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}/logs
 
         # Stop and remove existing PM2 processes
         echo "Managing PM2 process..."
@@ -331,8 +331,8 @@ jobs:
         PM2_HOME="/home/github-runner/.pm2" pm2 save
 
         # Set final permissions
-        sudo chown -R www-data:www-data /opt/thebarcodeapi
-        sudo chmod -R 755 /opt/thebarcodeapi
+        echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi
+        echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 /opt/thebarcodeapi
 
         # Show logs to help with debugging
         echo "Recent logs:"
@@ -344,7 +344,7 @@ jobs:
         PM2_HOME="/home/github-runner/.pm2" pm2 list
         EOF
 
-        chmod +x configure_pm2.sh
+        echo "$SUDO_PASSWORD" | sudo -S chmod +x configure_pm2.sh
 
         # Create environment variables file
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
@@ -353,7 +353,7 @@ jobs:
         ./configure_pm2.sh
 
         # Clean up
-        rm -f /tmp/env_vars
+        echo "$SUDO_PASSWORD" | sudo -S rm -f /tmp/env_vars
 
     - name: Configure Backend Docker Environment
       run: |
