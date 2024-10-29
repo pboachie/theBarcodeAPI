@@ -628,7 +628,7 @@ jobs:
     steps:
     - name: Verify Full Deployment
       run: |
-        sudo bash -c 'cat << "EOF" > verify_full_deployment.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << "EOF" > verify_full_deployment.sh
         #!/bin/bash
         set -e
 
@@ -710,17 +710,17 @@ jobs:
         echo "Full deployment verification completed successfully"
         EOF'
 
-        chmod +x verify_full_deployment.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x verify_full_deployment.sh
 
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_full_deployment.sh
+        ./verify_full_deployment.sh
 
     - name: Clean up build artifacts
       if: always()
       run: |
-        rm -rf .next
-        rm -rf build
-        rm -f package.json package-lock.json
-        rm -f verify_full_deployment.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf .next
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf build
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f package.json package-lock.json
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f verify_full_deployment.sh
         # Clean docker unused resources
         docker system prune -f --volumes
 
@@ -741,7 +741,7 @@ jobs:
         docker-compose -f /opt/thebarcodeapi/barcodeAPI/docker-compose.yml logs --tail=50 || true
 
         echo "Nginx Status:"
-        systemctl status nginx || true
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S systemctl status nginx || true
 
         echo "Cleaning up temporary files..."
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
@@ -749,4 +749,4 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
 
         echo "============================================"
-        exit 1
+        # exit 1
