@@ -646,12 +646,6 @@ jobs:
         #!/bin/bash
         set -e
 
-        echo "Checking Docker containers status:"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD ps
-
-        echo "Checking container logs (last 10 lines):"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail=10
-
         echo "Performing full deployment verification..."
 
         # Function to check endpoint health with retries
