@@ -146,7 +146,7 @@ jobs:
         echo "Managing PM2 process..."
         if pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
             # restat PM2 process
-            PM2_HOME="/home/github-runner/.pm2" pm2 restart "thebarcodeapi-frontend-${ENVIRONMENT}"
+            PM2_HOME="/home/github-runner/.pm2" pm2 restart "thebarcodeapi-frontend-${ENVIRONMENT}" || true
             #PM2_HOME="/home/github-runner/.pm2" pm2 stop "thebarcodeapi-frontend-${ENVIRONMENT}" || true
             #PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
         fi
@@ -231,7 +231,7 @@ jobs:
         chmod +x verify_frontend.sh
 
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_frontend.sh
+        ./verify_frontend.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
 
   backend-deployment:
@@ -448,7 +448,7 @@ jobs:
         chmod +x deploy_backend.sh
 
         # Run deployment script
-        sudo --preserve-env=ENVIRONMENT,DB_PASSWORD,POSTGRES_PASSWORD,API_SECRET_KEY,API_MASTER_KEY ./deploy_backend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S --preserve-env=ENVIRONMENT,DB_PASSWORD,POSTGRES_PASSWORD,API_SECRET_KEY,API_MASTER_KEY ./deploy_backend.sh
 
     - name: Verify deployment
       run: |
