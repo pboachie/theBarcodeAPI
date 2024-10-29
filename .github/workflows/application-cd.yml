@@ -24,6 +24,15 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Validate Environment Variables
+      run: |
+        for var in ENVIRONMENT DB_PASSWORD POSTGRES_PASSWORD API_SECRET_KEY API_MASTER_KEY; do
+          if [ -z "${!var}" ]; then
+            echo "Error: $var is not set"
+            exit 1
+          fi
+        done
+
     - name: Verify Working Directory
       run: |
         cd /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI
@@ -248,6 +257,15 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Validate Environment Variables
+      run: |
+        for var in ENVIRONMENT DB_PASSWORD POSTGRES_PASSWORD API_SECRET_KEY API_MASTER_KEY; do
+          if [ -z "${!var}" ]; then
+            echo "Error: $var is not set"
+            exit 1
+          fi
+        done
+
     - name: Setup Initial Directories
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
@@ -256,46 +274,46 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/backups/
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
-        - name: Setup Docker and Environment
-        run: |
-          # Fix docker socket permissions
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
+    - name: Setup Docker and Environment
+      run: |
+        # Fix docker socket permissions
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
 
-          # Add runner to docker group if not already added
-          if ! groups | grep -q docker; then
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
-            # Reload groups without logging out
-            exec sg docker newgrp docker
-          fi
+        # Add runner to docker group if not already added
+        if ! groups | grep -q docker; then
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
+          # Reload groups without logging out
+          exec sg docker newgrp docker
+        fi
 
-          # Create env_vars file
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
-          ENVIRONMENT=production
-          DB_PASSWORD=${{ env.DB_PASSWORD }}
-          POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-          API_SECRET_KEY=${{ env.API_SECRET_KEY }}
-          API_MASTER_KEY=${{ env.API_MASTER_KEY }}
-          API_VERSION=${{ vars.API_VERSION }}
-          EOF"
+        # Create env_vars file
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
+        ENVIRONMENT=production
+        DB_PASSWORD=${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
+        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
+        API_VERSION=${{ vars.API_VERSION }}
+        EOF"
 
-          # Determine and set docker compose command
-          if command -v docker-compose &> /dev/null; then
-              echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "DOCKER_COMPOSE=docker-compose" > /tmp/docker_vars'
-          elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
-              echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "DOCKER_COMPOSE=docker compose" > /tmp/docker_vars'
-          else
-              echo "Neither docker-compose nor docker compose found!"
-              exit 1
-          fi
+        # Determine and set docker compose command
+        if command -v docker-compose &> /dev/null; then
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "DOCKER_COMPOSE=docker-compose" > /tmp/docker_vars'
+        elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "DOCKER_COMPOSE=docker compose" > /tmp/docker_vars'
+        else
+            echo "Neither docker-compose nor docker compose found!"
+            exit 1
+        fi
 
-          # Debug output
-          echo "Environment file contents:"
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/env_vars
-          echo "Docker compose file contents:"
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/docker_vars
+        # Debug output
+        echo "Environment file contents:"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/env_vars
+        echo "Docker compose file contents:"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/docker_vars
 
-          # Verify Docker access
-          docker ps
+        # Verify Docker access
+        docker ps
 
     - name: Create and run backend deployment script
       run: |
@@ -510,62 +528,62 @@ jobs:
         # Exit with migration status
         exit $MIGRATION_STATUS
 
-        - name: Verify Backend Deployment
-        run: |
-          cd /opt/thebarcodeapi/barcodeAPI
+    - name: Verify Backend Deployment
+      run: |
+        cd /opt/thebarcodeapi/barcodeAPI
 
-          # Determine docker compose command
-          if command -v docker-compose &> /dev/null; then
-            COMPOSE_CMD="docker-compose"
-          else
-            COMPOSE_CMD="docker compose"
-          fi
+        # Determine docker compose command
+        if command -v docker-compose &> /dev/null; then
+          COMPOSE_CMD="docker-compose"
+        else
+          COMPOSE_CMD="docker compose"
+        fi
 
-          # Create temporary env file with sudo
-          echo "Creating temporary environment file..."
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
-          DB_PASSWORD=${{ env.DB_PASSWORD }}
-          POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-          API_SECRET_KEY=${{ env.API_SECRET_KEY }}
-          API_MASTER_KEY=${{ env.API_MASTER_KEY }}
-          DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-          REDIS_URL=redis://redis:6379
-          ALGORITHM=HS256
-          ACCESS_TOKEN_EXPIRE_MINUTES=30
-          EOF'
+        # Create temporary env file with sudo
+        echo "Creating temporary environment file..."
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
+        DB_PASSWORD=${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
+        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        REDIS_URL=redis://redis:6379
+        ALGORITHM=HS256
+        ACCESS_TOKEN_EXPIRE_MINUTES=30
+        EOF'
 
-          # Set proper permissions
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
+        # Set proper permissions
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
 
-          echo "Verifying backend deployment..."
+        echo "Verifying backend deployment..."
 
-          echo "Checking Docker containers status:"
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD ps
+        echo "Checking Docker containers status:"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD ps
 
-          echo "Checking container logs (last 10 lines):"
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail=10
+        echo "Checking container logs (last 10 lines):"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail=10
 
-          echo "Testing backend health:"
-          MAX_RETRIES=3
-          RETRY_COUNT=0
-          until curl -f http://localhost:8000/health || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
-            echo "Backend health check failed, retrying in 5 seconds..."
-            sleep 5
-            RETRY_COUNT=$((RETRY_COUNT + 1))
-          done
+        echo "Testing backend health:"
+        MAX_RETRIES=3
+        RETRY_COUNT=0
+        until curl -f http://localhost:8000/health || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
+          echo "Backend health check failed, retrying in 5 seconds..."
+          sleep 5
+          RETRY_COUNT=$((RETRY_COUNT + 1))
+        done
 
-          if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-            echo "Backend health check failed after $MAX_RETRIES attempts"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs api
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
-            exit 1
-          fi
-
-          echo "Backend verification completed successfully"
-
-          # Cleanup
+        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+          echo "Backend health check failed after $MAX_RETRIES attempts"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs api
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
+          exit 1
+        fi
+
+        echo "Backend verification completed successfully"
+
+        # Cleanup
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
 
     - name: Clean up
       if: always()
@@ -610,16 +628,22 @@ jobs:
     steps:
     - name: Verify Full Deployment
       run: |
-        sudo bash -c 'cat << 'EOF' > verify_full_deployment.sh
+        sudo bash -c 'cat << "EOF" > verify_full_deployment.sh
         #!/bin/bash
         set -e
 
-        # Determine which compose command to use
+        # Check for Docker Compose and set command
         if command -v docker-compose &> /dev/null; then
           COMPOSE_CMD="docker-compose"
-        else
+        elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
           COMPOSE_CMD="docker compose"
+        else
+          echo "Error: Docker Compose not found"
+          exit 1
         fi
+
+        # Always use composer from the current working directory
+        cd /opt/thebarcodeapi/barcodeAPI
 
         echo "Performing full deployment verification..."
 
@@ -718,6 +742,11 @@ jobs:
 
         echo "Nginx Status:"
         systemctl status nginx || true
+
+        echo "Cleaning up temporary files..."
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/docker_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
 
         echo "============================================"
         exit 1
