@@ -296,6 +296,8 @@ jobs:
         if pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
             PM2_HOME="/home/github-runner/.pm2" pm2 stop "thebarcodeapi-frontend-${ENVIRONMENT}" || true
             PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
+        else
+            echo "PM2 process thebarcodeapi-frontend-${ENVIRONMENT} not found, starting a new one..."
         fi
 
         cd "$CURRENT_DIR"
