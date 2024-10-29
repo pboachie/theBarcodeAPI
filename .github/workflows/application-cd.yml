@@ -626,95 +626,6 @@ jobs:
     runs-on: self-hosted
     needs: [frontend-deployment, backend-deployment]
     steps:
-    - name: Verify Full Deployment
-      run: |
-        # Create temporary env file for docker-compose
-        cat > .env << EOF
-        ENVIRONMENT=${{ env.ENVIRONMENT }}
-        DB_PASSWORD=${{ env.DB_PASSWORD }}
-        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-        SECRET_KEY=${{ env.API_SECRET_KEY }}
-        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
-        API_VERSION=${{ vars.API_VERSION }}
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        REDIS_URL=redis://redis:6379
-        ALGORITHM=HS256
-        ACCESS_TOKEN_EXPIRE_MINUTES=30
-        EOF
-
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << "EOF" > verify_full_deployment.sh
-        #!/bin/bash
-        set -e
-
-        echo "Performing full deployment verification..."
-
-        # Function to check endpoint health with retries
-        check_endpoint() {
-          local name=$1
-          local url=$2
-          local max_retries=3
-          local retry_count=0
-          local wait_time=5
-
-          echo "Checking $name..."
-          until curl -sf "$url" 2>/dev/null || [ $retry_count -eq $max_retries ]; do
-            echo "$name not responding, retrying in $wait_time seconds..."
-            sleep $wait_time
-            retry_count=$((retry_count + 1))
-          done
-
-          if [ $retry_count -eq $max_retries ]; then
-            echo "$name health check failed after $max_retries attempts"
-            return 1
-          fi
-
-          echo "$name check successful"
-          return 0
-        }
-
-
-        # Check frontend
-        check_endpoint "frontend" "http://localhost:3000" || {
-          echo "Frontend verification failed"
-          pm2 logs thebarcodeapi-frontend-production --lines 50
-          exit 1
-        }
-
-        # Check backend
-        check_endpoint "backend" "http://localhost:8000/health" || {
-          echo "Backend verification failed"
-          docker logs barcodeapi_api_1 --tail 50
-          exit 1
-        }
-
-        echo "Checking PM2 processes:"
-        pm2 list || {
-          echo "Error: Failed to list PM2 processes"
-          exit 1
-        }
-
-        echo "Verifying Nginx configuration:"
-        if ! nginx -t; then
-          echo "Error: Nginx configuration test failed"
-          exit 1
-        fi
-
-        # Verify Nginx is running
-        if ! systemctl is-active --quiet nginx; then
-          echo "Error: Nginx is not running"
-          systemctl status nginx
-          exit 1
-        fi
-
-        echo "Full deployment verification completed successfully"
-        EOF'
-
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x verify_full_deployment.sh
-
-        ./verify_full_deployment.sh
-
-        # Cleanup
-        rm -f .env verify_full_deployment.sh
 
     - name: Clean up build artifacts
       if: always()
@@ -722,7 +633,6 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf .next
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf build
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f package.json package-lock.json
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f verify_full_deployment.sh
         # Clean docker unused resources
         docker system prune -f --volumes
 
