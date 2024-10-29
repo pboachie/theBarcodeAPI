@@ -196,7 +196,7 @@ jobs:
         set -e
 
         # Read environment variables from file
-        echo "$SUDO_PASSWORD" | sudo -S source /tmp/env_vars
+        source /tmp/env_vars
 
         # Configure Nginx
         echo "Configuring Nginx..."
@@ -266,7 +266,7 @@ jobs:
         set -e
 
         # Read environment variables from file
-        echo "$SUDO_PASSWORD" | sudo -S source /tmp/env_vars
+        source /tmp/env_vars
 
         # Create required directories with proper permissions
         echo "Creating required directories..."
@@ -370,7 +370,7 @@ jobs:
         set -e
 
         # Read environment variables from file
-        echo "$SUDO_PASSWORD" | sudo -S source /tmp/env_vars
+        source /tmp/env_vars
 
         # Create necessary directories
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
