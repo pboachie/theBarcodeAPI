@@ -246,8 +246,11 @@ jobs:
         echo "$SUDO_PASSWORD" | sudo -S chmod +x configure_nginx.sh
 
         # Create environment variables file
-        echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/env_vars
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" >> /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
+        ENVIRONMENT=${{ env.ENVIRONMENT }}
+        NODE_ENV=production
+        SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
+        EOF"
 
         # Run configuration script
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_nginx.sh
@@ -347,7 +350,11 @@ jobs:
         echo "$SUDO_PASSWORD" | sudo -S chmod +x configure_pm2.sh
 
         # Create environment variables file
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
+        ENVIRONMENT=${{ env.ENVIRONMENT }}
+        NODE_ENV=production
+        SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
+        EOF"
 
         # Run configuration script
         ./configure_pm2.sh
@@ -523,11 +530,16 @@ jobs:
         chmod +x setup_docker.sh
 
         # Create environment variables file
-        echo "API_SECRET_KEY=${{ env.API_SECRET_KEY }}" > /tmp/env_vars
-        echo "API_MASTER_KEY=${{ env.API_MASTER_KEY }}" >> /tmp/env_vars
-        echo "DB_PASSWORD=${{ env.DB_PASSWORD }}" >> /tmp/env_vars
-        echo "POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}" >> /tmp/env_vars
-        echo "API_VERSION=${{ env.API_VERSION }}" >> /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
+        ENVIRONMENT=${{ env.ENVIRONMENT }}
+        NODE_ENV=production
+        SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
+        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
+        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
+        DB_PASSWORD=${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+        API_VERSION=${{ env.API_VERSION }}
+        EOF"
 
         # Run setup script
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./setup_docker.sh
