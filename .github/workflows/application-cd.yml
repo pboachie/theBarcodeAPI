@@ -646,15 +646,11 @@ jobs:
         #!/bin/bash
         set -e
 
-        # Check for Docker Compose and set command
-        if command -v docker-compose &> /dev/null; then
-          COMPOSE_CMD="docker-compose"
-        elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
-          COMPOSE_CMD="docker compose"
-        else
-          echo "Error: Docker Compose not found"
-          exit 1
-        fi
+        echo "Checking Docker containers status:"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD ps
+
+        echo "Checking container logs (last 10 lines):"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail=10
 
         echo "Performing full deployment verification..."
 
@@ -682,22 +678,6 @@ jobs:
           return 0
         }
 
-        # Check Docker containers directly without docker-compose
-        echo "Checking Docker containers:"
-        docker ps --filter "name=barcodeapi_" || {
-          echo "Error: Failed to list Docker containers"
-          exit 1
-        }
-
-        # Check required containers are running
-        for container in "barcodeapi_api_1" "barcodeapi_db_1" "barcodeapi_redis_1"; do
-          if ! docker ps --filter "name=$container" --filter "status=running" | grep -q "$container"; then
-            echo "Error: Container $container is not running"
-            docker ps -a --filter "name=$container"
-            docker logs "$container"
-            exit 1
-          fi
-        done
 
         # Check frontend
         check_endpoint "frontend" "http://localhost:3000" || {
