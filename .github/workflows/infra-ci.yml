@@ -23,20 +23,38 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
+    - name: Install Docker Compose V2
+      run: |
+        # Remove any existing docker-compose installations
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /usr/local/bin/docker-compose
+
+        # Install Docker Compose V2 as a Docker plugin
+        DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
+        mkdir -p $DOCKER_CONFIG/cli-plugins
+        curl -SL https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-linux-x86_64 -o $DOCKER_CONFIG/cli-plugins/docker-compose
+        chmod +x $DOCKER_CONFIG/cli-plugins/docker-compose
+
+        # Verify installation
+        docker compose version
+
     - name: Setup Initial Directories
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/data/postgres
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/data/redis
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/backups
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
+        for dir in \
+          /opt/thebarcodeapi/barcodeAPI \
+          /opt/thebarcodeapi/data/postgres \
+          /opt/thebarcodeapi/data/redis \
+          /opt/thebarcodeapi/backups \
+          "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
+        do
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "$dir"
+        done
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
 
     - name: Configure sudoers
       run: |
         echo "Configuring sudoers..."
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /etc/sudoers.d/github-runner << EOF
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2, /usr/bin/npm, /usr/bin/docker, /usr/bin/docker-compose
+        github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2, /usr/bin/npm, /usr/bin/docker, /usr/local/bin/docker-compose, /usr/bin/docker compose
         EOF'
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 0440 /etc/sudoers.d/github-runner
 
@@ -60,12 +78,8 @@ jobs:
         if ! command -v docker &> /dev/null; then
           curl -fsSL https://get.docker.com | sudo sh
           sudo usermod -aG docker $USER
-        fi
-
-        # Install Docker Compose if not present
-        if ! command -v docker-compose &> /dev/null; then
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
+          sudo systemctl enable docker
+          sudo systemctl start docker
         fi
 
         # Install Nginx if not present
@@ -75,6 +89,11 @@ jobs:
 
     - name: Setup Docker Operations Timeout
       run: |
+        # Set Docker timeouts
+        echo "export DOCKER_CLIENT_TIMEOUT=120" >> $HOME/.bashrc
+        echo "export COMPOSE_HTTP_TIMEOUT=120" >> $HOME/.bashrc
+
+        # Set for current session
         export DOCKER_CLIENT_TIMEOUT=120
         export COMPOSE_HTTP_TIMEOUT=120
 
@@ -230,36 +249,36 @@ jobs:
           docker network create barcodeapi_network
         fi
 
-    - name: Verify Docker Configuration
-      run: |
-        # Check if Docker is running
-        if ! systemctl is-active --quiet docker; then
-          echo "Error: Docker is not running"
-          exit 1
-        fi
-
-        # Check if configuration files exist
-        for file in "docker-compose.yml" ".env" "init-db.sh"; do
-          if [ ! -f "/opt/thebarcodeapi/barcodeAPI/$file" ]; then
-            echo "Error: $file not found"
+        - name: Verify Docker Configuration
+        run: |
+          # Check if Docker is running
+          if ! systemctl is-active --quiet docker; then
+            echo "Error: Docker is not running"
             exit 1
           fi
-        done
 
-        # Check if Docker network exists
-        if ! docker network ls | grep -q "barcodeapi_network"; then
-          echo "Error: barcodeapi_network not found"
-          exit 1
-        fi
+          # Check if configuration files exist
+          for file in "docker-compose.yml" ".env" "init-db.sh"; do
+            if [ ! -f "/opt/thebarcodeapi/barcodeAPI/$file" ]; then
+              echo "Error: $file not found"
+              exit 1
+            fi
+          done
 
-        # Verify Docker Compose configuration
-        cd /opt/thebarcodeapi/barcodeAPI
-        if ! docker compose config > /dev/null; then
-          echo "Error: Invalid docker-compose.yml configuration"
-          exit 1
-        fi
+          # Check if Docker network exists
+          if ! docker network ls | grep -q "barcodeapi_network"; then
+            echo "Error: barcodeapi_network not found"
+            exit 1
+          fi
 
-        echo "Docker configuration verified successfully"
+          # Verify Docker Compose configuration
+          cd /opt/thebarcodeapi/barcodeAPI
+          if ! docker compose config; then
+            echo "Error: Invalid docker-compose.yml configuration"
+            exit 1
+          fi
+
+          echo "Docker configuration verified successfully"
 
     - name: Configure Nginx
       run: |
