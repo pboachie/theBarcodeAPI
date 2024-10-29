@@ -196,7 +196,7 @@ jobs:
         set -e
 
         # Read environment variables from file
-        source /tmp/env_vars
+        echo "$SUDO_PASSWORD" | sudo -S source /tmp/env_vars
 
         # Configure Nginx
         echo "Configuring Nginx..."
@@ -243,7 +243,7 @@ jobs:
         ln -sf /etc/nginx/sites-available/thebarcodeapi /etc/nginx/sites-enabled/
         nginx -t
         EOF
-        chmod +x configure_nginx.sh
+        echo "$SUDO_PASSWORD" | sudo -S chmod +x configure_nginx.sh
 
         # Create environment variables file
         echo "DOMAIN_NAME=${{ env.DOMAIN_NAME }}" > /tmp/env_vars
@@ -253,7 +253,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_nginx.sh
 
         # Clean up
-        rm -f /tmp/env_vars
+        echo "$SUDO_PASSWORD" | sudo -S rm -f /tmp/env_vars
 
     - name: Configure PM2 for Frontend
       run: |
@@ -263,7 +263,7 @@ jobs:
         set -e
 
         # Read environment variables from file
-        source /tmp/env_vars
+        echo "$SUDO_PASSWORD" | sudo -S source /tmp/env_vars
 
         # Create required directories with proper permissions
         echo "Creating required directories..."
@@ -363,21 +363,21 @@ jobs:
         set -e
 
         # Read environment variables from file
-        source /tmp/env_vars
+        echo "$SUDO_PASSWORD" | sudo -S source /tmp/env_vars
 
         # Create necessary directories
-        mkdir -p /opt/thebarcodeapi/barcodeAPI
-        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases
-        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data
-        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/backups
-        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
-        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/backups
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
 
         # Navigate to backend directory
         cd /opt/thebarcodeapi/barcodeAPI
 
         # Copy backend files
-        cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
+        echo "$SUDO_PASSWORD" | sudo -S cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
 
         # Create .env file before Docker build
         cat > .env << EOL
@@ -479,7 +479,7 @@ jobs:
 
         # Backup Redis
         docker compose exec redis redis-cli SAVE
-        cp /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis/dump.rdb "\$BACKUP_DIR/redis_backup_\$TIMESTAMP.rdb"
+        echo "$SUDO_PASSWORD" | sudo -S cp /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis/dump.rdb "\$BACKUP_DIR/redis_backup_\$TIMESTAMP.rdb"
 
         # Clean old backups (keep last 7 days)
         find \$BACKUP_DIR -name "db_backup_*" -mtime +7 -delete
