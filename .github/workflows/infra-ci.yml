@@ -284,21 +284,21 @@ jobs:
               PORT: 3000
             },
             cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
-            instances: 2,                    // Reduce instance count for testing
-              exec_mode: 'cluster',
-              autorestart: true,
-              watch: false,
-              max_memory_restart: '1G',
-              wait_ready: true,
-              listen_timeout: 30000,          // Increased from 10000
-              kill_timeout: 5000,             // Increased from 3000
-              exp_backoff_restart_delay: 1000, // Increased from 100
-              restart_delay: 5000,            // Added explicit restart delay
-              max_restarts: 5,                // Added max restarts limit
-              error_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log',  // Added error logging
-              out_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/out.log',    // Added output logging
-              merge_logs: true,
-              min_uptime: '30s'               // Added minimum uptime check
+            instances: 2,
+            exec_mode: 'cluster',
+            autorestart: true,
+            watch: false,
+            max_memory_restart: '1G',
+            wait_ready: true,
+            listen_timeout: 30000,
+            kill_timeout: 5000,
+            exp_backoff_restart_delay: 1000,
+            restart_delay: 5000,
+            max_restarts: 5,
+            error_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log',
+            out_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/out.log',
+            merge_logs: true,
+            min_uptime: '30s'
             }]
           };
           EEOF
