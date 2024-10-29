@@ -58,27 +58,26 @@ jobs:
 
     - name: Deploy Frontend
       run: |
-        # Create env vars file
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /tmp/env_vars << EOF
+        # Create env vars file in current directory
+        cat > .env_vars << EOF
         ENVIRONMENT=${{ env.ENVIRONMENT }}
         NODE_ENV=production
         SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
-        EOF'
+        EOF
 
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 /tmp/env_vars
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /tmp/env_vars
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 .env_vars
 
         # Create deployment script
         cat > deploy_frontend.sh << 'EOF'
         #!/bin/bash
         set -e
 
-        if [ ! -f "/tmp/env_vars" ]; then
-            echo "Error: /tmp/env_vars not found"
+        if [ ! -f ".env_vars" ]; then
+            echo "Error: .env_vars not found"
             exit 1
         fi
 
-        source /tmp/env_vars
+        source .env_vars
 
         echo "Starting frontend deployment..."
 
@@ -158,13 +157,13 @@ jobs:
         EOF
 
         # Make the script executable
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_frontend.sh
+        chmod +x deploy_frontend.sh
 
         # Run the deployment script
         ./deploy_frontend.sh
 
         # Cleanup
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
+        rm -f .env_vars
 
     - name: Verify Frontend Deployment
       run: |
