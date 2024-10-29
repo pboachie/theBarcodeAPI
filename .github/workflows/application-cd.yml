@@ -450,7 +450,7 @@ jobs:
         chmod +x deploy_backend.sh
 
         # Run deployment script
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S --preserve-env=ENVIRONMENT,DB_PASSWORD,POSTGRES_PASSWORD,API_SECRET_KEY,API_MASTER_KEY ./deploy_backend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./deploy_backend.sh
 
     - name: Verify deployment
       run: |
