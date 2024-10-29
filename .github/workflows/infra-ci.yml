@@ -284,45 +284,61 @@ jobs:
               PORT: 3000
             },
             cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
-            instances: 'max',
-            autorestart: true,
-            watch: false,
-            max_memory_restart: '1G',
-            wait_ready: true,
-            listen_timeout: 10000,
-            kill_timeout: 3000,
-            exp_backoff_restart_delay: 100
-          }]
-        };
-        EEOF
+            instances: 2,                    // Reduce instance count for testing
+              exec_mode: 'cluster',
+              autorestart: true,
+              watch: false,
+              max_memory_restart: '1G',
+              wait_ready: true,
+              listen_timeout: 30000,          // Increased from 10000
+              kill_timeout: 5000,             // Increased from 3000
+              exp_backoff_restart_delay: 1000, // Increased from 100
+              restart_delay: 5000,            // Added explicit restart delay
+              max_restarts: 5,                // Added max restarts limit
+              error_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log',  // Added error logging
+              out_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/out.log',    // Added output logging
+              merge_logs: true,
+              min_uptime: '30s'               // Added minimum uptime check
+            }]
+          };
+          EEOF
 
-        # Stop and remove existing PM2 processes
-        echo "Managing PM2 process..."
-        PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
+          # Create log directory
+          sudo mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/logs
+          sudo chown -R github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}/logs
 
-        # Wait for processes to fully stop
-        sleep 5
+          # Stop and remove existing PM2 processes
+          echo "Managing PM2 process..."
+          PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
 
-        # Start PM2 with the new configuration
-        cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
-        PM2_HOME="/home/github-runner/.pm2" pm2 start /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js
-        PM2_HOME="/home/github-runner/.pm2" pm2 save
+          # Wait for processes to fully stop
+          sleep 10
 
-        # Set final permissions
-        sudo chown -R www-data:www-data /opt/thebarcodeapi
-        sudo chmod -R 755 /opt/thebarcodeapi
-        EOF
+          # Start PM2 with the new configuration
+          cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
+          PM2_HOME="/home/github-runner/.pm2" pm2 start /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js
+          PM2_HOME="/home/github-runner/.pm2" pm2 save
 
-        chmod +x configure_pm2.sh
+          # Set final permissions
+          sudo chown -R www-data:www-data /opt/thebarcodeapi
+          sudo chmod -R 755 /opt/thebarcodeapi
 
-        # Create environment variables file
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+          # Show logs to help with debugging
+          sleep 5
+          echo "Recent logs:"
+          tail -n 50 /opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log
+          EOF
 
-        # Run configuration script
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_pm2.sh
+          chmod +x configure_pm2.sh
 
-        # Clean up
-        rm -f /tmp/env_vars
+          # Create environment variables file
+          echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+
+          # Run configuration script
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_pm2.sh
+
+          # Clean up
+          rm -f /tmp/env_vars
 
     - name: Configure Backend Docker Environment
       run: |
