@@ -265,9 +265,13 @@ jobs:
         # Read environment variables from file
         source /tmp/env_vars
 
+        # Create required directories with proper permissions
+        echo "Creating required directories..."
+        sudo mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/current
+        sudo chown -R github-runner:github-runner /opt/thebarcodeapi
+
         # Configure PM2
         echo "Configuring PM2..."
-        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}
         cat > /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js << EEOF
         module.exports = {
           apps: [{
@@ -286,30 +290,29 @@ jobs:
             max_memory_restart: '1G',
             wait_ready: true,
             listen_timeout: 10000,
-            kill_timeout: 3000
+            kill_timeout: 3000,
+            exp_backoff_restart_delay: 100
           }]
         };
         EEOF
 
-        # Manage PM2 process
+        # Stop and remove existing PM2 processes
         echo "Managing PM2 process..."
-        if pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
-            PM2_HOME="/home/github-runner/.pm2" pm2 stop "thebarcodeapi-frontend-${ENVIRONMENT}" || true
-            PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
-        else
-            echo "PM2 process thebarcodeapi-frontend-${ENVIRONMENT} not found, starting a new one..."
-        fi
+        PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
 
-        cd "$CURRENT_DIR"
+        # Wait for processes to fully stop
+        sleep 5
+
+        # Start PM2 with the new configuration
+        cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
         PM2_HOME="/home/github-runner/.pm2" pm2 start /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js
         PM2_HOME="/home/github-runner/.pm2" pm2 save
 
-
-        # Set permissions
-        chown -R www-data:www-data /opt/thebarcodeapi
-        chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/
-        chmod -R 755 /opt/thebarcodeapi
+        # Set final permissions
+        sudo chown -R www-data:www-data /opt/thebarcodeapi
+        sudo chmod -R 755 /opt/thebarcodeapi
         EOF
+
         chmod +x configure_pm2.sh
 
         # Create environment variables file
@@ -319,7 +322,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_pm2.sh
 
         # Clean up
-        rm -f /tmp/env_varst
+        rm -f /tmp/env_vars
 
     - name: Configure Backend Docker Environment
       run: |
