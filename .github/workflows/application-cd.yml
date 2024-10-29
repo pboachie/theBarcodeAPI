@@ -319,6 +319,8 @@ jobs:
         fi
         source /tmp/docker_vars
 
+        cd /opt/thebarcodeapi/barcodeAPI
+
         echo "Starting backend deployment..."
         echo "Using DOCKER_COMPOSE command: ${DOCKER_COMPOSE}"
 
