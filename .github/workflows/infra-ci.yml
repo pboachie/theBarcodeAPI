@@ -281,24 +281,27 @@ jobs:
             env: {
               NODE_ENV: '${ENVIRONMENT}',
               ENVIRONMENT: '${ENVIRONMENT}',
-              PORT: 3000
+              PORT: 3000,
+              NODE_OPTIONS: '--max-old-space-size=512'
             },
             cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
-            instances: 2,
+            instances: 1,
             exec_mode: 'cluster',
             autorestart: true,
             watch: false,
-            max_memory_restart: '1G',
+            max_memory_restart: '512M',
             wait_ready: true,
-            listen_timeout: 30000,
-            kill_timeout: 5000,
-            exp_backoff_restart_delay: 1000,
-            restart_delay: 5000,
-            max_restarts: 5,
+            listen_timeout: 60000,
+            kill_timeout: 10000,
+            exp_backoff_restart_delay: 2000,
+            restart_delay: 10000,
+            max_restarts: 3,
             error_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log',
             out_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/out.log',
             merge_logs: true,
-            min_uptime: '30s'
+            min_uptime: '60s',
+            increment_var: 'PORT',
+            node_args: '--expose-gc'
           }]
         };
         EEOF
@@ -312,11 +315,19 @@ jobs:
         PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
 
         # Wait for processes to fully stop
-        sleep 10
+        sleep 15
+
+        # Clear PM2 logs before starting
+        PM2_HOME="/home/github-runner/.pm2" pm2 flush
 
         # Start PM2 with the new configuration
         cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
         PM2_HOME="/home/github-runner/.pm2" pm2 start /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js
+
+        # Wait for process to stabilize
+        sleep 10
+
+        # Save PM2 configuration
         PM2_HOME="/home/github-runner/.pm2" pm2 save
 
         # Set final permissions
@@ -324,9 +335,13 @@ jobs:
         sudo chmod -R 755 /opt/thebarcodeapi
 
         # Show logs to help with debugging
-        sleep 5
         echo "Recent logs:"
-        tail -n 50 /opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log
+        if [ -f "/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log" ]; then
+          tail -n 50 /opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log
+        fi
+
+        # Show PM2 status
+        PM2_HOME="/home/github-runner/.pm2" pm2 list
         EOF
 
         chmod +x configure_pm2.sh
