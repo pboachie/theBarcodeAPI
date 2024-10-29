@@ -299,7 +299,7 @@ jobs:
         fi
 
         cd "$CURRENT_DIR"
-        PM2_HOME="/home/github-runner/.pm2" pm2 start ecosystem.config.js
+        PM2_HOME="/home/github-runner/.pm2" pm2 start /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js
         PM2_HOME="/home/github-runner/.pm2" pm2 save
 
 
@@ -317,7 +317,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_pm2.sh
 
         # Clean up
-        rm -f /tmp/env_vars
+        rm -f /tmp/env_varst
 
     - name: Configure Backend Docker Environment
       run: |
