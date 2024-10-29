@@ -350,7 +350,7 @@ jobs:
         echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
 
         # Run configuration script
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_pm2.sh
+        ./configure_pm2.sh
 
         # Clean up
         rm -f /tmp/env_vars

@@ -116,32 +116,7 @@ jobs:
         npm ci --omit=dev
 
         # Get version from package.json
-        VERSION=$(node -p "require('./package.json').version")
-
-        # Create PM2 ecosystem file
-        cat > ecosystem.config.js << EEOF
-        module.exports = {
-          apps: [{
-            name: "thebarcodeapi-frontend-${ENVIRONMENT}",
-            script: "npm",
-            args: "start",
-            env: {
-              NODE_ENV: "${ENVIRONMENT}",
-              ENVIRONMENT: '${ENVIRONMENT}'
-              PORT: 3000,
-              APP_VERSION: "${VERSION}"
-            },
-            cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
-            instances: '1',
-            autorestart: true,
-            watch: false,
-            max_memory_restart: '1G',
-            wait_ready: true,
-            listen_timeout: 10000,
-            kill_timeout: 3000
-          }]
-        }
-        EEOF
+        # VERSION=$(node -p "require('./package.json').version")
 
         # Create and verify current directory exists
         CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
@@ -170,13 +145,15 @@ jobs:
         # Manage PM2 process
         echo "Managing PM2 process..."
         if pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
-            PM2_HOME="/home/github-runner/.pm2" pm2 stop "thebarcodeapi-frontend-${ENVIRONMENT}" || true
-            PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
+            # restat PM2 process
+            PM2_HOME="/home/github-runner/.pm2" pm2 restart "thebarcodeapi-frontend-${ENVIRONMENT}"
+            #PM2_HOME="/home/github-runner/.pm2" pm2 stop "thebarcodeapi-frontend-${ENVIRONMENT}" || true
+            #PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
         fi
 
         cd "$CURRENT_DIR"
-        PM2_HOME="/home/github-runner/.pm2" pm2 start ecosystem.config.js
-        PM2_HOME="/home/github-runner/.pm2" pm2 save --force
+        #PM2_HOME="/home/github-runner/.pm2" pm2 start ecosystem.config.js
+        #PM2_HOME="/home/github-runner/.pm2" pm2 save --force
 
         # Set final permissions
         echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data "/opt/thebarcodeapi/${ENVIRONMENT}"
