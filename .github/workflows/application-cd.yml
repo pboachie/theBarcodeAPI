@@ -341,8 +341,8 @@ jobs:
 
         # Create backup directory
         BACKUP_DIR="/opt/thebarcodeapi/backups/${ENVIRONMENT:-production}/$(date +%Y%m%d_%H%M%S)"
-        sudo mkdir -p "${BACKUP_DIR}"
-        sudo chown -R $USER:$USER "${BACKUP_DIR}"
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${BACKUP_DIR}"
+        echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "${BACKUP_DIR}"
 
         # Function to safely backup PostgreSQL
         backup_postgres() {
@@ -407,22 +407,22 @@ jobs:
         # Preserve existing data
         if [ -d "/opt/thebarcodeapi/data/postgres" ]; then
             echo "Preserving PostgreSQL data..."
-            sudo cp -R /opt/thebarcodeapi/data/postgres "${BACKUP_DIR}/postgres_data"
+            echo "$SUDO_PASSWORD" | sudo -S cp -R /opt/thebarcodeapi/data/postgres "${BACKUP_DIR}/postgres_data"
         fi
 
         if [ -d "/opt/thebarcodeapi/data/redis" ]; then
             echo "Preserving Redis data..."
-            sudo cp -R /opt/thebarcodeapi/data/redis "${BACKUP_DIR}/redis_data"
+            echo "$SUDO_PASSWORD" | sudo -S cp -R /opt/thebarcodeapi/data/redis "${BACKUP_DIR}/redis_data"
         fi
 
         # Set up data directories
         echo "Setting up data directories..."
-        sudo mkdir -p /opt/thebarcodeapi/data/postgres
-        sudo mkdir -p /opt/thebarcodeapi/data/redis
-        sudo chown -R 999:999 /opt/thebarcodeapi/data/postgres
-        sudo chmod -R 700 /opt/thebarcodeapi/data/postgres
-        sudo chown -R 999:999 /opt/thebarcodeapi/data/redis
-        sudo chmod -R 755 /opt/thebarcodeapi/data/redis
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/data/postgres
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/data/redis
+        echo "$SUDO_PASSWORD" | sudo -S chown -R 999:999 /opt/thebarcodeapi/data/postgres
+        echo "$SUDO_PASSWORD" | sudo -S chmod -R 700 /opt/thebarcodeapi/data/postgres
+        echo "$SUDO_PASSWORD" | sudo -S chown -R 999:999 /opt/thebarcodeapi/data/redis
+        echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 /opt/thebarcodeapi/data/redis
 
         # Build and start containers
         echo "Building and starting containers..."
@@ -462,10 +462,10 @@ jobs:
         EOF
 
         # Make script executable
-        chmod +x deploy_backend.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_backend.sh
 
         # Run deployment script
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S --preserve-env=ENVIRONMENT,DB_PASSWORD,POSTGRES_PASSWORD,API_SECRET_KEY,API_MASTER_KEY ./deploy_backend.sh
+        ./deploy_backend.sh
 
     - name: Verify deployment
       run: |
