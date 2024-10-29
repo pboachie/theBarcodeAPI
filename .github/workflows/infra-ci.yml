@@ -28,7 +28,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/barcodeAPI"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/backups"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/backups"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
 
     - name: Configure sudoers
@@ -376,7 +376,7 @@ jobs:
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/backups
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/backups
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
 
@@ -479,7 +479,7 @@ jobs:
         cat > /opt/thebarcodeapi/barcodeAPI/backup.sh << EOL
         #!/bin/bash
         TIMESTAMP=\$(date +%Y%m%d_%H%M%S)
-        BACKUP_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/releases/backups"
+        BACKUP_DIR="/opt/thebarcodeapi/backups"
 
         # Backup PostgreSQL
         docker compose exec db pg_dump -U barcodeboachiefamily barcode_api > "\$BACKUP_DIR/db_backup_\$TIMESTAMP.sql"
@@ -557,7 +557,7 @@ jobs:
         # Create required directories if they don't exist
         mkdir -p /opt/thebarcodeapi/barcodeAPI
         mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data
-        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/backups
+        mkdir -p /opt/thebarcodeapi/backups
 
         # Set ownership
         chown -R www-data:www-data /opt/thebarcodeapi
@@ -585,7 +585,7 @@ jobs:
         chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
         # set ownership for backup folder
-        chown www-data:www-data /opt/thebarcodeapi/${ENVIRONMENT}/releases/backups
+        chown www-data:www-data /opt/thebarcodeapi/backups
         echo "Permissions fixed successfully"
         EOF
 
@@ -631,7 +631,7 @@ jobs:
         find /opt/thebarcodeapi/${ENVIRONMENT}/releases -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
 
         # Clean old backups (keep last 30 days)
-        find /opt/thebarcodeapi/${ENVIRONMENT}/releases/backups -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
+        find /opt/thebarcodeapi/backups -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
 
         # Clean Docker
         docker system prune -f --filter "until=168h"
