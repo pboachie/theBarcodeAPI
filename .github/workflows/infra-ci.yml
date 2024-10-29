@@ -387,14 +387,16 @@ jobs:
         echo "$SUDO_PASSWORD" | sudo -S cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
 
         # Create .env file before Docker build
-        cat > .env << EOL
-        API_VERSION=${API_VERSION}
+        cat > /opt/thebarcodeapi/barcodeAPI/.env << EOL
+        DB_PASSWORD=${DB_PASSWORD}
+        POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
         SECRET_KEY=${API_SECRET_KEY}
         MASTER_API_KEY=${API_MASTER_KEY}
+        API_VERSION=${API_VERSION}
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api
+        REDIS_URL=redis://redis:6379
         ALGORITHM=HS256
         ACCESS_TOKEN_EXPIRE_MINUTES=30
-        REDIS_URL=redis://redis:6379
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api
         EOL
 
         # Create docker-compose.yml

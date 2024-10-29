@@ -303,8 +303,9 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
-        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
+        SECRET_KEY=${{ env.API_SECRET_KEY }}
+        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
+        API_VERSION=${{ vars.API_VERSION }}
         DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
         REDIS_URL=redis://redis:6379
         ALGORITHM=HS256
@@ -336,18 +337,19 @@ jobs:
 
         cd /opt/thebarcodeapi/barcodeAPI
 
-        # Create temporary env file
-        echo "Creating temporary environment file..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
-        DB_PASSWORD=${{ env.DB_PASSWORD }}
-        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
-        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        REDIS_URL=redis://redis:6379
-        ALGORITHM=HS256
-        ACCESS_TOKEN_EXPIRE_MINUTES=30
-        EOF'
+        # # Create temporary env file
+        # echo "Creating temporary environment file..."
+        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
+        # DB_PASSWORD=${DB_PASSWORD}
+        # POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+        # SECRET_KEY=${API_SECRET_KEY}
+        # MASTER_API_KEY=${API_MASTER_KEY}
+        # API_VERSION=${API_VERSION:-v1}
+        # DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api
+        # REDIS_URL=redis://redis:6379
+        # ALGORITHM=HS256
+        # ACCESS_TOKEN_EXPIRE_MINUTES=30
+        # EOF'
 
         echo "Starting backend deployment..."
         echo "Using DOCKER_COMPOSE command: ${DOCKER_COMPOSE}"
@@ -528,9 +530,6 @@ jobs:
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs api
         fi
 
-        # Cleanup
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
-
         # Exit with migration status
         exit $MIGRATION_STATUS
 
@@ -546,21 +545,22 @@ jobs:
         fi
 
         # Create temporary env file with sudo
-        echo "Creating temporary environment file..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
-        DB_PASSWORD=${{ env.DB_PASSWORD }}
-        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
-        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        REDIS_URL=redis://redis:6379
-        ALGORITHM=HS256
-        ACCESS_TOKEN_EXPIRE_MINUTES=30
-        EOF'
+        # echo "Creating temporary environment file..."
+        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
+        # DB_PASSWORD=${{ env.DB_PASSWORD }}
+        # POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+        # SECRET_KEY=${{ env.API_SECRET_KEY }}
+        # MASTER_API_KEY=${{ env.API_MASTER_KEY }}
+        # API_VERSION=${{ vars.API_VERSION }}
+        # DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        # REDIS_URL=redis://redis:6379
+        # ALGORITHM=HS256
+        # ACCESS_TOKEN_EXPIRE_MINUTES=30
+        # EOF'
 
         # Set proper permissions
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
+        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
+        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
 
         echo "Verifying backend deployment..."
 
