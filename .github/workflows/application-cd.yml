@@ -185,30 +185,100 @@ jobs:
         echo "Checking current symlink:"
         ls -la "/opt/thebarcodeapi/${ENVIRONMENT}/current"
 
-        # Check PM2 process status
-        echo "Checking Next.js application status:"
-        pm2 list | grep "thebarcodeapi-frontend-${ENVIRONMENT}" || {
-            echo "ERROR: PM2 process not found!"
-            exit 1
+        # PM2 Process Management
+        echo "Managing PM2 process..."
+
+        # Function to safely stop and delete PM2 processes
+        cleanup_pm2() {
+            local app_name="$1"
+            echo "Cleaning up PM2 processes for $app_name..."
+
+            # Stop all instances
+            PM2_HOME="/home/github-runner/.pm2" pm2 stop "$app_name" || true
+            sleep 5
+
+            # Delete all instances
+            PM2_HOME="/home/github-runner/.pm2" pm2 delete "$app_name" || true
+            sleep 5
+
+            # Flush PM2 logs
+            PM2_HOME="/home/github-runner/.pm2" pm2 flush
+
+            # Save PM2 state
+            PM2_HOME="/home/github-runner/.pm2" pm2 save || true
         }
 
-        # Function to test frontend health with timeout and retries
+        # Clean up existing processes
+        cleanup_pm2 "thebarcodeapi-frontend-${ENVIRONMENT}"
+
+        # Wait for cleanup to complete
+        sleep 5
+
+        # Ensure ecosystem config exists
+        if [ ! -f "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js" ]; then
+            echo "Error: PM2 ecosystem config not found!"
+            exit 1
+        fi
+
+        # Start using ecosystem config
+        echo "Starting Next.js application with PM2 ecosystem config..."
+        cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
+        PM2_HOME="/home/github-runner/.pm2" pm2 start "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js" \
+            || {
+                echo "Failed to start PM2 process"
+                pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+                exit 1
+            }
+
+        # Wait for process to stabilize
+        sleep 15
+
+        # Verify process is running
+        if ! PM2_HOME="/home/github-runner/.pm2" pm2 list | grep -q "online.*thebarcodeapi-frontend-${ENVIRONMENT}"; then
+            echo "Process failed to start properly"
+            pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+            exit 1
+        fi
+
+        # Save PM2 configuration
+        PM2_HOME="/home/github-runner/.pm2" pm2 save || true
+
+        echo "PM2 process started successfully"
+
+        echo "Frontend verification completed successfully"
+
         check_frontend_health() {
             local max_attempts=12  # 1 minute total (5s * 12)
             local attempt=1
+            local timeout=5
 
             while [ $attempt -le $max_attempts ]; do
                 echo "Health check attempt $attempt of $max_attempts..."
-                if curl -s -f "http://localhost:3000/" > /dev/null; then
+
+                # Check if process is running with correct namespace
+                if ! pm2 list | grep -q "online.*production.*thebarcodeapi-frontend-${ENVIRONMENT}"; then
+                    echo "PM2 process is not running properly!"
+                    pm2 list
+                    pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+                    return 1
+                fi
+
+                # Test the application endpoint
+                if curl -s -f -m $timeout "http://localhost:3000/" > /dev/null; then
                     echo "Frontend is responding successfully!"
                     return 0
                 fi
+
                 echo "Frontend not ready yet, waiting 5 seconds..."
                 sleep 5
                 attempt=$((attempt + 1))
             done
 
             echo "ERROR: Frontend failed to respond after 1 minute"
+            echo "PM2 Status:"
+            pm2 list
+            echo "Recent PM2 logs:"
+            pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
             return 1
         }
 
@@ -219,8 +289,6 @@ jobs:
             pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
             exit 1
         fi
-
-        echo "Frontend verification completed successfully"
         EOF
         chmod +x verify_frontend.sh
 
