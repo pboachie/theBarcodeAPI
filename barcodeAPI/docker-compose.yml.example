@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - PYTHON_ENV=production
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      # Don't mount .env as it's copied during build
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redislabs/rejson:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - CHANGE_ME:/data #Change ME
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    restart: unless-stopped
+
+  db:
+    image: postgres:13
+    volumes:
+      - CHANGE_ME:/var/lib/postgresql/data #Change ME
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    environment:
+      - POSTGRES_USER=CHANGE_ME #Change ME
+      - POSTGRES_PASSWORD=CHANGE_ME #Change ME
+      - POSTGRES_DB=barcode_api
+      - BARCODE_DB_USER=CHANGE_ME #Change ME
+      - BARCODE_DB_PASSWORD=CHANGE_ME #Change ME
+      - BARCODE_DB_NAME=barcode_api
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U barcodeboachiefamily -d barcode_api"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  default:
+    name: barcodeapi_network
