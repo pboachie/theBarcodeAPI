@@ -31,55 +31,55 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/backups"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
 
-    - name: Configure sudoers
-      run: |
-        echo "Configuring sudoers..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat << 'EOF' | sudo tee /etc/sudoers.d/github-runner
-        # PM2 related commands
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/npm
+    # - name: Configure sudoers
+    #   run: |
+    #     echo "Configuring sudoers..."
+    #     echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat << 'EOF' | sudo tee /etc/sudoers.d/github-runner
+    #     # PM2 related commands
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/npm
 
-        # System service commands
-        github-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart nginx
-        github-runner ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
-        github-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart docker
-        github-runner ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
+    #     # System service commands
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart nginx
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart docker
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
 
-        # Directory and file operations
-        github-runner ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/thebarcodeapi/*
-        github-runner ALL=(ALL) NOPASSWD: /bin/chown -R * /opt/thebarcodeapi/*
-        github-runner ALL=(ALL) NOPASSWD: /bin/chmod -R * /opt/thebarcodeapi/*
-        github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /opt/thebarcodeapi/*
-        github-runner ALL=(ALL) NOPASSWD: /bin/rm -rf /opt/thebarcodeapi/*
-        github-runner ALL=(ALL) NOPASSWD: /bin/cp -R * /opt/thebarcodeapi/*
-        github-runner ALL=(ALL) NOPASSWD: /bin/mv * /opt/thebarcodeapi/*
-        github-runner ALL=(ALL) NOPASSWD: /bin/ln -sf * /opt/thebarcodeapi/*
+    #     # Directory and file operations
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/chown -R * /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/chmod -R * /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -rf /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/cp -R * /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/mv * /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/ln -sf * /opt/thebarcodeapi/*
 
-        # Docker related
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/docker
-        github-runner ALL=(ALL) NOPASSWD: /usr/local/bin/docker-compose
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/docker-compose
+    #     # Docker related
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/docker
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/local/bin/docker-compose
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/docker-compose
 
-        # Temp directory operations
-        github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/env_vars
-        github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/docker_vars
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/tee /tmp/env_vars
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/tee /tmp/docker_vars
+    #     # Temp directory operations
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/env_vars
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/docker_vars
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/tee /tmp/env_vars
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/tee /tmp/docker_vars
 
-        # Package management
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get update
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get upgrade -y
-        github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y *
+    #     # Package management
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get update
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get upgrade -y
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y *
 
-        # Group management
-        github-runner ALL=(ALL) NOPASSWD: /usr/sbin/usermod -aG docker github-runner
+    #     # Group management
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/sbin/usermod -aG docker github-runner
 
-        # Allow nginx configuration
-        github-runner ALL=(ALL) NOPASSWD: /bin/cp * /etc/nginx/sites-available/*
-        github-runner ALL=(ALL) NOPASSWD: /bin/ln -sf /etc/nginx/sites-available/* /etc/nginx/sites-enabled/*
-        EOF
+    #     # Allow nginx configuration
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/cp * /etc/nginx/sites-available/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/ln -sf /etc/nginx/sites-available/* /etc/nginx/sites-enabled/*
+    #     EOF
 
-        sudo chmod 0440 /etc/sudoers.d/github-runner
+    #     sudo chmod 0440 /etc/sudoers.d/github-runner
 
     - name: Set PM2 permissions
       run: |
