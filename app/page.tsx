@@ -32,7 +32,7 @@ const maxChars = {
   ean13: 12,
   ean8: 7,
   ean14: 13,
-  ean:13,
+  ean: 13,
   jan: 13,
   gtin: 14,
   upc: 12,
@@ -137,7 +137,7 @@ export default function BarcodeGenerator() {
           setApiCallUrl(`/api/generate?data=${encodeURIComponent(text)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`);
         }
       }
-    }, 170);
+    }, 740);
   }, [isLimitExceeded]);
 
   useEffect(() => {
@@ -265,11 +265,11 @@ export default function BarcodeGenerator() {
     if (isMobile) {
       return (
         <CustomSelect
-        options={barcodeTypes.map(type => type.toUpperCase())}
-        value={barcodeType.toUpperCase()}
-        onChange={(value) => setBarcodeType(value.toLowerCase() as keyof typeof maxChars | 'code128')}
-        placeholder="Select barcode type"
-      />
+          options={barcodeTypes.map(type => type.toUpperCase())}
+          value={barcodeType.toUpperCase()}
+          onChange={(value) => setBarcodeType(value.toLowerCase() as keyof typeof maxChars | 'code128')}
+          placeholder="Select barcode type"
+        />
       )
     } else {
       return (
@@ -278,8 +278,8 @@ export default function BarcodeGenerator() {
             <Button
               key={type}
               className={`barcode-type-button`}
-              variant="outline"
-              size="sm"
+              variant={barcodeType === type ? "outline" : "default"}
+              size={isMobile ? "sm" : "lg"}
               onClick={() => setBarcodeType(type as keyof typeof maxChars | 'code128')}
               disabled={isLimitExceeded}
               data-state={barcodeType === type ? "active" : "inactive"}
@@ -296,9 +296,9 @@ export default function BarcodeGenerator() {
     if (isMobile) {
       return (
         <CustomSelect
-          options={imageFormats}
-          value={imageFormat}
-          onChange={setImageFormat}
+          options={imageFormats.map(format => format.toUpperCase())}
+          value={imageFormat.toUpperCase()}
+          onChange={(value) => setImageFormat(value.toLowerCase())}
           placeholder="Select image format"
         />
       )
@@ -308,10 +308,12 @@ export default function BarcodeGenerator() {
           {imageFormats.map(format => (
             <Button
               key={format}
-              variant={imageFormat === format ? "default" : "outline"}
-              size="sm"
+              variant={imageFormat === format ? "outline" : "default"}
+              className={`barcode-type-button`}
+              size={isMobile ? "sm" : "lg"}
               onClick={() => setImageFormat(format)}
               disabled={isLimitExceeded}
+              data-state={imageFormat === format ? "active" : "inactive"}
             >
               {format}
             </Button>
@@ -331,7 +333,7 @@ export default function BarcodeGenerator() {
         </CardHeader>
         <CardContent>
           <div className="flex flex-col lg:flex-row gap-6">
-            <div className="controls-area space-y-4 lg:w-1/3">
+            <div className="controls-area space-y-4 lg:w-1/4 flex-shrink-0">
               <div>
                 <label className="block text-sm font-medium mb-1">Barcode Type</label>
                 {renderBarcodeTypeInput()}
@@ -401,69 +403,71 @@ export default function BarcodeGenerator() {
                 </label>
               </div>
             </div>
-            <div className="preview-area space-y-4 lg:w-2/3">
-              <div className="aspect-video bg-gray-100 rounded-lg flex items-center justify-center overflow-hidden">
-                <AnimatePresence mode="wait">
-                  {isLoading ? (
-                    <motion.div
-                      key="loader"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                    >
-                      <Loader2 className="w-8 h-8 animate-spin" />
-                    </motion.div>
-                  ) : isLimitExceeded ? (
-                    <Alert variant="destructive">
-                      <AlertTitle>Usage Limit Exceeded</AlertTitle>
-                      <AlertDescription>Please try again tomorrow.</AlertDescription>
-                    </Alert>
-                  ) : error ? (
-                    <Alert variant="destructive">
-                      <AlertTitle>Error</AlertTitle>
-                      <AlertDescription>{error}</AlertDescription>
-                    </Alert>
-                  ) : (
-                    <motion.img
-                      key="barcode"
-                      src={barcodeUrl}
-                      alt="Generated Barcode"
-                      className="max-w-full max-h-full object-contain"
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.8 }}
-                      transition={{ duration: 0.3 }}
-                    />
-                  )}
-                </AnimatePresence>
-              </div>
-              <div className="bg-gray-800 p-4 rounded-md relative">
-                <h3 className="text-sm font-semibold mb-2 text-white">API Call:</h3>
-                <div className="bg-gray-900 p-2 rounded">
-                  <code className="text-xs text-white break-all">GET {apiCallUrl}</code>
+            <div className="barcode-display flex-1 flex justify-center items-center overflow-auto flex-grow">
+              <div className="preview-area space-y-4 lg:w-2/3">
+                <div className="barcode-container flex-grow max-w-full max-h-full p-4 aspect-video bg-gray-100 rounded-lg flex items-center justify-center overflow-auto">
+                  <AnimatePresence mode="wait">
+                    {isLoading ? (
+                      <motion.div
+                        key="loader"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                      >
+                        <Loader2 className="w-8 h-8 animate-spin" />
+                      </motion.div>
+                    ) : isLimitExceeded ? (
+                      <Alert variant="destructive">
+                        <AlertTitle>Usage Limit Exceeded</AlertTitle>
+                        <AlertDescription>Please try again tomorrow.</AlertDescription>
+                      </Alert>
+                    ) : error ? (
+                      <Alert variant="destructive">
+                        <AlertTitle>Error</AlertTitle>
+                        <AlertDescription>{error}</AlertDescription>
+                      </Alert>
+                    ) : (
+                      <motion.img
+                        key="barcode"
+                        src={barcodeUrl}
+                        alt="Generated Barcode"
+                        className="max-w-full max-h-full object-contain"
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    )}
+                  </AnimatePresence>
                 </div>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="absolute top-2 right-2"
-                  onClick={handleCopy}
-                >
-                  <Copy className="h-4 w-4 text-white" />
-                </Button>
-              </div>
-              <div className="flex gap-2">
-                <Button onClick={handleCopy} className="flex-1 bg-black text-white">
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copy URL
-                </Button>
-                <Button onClick={handleDownload} className="flex-1 bg-black text-white">
-                  <Download className="w-4 h-4 mr-2" />
-                  Download
-                </Button>
-                <Button variant="outline" className="flex-1 bg-black text-white">
-                  <Printer className="w-4 h-4 mr-2" />
-                  Print
-                </Button>
+                <div className="bg-gray-800 p-4 rounded-md relative api-call-area">
+                  <h3 className="text-sm font-semibold mb-2 text-white">API Call:</h3>
+                  <div className="bg-gray-900 p-2 rounded">
+                    <code className="text-xs text-white break-all">GET {apiCallUrl}</code>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="absolute top-2 right-2"
+                    onClick={handleCopy}
+                  >
+                    <Copy className="h-4 w-4 text-white" />
+                  </Button>
+                </div>
+                <div className="flex gap-2 additional-content flex-grow p-4">
+                  <Button onClick={handleCopy} className="flex-1 bg-black text-white">
+                    <Copy className="w-4 h-4 mr-2" />
+                    Copy URL
+                  </Button>
+                  <Button onClick={handleDownload} className="flex-1 bg-black text-white">
+                    <Download className="w-4 h-4 mr-2" />
+                    Download
+                  </Button>
+                  <Button variant="outline" className="flex-1 bg-black text-white">
+                    <Printer className="w-4 h-4 mr-2" />
+                    Print
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
