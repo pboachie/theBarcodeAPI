@@ -281,6 +281,7 @@ jobs:
             name: 'thebarcodeapi-frontend-${ENVIRONMENT}',
             script: 'npm',
             args: 'start',
+            namespace: '${ENVIRONMENT}',
             env: {
               NODE_ENV: '${ENVIRONMENT}',
               ENVIRONMENT: '${ENVIRONMENT}',
@@ -288,23 +289,23 @@ jobs:
               NODE_OPTIONS: '--max-old-space-size=512'
             },
             cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
-            instances: 2,
-            exec_mode: 'cluster',
+            instances: 1,
+            exec_mode: 'fork',
             autorestart: true,
             watch: false,
             max_memory_restart: '512M',
             wait_ready: true,
-            listen_timeout: 60000,
-            kill_timeout: 10000,
-            exp_backoff_restart_delay: 2000,
-            restart_delay: 10000,
+            listen_timeout: 30000,
+            kill_timeout: 5000,
+            exp_backoff_restart_delay: 100,
+            restart_delay: 2000,
             max_restarts: 3,
             error_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log',
             out_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/out.log',
             merge_logs: true,
             min_uptime: '60s',
-            increment_var: 'PORT',
-            node_args: '--expose-gc'
+            node_args: '--expose-gc',
+            increment_var: 'PORT'
           }]
         };
         EEOF
