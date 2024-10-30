@@ -1,22 +1,21 @@
-// app/page.tsx
-
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useMediaQuery } from 'react-responsive'
-import { Loader2, Download, Copy, Printer } from 'lucide-react'
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useMediaQuery } from 'react-responsive';
+import { Loader2, Download, Copy, Printer } from 'lucide-react';
 
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Slider } from "@/components/ui/slider"
-import { Switch } from "@/components/ui/switch"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { useToast } from "@/components/ui/use-toast"
-import { CustomSelect } from "@/components/ui/custom-select"
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useToast } from "@/components/ui/use-toast";
+import { CustomSelect } from "@/components/ui/custom-select";
+import { PrintButton } from "@/components/ui/print-button";
 
-const apiDomain = process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com'; // https://thebarcodeapi.com
+const apiDomain = process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com';
 import packageJson from '../package.json';
 
 const apiVersion = packageJson.version || 'x.x.x';
@@ -24,9 +23,9 @@ const apiVersion = packageJson.version || 'x.x.x';
 const barcodeTypes = [
   'code128', 'code39', 'ean', 'ean13', 'ean14', 'ean8', 'gs1', 'gs1_128',
   'gtin', 'isbn', 'isbn10', 'isbn13', 'issn', 'itf', 'jan', 'pzn', 'upc', 'upca'
-];
+] as const;
 
-const imageFormats = ['BMP', 'GIF', 'JPEG', 'PNG'] // PCX, TIFF not supported via web
+const imageFormats = ['BMP', 'GIF', 'JPEG', 'PNG'] as const; // PCX, TIFF not supported via web
 
 const maxChars = {
   ean13: 12,
@@ -45,9 +44,11 @@ const maxChars = {
   pzn: 6,
   code39: 43,
   gs1_128: 48,
-}
+} as const;
 
-// Move generateBarcode outside the component
+type BarcodeType = typeof barcodeTypes[number];
+type ImageFormat = typeof imageFormats[number];
+
 const generateBarcode = async (
   type: string,
   text: string | number | boolean,
@@ -88,21 +89,21 @@ const generateBarcode = async (
 };
 
 export default function BarcodeGenerator() {
-  const [barcodeType, setBarcodeType] = useState<keyof typeof maxChars | 'code128'>('code128')
-  const [barcodeText, setBarcodeText] = useState('Change Me!')
-  const [barcodeWidth, setBarcodeWidth] = useState(200)
-  const [barcodeHeight, setBarcodeHeight] = useState(100)
-  const [imageFormat, setImageFormat] = useState('PNG')
-  const [showText, setShowText] = useState(true)
-  const [isLoading, setIsLoading] = useState(false)
-  const [barcodeUrl, setBarcodeUrl] = useState('')
-  const [apiCallUrl, setApiCallUrl] = useState('')
-  const [dpi, setDpi] = useState(300)
-  const [error, setError] = useState<string | null>(null)
-  const [isLimitExceeded, setIsLimitExceeded] = useState(false)
+  const [barcodeType, setBarcodeType] = useState<BarcodeType>('code128');
+  const [barcodeText, setBarcodeText] = useState('Change Me!');
+  const [barcodeWidth, setBarcodeWidth] = useState(200);
+  const [barcodeHeight, setBarcodeHeight] = useState(100);
+  const [imageFormat, setImageFormat] = useState<ImageFormat>('PNG');
+  const [showText, setShowText] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
+  const [barcodeUrl, setBarcodeUrl] = useState('');
+  const [apiCallUrl, setApiCallUrl] = useState('');
+  const [dpi, setDpi] = useState(300);
+  const [error, setError] = useState<string | null>(null);
+  const [isLimitExceeded, setIsLimitExceeded] = useState(false);
 
-  const isMobile = useMediaQuery({ maxWidth: 767 })
-  const { toast } = useToast()
+  const isMobile = useMediaQuery({ maxWidth: 767 });
+  const { toast } = useToast();
   const timeoutRef = useRef<NodeJS.Timeout>();
 
   const debouncedUpdateBarcode = useCallback((
@@ -141,6 +142,29 @@ export default function BarcodeGenerator() {
   }, [isLimitExceeded]);
 
   useEffect(() => {
+    const initialLoad = async () => {
+      const url = await generateBarcode(
+        barcodeType,
+        barcodeText,
+        barcodeWidth,
+        barcodeHeight,
+        imageFormat,
+        dpi,
+        showText,
+        setIsLoading,
+        setError,
+        setIsLimitExceeded
+      );
+      if (url) {
+        setBarcodeUrl(url);
+        setApiCallUrl(`/api/generate?data=${encodeURIComponent(barcodeText)}&format=${barcodeType}&width=${barcodeWidth}&height=${barcodeHeight}&image_format=${imageFormat}&dpi=${dpi}&center_text=${showText}`);
+      }
+    };
+
+    initialLoad();
+  }, []);
+
+  useEffect(() => {
     debouncedUpdateBarcode(
       barcodeType,
       barcodeText,
@@ -153,113 +177,101 @@ export default function BarcodeGenerator() {
   }, [barcodeType, barcodeText, barcodeWidth, barcodeHeight, imageFormat, dpi, showText, debouncedUpdateBarcode]);
 
   useEffect(() => {
-    const selectedItem = document.querySelector(`.select-item[aria-selected="true"]`);
-    if (selectedItem) {
-      selectedItem.setAttribute('aria-selected', 'false');
-    }
-    const newItem = document.querySelector(`.select-item[value="${barcodeType}"]`);
-    if (newItem) {
-      newItem.setAttribute('aria-selected', 'true');
+    setBarcodeText('');
+    switch (barcodeType) {
+      case 'ean13':
+        setBarcodeText('123456789123');
+        break;
+      case 'code39':
+        setBarcodeText('ABC 1234');
+        break;
+      case 'ean':
+        setBarcodeText('5901234123457');
+        break;
+      case 'ean8':
+        setBarcodeText('1234567');
+        break;
+      case 'jan':
+        setBarcodeText('453456999999'); // always starts "45" or "49" for Japan
+        break;
+      case 'itf':
+        setBarcodeText('01234567890123');
+        break;
+      case 'ean14':
+        setBarcodeText('1234567890123');
+        break;
+      case 'upc':
+        setBarcodeText('12345678901');
+        break;
+      case 'upca':
+        setBarcodeText('01234567890');
+        break;
+      case 'isbn':
+        setBarcodeText('9781234567890'); // prefix "978" or "979"
+        break;
+      case 'isbn10':
+        setBarcodeText('123456789');
+        break;
+      case 'isbn13':
+        setBarcodeText('978123456789');
+        break;
+      case 'gs1_128':
+        setBarcodeText('0101234567890128BAR-IT');
+        break;
+      case 'gtin':
+        setBarcodeText('01234567890128');
+        break;
+      case 'issn':
+        setBarcodeText('1234567');
+        break;
+      case 'pzn':
+        setBarcodeText('123456');
+        break;
+      default:
+        setBarcodeText('Change Me!');
     }
   }, [barcodeType]);
 
-  useEffect(() => {
-    setBarcodeText('')
-    switch (barcodeType) {
-      case 'ean13':
-        setBarcodeText('123456789123')
-        break
-      case 'code39':
-        setBarcodeText('ABC 1234')
-        break
-      case 'ean':
-        setBarcodeText('5901234123457')
-        break
-      case 'ean8':
-        setBarcodeText('1234567')
-        break
-      case 'jan':
-        setBarcodeText('453456999999') // always starts "45" or "49" for Japan
-        break
-      case 'itf':
-        setBarcodeText('01234567890123')
-        break
-      case 'ean14':
-        setBarcodeText('1234567890123')
-        break
-      case 'upc':
-        setBarcodeText('12345678901')
-        break
-      case 'upca':
-        setBarcodeText('01234567890')
-        break
-      case 'isbn':
-        setBarcodeText('9781234567890') // prefix "978" or "979"
-        break
-      case 'isbn10':
-        setBarcodeText('123456789')
-        break
-      case 'isbn13':
-        setBarcodeText('978123456789')
-        break
-      case 'gs1_128':
-        setBarcodeText('0101234567890128BAR-IT')
-        break
-      case 'gtin':
-        setBarcodeText('01234567890128')
-        break
-      case 'issn':
-        setBarcodeText('1234567')
-        break
-      case 'pzn':
-        setBarcodeText('123456')
-        break
-      default:
-        setBarcodeText('Change Me!')
-    }
-  }, [barcodeType])
-
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newText = e.target.value
+    const newText = e.target.value;
     if (barcodeType in maxChars) {
-      setBarcodeText(newText.slice(0, maxChars[barcodeType as keyof typeof maxChars]))
+      setBarcodeText(newText.slice(0, maxChars[barcodeType as keyof typeof maxChars]));
     } else {
-      setBarcodeText(newText)
+      setBarcodeText(newText);
     }
-  }
+  };
 
   const handleCopy = async () => {
     try {
-      console.log("Copy button clicked")
-      const formattedApiCallUrl = `${apiDomain}${apiCallUrl}`
-      await navigator.clipboard.writeText(formattedApiCallUrl)
+      const formattedApiCallUrl = `${apiDomain}${apiCallUrl}`;
+      await navigator.clipboard.writeText(formattedApiCallUrl);
       toast({
         title: "Copied!",
         description: "API URL copied to clipboard",
         duration: 2200, // Display for 2.2 seconds
-      })
+      });
     } catch (error) {
-      console.error("Failed to copy:", error)
+      console.error("Failed to copy:", error);
       toast({
         title: "Failed to Copy",
         description: "Could not copy the API URL to clipboard",
         variant: "destructive",
         duration: 3000,
-      })
+      });
     }
-  }
+  };
 
   const handleDownload = () => {
-    const cleanedBarcodeValue = barcodeText.replace(/[^a-zA-Z0-9]/g, '')
-    const fileName = `${cleanedBarcodeValue}_${barcodeWidth}_${barcodeHeight}.${imageFormat.toLowerCase()}`
+    const cleanedBarcodeValue = barcodeText.replace(/[^a-zA-Z0-9]/g, '');
+    const fileName = `${cleanedBarcodeValue}_${barcodeWidth}_${barcodeHeight}.${imageFormat.toLowerCase()}`;
 
-    const link = document.createElement('a')
-    link.href = barcodeUrl
-    link.download = fileName
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
+    const link = document.createElement('a');
+    link.href = barcodeUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const renderBarcodeTypeInput = () => {
     if (isMobile) {
@@ -267,30 +279,29 @@ export default function BarcodeGenerator() {
         <CustomSelect
           options={barcodeTypes.map(type => type.toUpperCase())}
           value={barcodeType.toUpperCase()}
-          onChange={(value) => setBarcodeType(value.toLowerCase() as keyof typeof maxChars | 'code128')}
+          onChange={(value) => setBarcodeType(value.toLowerCase() as BarcodeType)}
           placeholder="Select barcode type"
         />
-      )
-    } else {
-      return (
-        <div className="flex flex-wrap gap-2">
-          {barcodeTypes.map(type => (
-            <Button
-              key={type}
-              className={`barcode-type-button`}
-              variant={barcodeType === type ? "outline" : "default"}
-              size={isMobile ? "sm" : "lg"}
-              onClick={() => setBarcodeType(type as keyof typeof maxChars | 'code128')}
-              disabled={isLimitExceeded}
-              data-state={barcodeType === type ? "active" : "inactive"}
-            >
-              {type.toUpperCase()}
-            </Button>
-          ))}
-        </div>
-      )
+      );
     }
-  }
+    return (
+      <div className="flex flex-wrap gap-2">
+        {barcodeTypes.map(type => (
+          <Button
+            key={type}
+            className="barcode-type-button"
+            variant={barcodeType === type ? "outline" : "default"}
+            size={isMobile ? "sm" : "lg"}
+            onClick={() => setBarcodeType(type as keyof typeof maxChars | 'code128')}
+            disabled={isLimitExceeded}
+            data-state={barcodeType === type ? "active" : "inactive"}
+          >
+            {type.toUpperCase()}
+          </Button>
+        ))}
+      </div>
+    );
+  };
 
   const renderImageFormatInput = () => {
     if (isMobile) {
@@ -298,37 +309,39 @@ export default function BarcodeGenerator() {
         <CustomSelect
           options={imageFormats.map(format => format.toUpperCase())}
           value={imageFormat.toUpperCase()}
-          onChange={(value) => setImageFormat(value.toLowerCase())}
+          onChange={(value) => setImageFormat(value.toLowerCase() as ImageFormat)}
           placeholder="Select image format"
         />
-      )
-    } else {
-      return (
-        <div className="flex gap-2">
-          {imageFormats.map(format => (
-            <Button
-              key={format}
-              variant={imageFormat === format ? "outline" : "default"}
-              className={`barcode-type-button`}
-              size={isMobile ? "sm" : "lg"}
-              onClick={() => setImageFormat(format)}
-              disabled={isLimitExceeded}
-              data-state={imageFormat === format ? "active" : "inactive"}
-            >
-              {format}
-            </Button>
-          ))}
-        </div>
-      )
+      );
     }
-  }
+    return (
+      <div className="flex gap-2">
+        {imageFormats.map(format => (
+          <Button
+            key={format}
+            variant={imageFormat === format ? "outline" : "default"}
+            className="barcode-type-button"
+            size={isMobile ? "sm" : "lg"}
+            onClick={() => setImageFormat(format)}
+            disabled={isLimitExceeded}
+            data-state={imageFormat === format ? "active" : "inactive"}
+          >
+            {format}
+          </Button>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="barcode-generator-container p-4 md:p-8">
       <Card className="max-w-full mx-auto">
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-center">
-            The Barcode API {process.env.NODE_ENV === 'development' ? <span className="text-red-500">DEV v{apiVersion}*</span> : <span className="text-green-500">v{apiVersion}</span>}
+            The Barcode API {process.env.NODE_ENV === 'development' ?
+              <span className="text-red-500">DEV v{apiVersion}*</span> :
+              <span className="text-green-500">v{apiVersion}</span>
+            }
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -340,7 +353,10 @@ export default function BarcodeGenerator() {
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1">
-                  Barcode Content {barcodeType in maxChars ? `(Max ${maxChars[barcodeType as keyof typeof maxChars]} characters)` : ''}
+                  Barcode Content {barcodeType in maxChars ?
+                    `(Max ${maxChars[barcodeType as keyof typeof maxChars]} characters)` :
+                    ''
+                  }
                 </label>
                 <Input
                   value={barcodeText}
@@ -463,10 +479,7 @@ export default function BarcodeGenerator() {
                     <Download className="w-4 h-4 mr-2" />
                     Download
                   </Button>
-                  <Button variant="outline" className="flex-1 bg-black text-white">
-                    <Printer className="w-4 h-4 mr-2" />
-                    Print
-                  </Button>
+                  <PrintButton barcodeUrl={barcodeUrl} />
                 </div>
               </div>
             </div>
@@ -475,4 +488,4 @@ export default function BarcodeGenerator() {
       </Card>
     </div>
   )
-}
+};
