@@ -34,7 +34,7 @@ jobs:
     - name: Configure sudoers
       run: |
         echo "Configuring sudoers..."
-        cat << 'EOF' | sudo tee /etc/sudoers.d/github-runner
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat << 'EOF' | sudo tee /etc/sudoers.d/github-runner
         # PM2 related commands
         github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2
         github-runner ALL=(ALL) NOPASSWD: /usr/bin/npm
