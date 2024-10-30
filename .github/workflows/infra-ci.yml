@@ -34,8 +34,66 @@ jobs:
     - name: Configure sudoers
       run: |
         echo "Configuring sudoers..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2, /usr/bin/npm" | sudo tee /etc/sudoers.d/github-runner'
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 0440 /etc/sudoers.d/github-runner
+        cat << 'EOF' | sudo tee /etc/sudoers.d/github-runner
+        # PM2 related commands
+        github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2
+        github-runner ALL=(ALL) NOPASSWD: /usr/bin/npm
+
+        # System service commands
+        github-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart nginx
+        github-runner ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
+        github-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart docker
+        github-runner ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
+
+        # Directory and file operations
+        github-runner ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/thebarcodeapi/*
+        github-runner ALL=(ALL) NOPASSWD: /bin/chown -R * /opt/thebarcodeapi/*
+        github-runner ALL=(ALL) NOPASSWD: /bin/chmod -R * /opt/thebarcodeapi/*
+        github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /opt/thebarcodeapi/*
+        github-runner ALL=(ALL) NOPASSWD: /bin/rm -rf /opt/thebarcodeapi/*
+        github-runner ALL=(ALL) NOPASSWD: /bin/cp -R * /opt/thebarcodeapi/*
+        github-runner ALL=(ALL) NOPASSWD: /bin/mv * /opt/thebarcodeapi/*
+        github-runner ALL=(ALL) NOPASSWD: /bin/ln -sf * /opt/thebarcodeapi/*
+
+        # Docker related
+        github-runner ALL=(ALL) NOPASSWD: /usr/bin/docker
+        github-runner ALL=(ALL) NOPASSWD: /usr/local/bin/docker-compose
+        github-runner ALL=(ALL) NOPASSWD: /usr/bin/docker-compose
+
+        # Temp directory operations
+        github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/env_vars
+        github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/docker_vars
+        github-runner ALL=(ALL) NOPASSWD: /usr/bin/tee /tmp/env_vars
+        github-runner ALL=(ALL) NOPASSWD: /usr/bin/tee /tmp/docker_vars
+
+        # Package management
+        github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get update
+        github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get upgrade -y
+        github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y *
+
+        # Group management
+        github-runner ALL=(ALL) NOPASSWD: /usr/sbin/usermod -aG docker github-runner
+
+        # Allow nginx configuration
+        github-runner ALL=(ALL) NOPASSWD: /bin/cp * /etc/nginx/sites-available/*
+        github-runner ALL=(ALL) NOPASSWD: /bin/ln -sf /etc/nginx/sites-available/* /etc/nginx/sites-enabled/*
+        EOF
+
+        sudo chmod 0440 /etc/sudoers.d/github-runner
+
+    - name: Set PM2 permissions
+      run: |
+        # Create PM2 home directory with correct permissions
+        mkdir -p /home/github-runner/.pm2
+        chmod 700 /home/github-runner/.pm2
+
+        # Ensure PM2 files are owned by github-runner
+        touch /home/github-runner/.pm2/pm2.log
+        chmod 600 /home/github-runner/.pm2/pm2.log
+
+        # Create PM2 startup script directory
+        mkdir -p /home/github-runner/.pm2/logs
+        chmod 700 /home/github-runner/.pm2/logs
 
     - name: Create system update script
       run: |
@@ -264,6 +322,9 @@ jobs:
         cat << 'EOF' > configure_pm2.sh
         #!/bin/bash
         set -e
+
+        # move to theBarcodeAPI directory
+        cd /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI
 
         # Read environment variables from file
         source /tmp/env_vars
