@@ -2,16 +2,17 @@
 
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/components/ui/use-toast";
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import dynamic from 'next/dynamic';
+import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { BarcodeControls } from './BarcodeControls';
 import { BarcodeDisplay } from './BarcodeDisplay';
+import { useToast } from '@/components/ui/use-toast';
+import packageJson from '../../package.json';
+import { BarcodeType, ImageFormat } from './types';
+import { cleanupBarcodeUrl, generateBarcode } from './barcodeService';
 import { ApiCallDisplay } from './ApiCallDisplay';
 import { ActionButtons } from './ActionButtons';
-import { generateBarcode, cleanupBarcodeUrl } from './barcodeService';
-import { BarcodeType, ImageFormat } from './types';
-import packageJson from 'package.json';
 
 const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN ||
   (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com');
@@ -37,7 +38,6 @@ const BarcodeGenerator: React.FC = () => {
 
     const handleBarcodeTypeChange = (newType: BarcodeType) => {
         setBarcodeType(newType);
-        // Let BarcodeControls handle setting the default text
     };
 
     const handleCopy = async () => {
@@ -143,6 +143,16 @@ const BarcodeGenerator: React.FC = () => {
                 </CardHeader>
                 <CardContent>
                     <div className="flex flex-col lg:flex-row gap-6">
+                        {/* BarcodeDisplay appears first on mobile and second on desktop */}
+                        <div className="order-1 lg:order-2 flex-1 flex justify-center items-center overflow-auto">
+                            <BarcodeDisplay
+                                isLoading={isLoading}
+                                isLimitExceeded={isLimitExceeded}
+                                error={error}
+                                barcodeUrl={barcodeUrl}
+                            />
+                        </div>
+                        {/* BarcodeControls appears second on mobile and first on desktop */}
                         <BarcodeControls
                             barcodeType={barcodeType}
                             setBarcodeType={handleBarcodeTypeChange}
@@ -159,28 +169,29 @@ const BarcodeGenerator: React.FC = () => {
                             showText={showText}
                             setShowText={setShowText}
                             isLimitExceeded={isLimitExceeded}
+                            className="order-2 lg:order-1"
                         />
+                    </div>
 
-                        <div className="barcode-display flex-1 flex justify-center items-center overflow-auto flex-grow">
-                            <div className="preview-area space-y-4 lg:w-2/3">
-                                <BarcodeDisplay
-                                    isLoading={isLoading}
-                                    isLimitExceeded={isLimitExceeded}
-                                    error={error}
-                                    barcodeUrl={barcodeUrl}
-                                />
+                    <div className="barcode-display flex-1 flex justify-center items-center overflow-auto flex-grow">
+                        <div className="preview-area space-y-4 lg:w-2/3">
+                            {/* <BarcodeDisplay
+                                isLoading={isLoading}
+                                isLimitExceeded={isLimitExceeded}
+                                error={error}
+                                barcodeUrl={barcodeUrl}
+                            /> */}
 
-                                <ApiCallDisplay
-                                    apiCallUrl={apiCallUrl}
-                                    onCopy={handleCopy}
-                                />
+                            <ApiCallDisplay
+                                apiCallUrl={apiCallUrl}
+                                onCopy={handleCopy}
+                            />
 
-                                <ActionButtons
-                                    onCopy={handleCopy}
-                                    onDownload={handleDownload}
-                                    barcodeUrl={barcodeUrl}
-                                />
-                            </div>
+                            <ActionButtons
+                                onCopy={handleCopy}
+                                onDownload={handleDownload}
+                                barcodeUrl={barcodeUrl}
+                            />
                         </div>
                     </div>
                 </CardContent>

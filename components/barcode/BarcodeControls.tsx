@@ -23,6 +23,7 @@ interface BarcodeControlsProps {
   showText: boolean;
   setShowText: (show: boolean) => void;
   isLimitExceeded: boolean;
+  className?: string;
 }
 
 const getDefaultBarcodeText = (type: BarcodeType): string => {
@@ -79,7 +80,8 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
   setDpi,
   showText,
   setShowText,
-  isLimitExceeded
+  isLimitExceeded,
+  className,
 }) => {
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newText = e.target.value;
@@ -103,7 +105,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
   }, [barcodeText, barcodeType, setBarcodeText]);
 
   return (
-    <div className="controls-area space-y-4 lg:w-1/4 flex-shrink-0">
+    <div className={`controls-area space-y-4 lg:w-1/4 flex-shrink-0 ${className}`}>
       <FormatSelector
         title="Barcode Type"
         options={barcodeTypes}
