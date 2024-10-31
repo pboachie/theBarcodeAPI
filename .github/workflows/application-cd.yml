@@ -89,51 +89,63 @@ jobs:
         # Set initial permissions
         echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
 
-        # Create new release directory
+        # Create new release directory with timestamp
         TIMESTAMP=$(date +%Y%m%d%H%M%S)
         NEW_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/release-${TIMESTAMP}"
+        CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
+        PREVIOUS_RELEASE_LINK="/opt/thebarcodeapi/${ENVIRONMENT}/previous"
+
         echo "Creating new release directory: $NEW_RELEASE"
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$NEW_RELEASE"
         echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner "$NEW_RELEASE"
 
-        # Verify source files exist
-        pwd
-        ls -la
-        if [ ! -d "./.next" ]; then
-            echo "Error: .next directory not found!"
-            exit 1
-        fi
-
-        # Copy build files
+        # Copy build files to new release
         echo "Copying build files to new release directory"
         echo "$SUDO_PASSWORD" | sudo -S cp -R ./.next "$NEW_RELEASE/"
         echo "$SUDO_PASSWORD" | sudo -S cp -R ./public "$NEW_RELEASE/"
         echo "$SUDO_PASSWORD" | sudo -S cp ./package.json "$NEW_RELEASE/"
         echo "$SUDO_PASSWORD" | sudo -S cp ./package-lock.json "$NEW_RELEASE/"
 
-        # Change to new release directory
+        # Install dependencies in new release
         cd "$NEW_RELEASE"
-
-        # Install production dependencies
         npm ci --omit=dev
 
-        # Create and verify current directory exists
-        CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$(dirname "$CURRENT_DIR")"
-
-        # Update symlink
-        echo "Creating symlink to new release"
-        echo "Source: $NEW_RELEASE"
-        echo "Target: $CURRENT_DIR"
-        echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$NEW_RELEASE" "$CURRENT_DIR"
-
-        # Verify symlink creation
-        if [ ! -L "$CURRENT_DIR" ]; then
-            echo "Error: Failed to create symlink"
-            exit 1
+        # Keep track of current release before switching
+        if [ -L "$CURRENT_DIR" ]; then
+            CURRENT_RELEASE=$(readlink -f "$CURRENT_DIR")
+            echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$CURRENT_RELEASE" "$PREVIOUS_RELEASE_LINK"
         fi
 
-        # Clean up old releases
+        # Atomic symlink swap
+        echo "Creating symlink to new release"
+        echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$NEW_RELEASE" "$CURRENT_DIR.new"
+        echo "$SUDO_PASSWORD" | sudo -S mv -Tf "$CURRENT_DIR.new" "$CURRENT_DIR"
+
+        # Verify symlink
+        if [ ! -L "$CURRENT_DIR" ] || [ ! -d "$(readlink -f "$CURRENT_DIR")" ]; then
+            echo "Error: Failed to create symlink correctly"
+            if [ -L "$PREVIOUS_RELEASE_LINK" ]; then
+                echo "Rolling back to previous release..."
+                echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
+                exit 1
+            fi
+        fi
+
+        # Restart PM2 with zero downtime
+        echo "Restarting PM2 process..."
+        pm2 list | grep "thebarcodeapi-frontend-${ENVIRONMENT}" | awk '{print $2}' | while read process; do
+            echo "Reloading process: $process"
+            PM2_HOME="/home/github-runner/.pm2" pm2 reload "$process" --update-env || {
+                echo "Failed to reload PM2 process, rolling back..."
+                if [ -L "$PREVIOUS_RELEASE_LINK" ]; then
+                    echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
+                    PM2_HOME="/home/github-runner/.pm2" pm2 reload "$process" --update-env
+                fi
+                exit 1
+            }
+        done
+
+        # Clean up old releases (keep last 5)
         echo "Cleaning up old releases"
         cd "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
         OLD_RELEASES=$(ls -1dt */ | tail -n +6)
@@ -141,17 +153,11 @@ jobs:
             echo "$SUDO_PASSWORD" | sudo -S rm -rf $OLD_RELEASES
         fi
 
-        # Manage PM2 process
-        echo "Managing PM2 process..."
-        if pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
-            PM2_HOME="/home/github-runner/.pm2" pm2 restart "thebarcodeapi-frontend-${ENVIRONMENT}" || true
-        fi
-
         cd "$CURRENT_DIR"
 
         # Set final permissions
-        echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data "/opt/thebarcodeapi/${ENVIRONMENT}"
-        echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "/opt/thebarcodeapi/${ENVIRONMENT}"
+        echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data "/opt/thebarcodeapi/${ENVIRONMENT}/current"
+        echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "/opt/thebarcodeapi/${ENVIRONMENT}/current"
 
         echo "Frontend deployment completed"
         EOF
