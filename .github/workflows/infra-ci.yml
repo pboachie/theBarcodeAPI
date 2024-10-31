@@ -849,3 +849,9 @@ jobs:
       run: |
         echo "Deployed to ${{ env.ENVIRONMENT }} environment"
         echo "Domain: ${{ env.DOMAIN_NAME }}"
+
+    - name: On Failure
+      if: failure()
+      run: |
+        echo "Deployment failed"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /home/github-runner/actions-runner/_work/theBarcodeAPI
