@@ -3,7 +3,7 @@
 import React from 'react';
 import { Copy } from 'lucide-react';
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui/use-toast";
+// import { useToast } from "@/components/ui/use-toast";
 
 interface ApiCallDisplayProps {
   apiCallUrl: string;
