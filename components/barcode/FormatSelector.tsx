@@ -9,7 +9,7 @@ interface FormatSelectorProps {
   title: string;
   options: readonly string[];
   value: string;
-  onChange: (value: any) => void;
+  onChange: (value: string) => void;
   disabled: boolean;
 }
 
