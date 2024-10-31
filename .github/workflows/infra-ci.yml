@@ -589,8 +589,7 @@ jobs:
         chmod +x wait-for-it.sh
 
         # Set permissions
-        chown -R www-data:www-data /opt/thebarcodeapi
-        chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
+        chown -R github-runner:github-runner /opt/thebarcodeapi
         chmod -R 755 /opt/thebarcodeapi/barcodeAPI
 
         echo "Docker environment setup completed"
@@ -628,7 +627,7 @@ jobs:
         mkdir -p /opt/thebarcodeapi/backups
 
         # Set ownership
-        chown -R www-data:www-data /opt/thebarcodeapi
+        chown -R github-runner:github-runner /opt/thebarcodeapi
 
         # Set directory permissions
         find /opt/thebarcodeapi -type d -exec chmod 755 {} \;
@@ -653,7 +652,7 @@ jobs:
         chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
         # set ownership for backup folder
-        chown www-data:www-data /opt/thebarcodeapi/backups
+        chown github-runner:github-runner /opt/thebarcodeapi/backups
         echo "Permissions fixed successfully"
         EOF
 
@@ -681,7 +680,7 @@ jobs:
 
         # Move to destination with sudo
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv pre-backup-check.sh /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 755 /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
 
         # Update cron job with sudo
