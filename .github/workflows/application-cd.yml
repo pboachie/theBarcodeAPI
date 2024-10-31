@@ -226,23 +226,40 @@ jobs:
             exit 1
         fi
 
-        # Start using ecosystem config
-        echo "Starting Next.js application with PM2 ecosystem config..."
-        cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
-        PM2_HOME="/home/github-runner/.pm2" pm2 start "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js" \
-            || {
-                echo "Failed to start PM2 process"
-                pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
-                exit 1
-            }
+        # Function to start PM2 with better error handling
+        start_pm2_process() {
+            echo "Starting Next.js application with PM2..."
+            cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
 
-        # Wait for process to stabilize
-        sleep 15
+            # Start PM2 with specific configuration
+            PM2_HOME="/home/github-runner/.pm2" pm2 start "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js" \
+                || {
+                    echo "Failed to start PM2 process"
+                    pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+                    exit 1
+                }
 
-        # Verify process is running
-        if ! PM2_HOME="/home/github-runner/.pm2" pm2 list | grep -q "online.*thebarcodeapi-frontend-${ENVIRONMENT}"; then
-            echo "Process failed to start properly"
+            # Wait for the process to stabilize
+            local max_wait=30
+            local count=0
+            while [ $count -lt $max_wait ]; do
+                if PM2_HOME="/home/github-runner/.pm2" pm2 list | grep -q "online.*thebarcodeapi-frontend-${ENVIRONMENT}"; then
+                    echo "PM2 process is online"
+                    return 0
+                fi
+                echo "Waiting for PM2 process to come online... ($count/$max_wait)"
+                sleep 1
+                count=$((count + 1))
+            done
+
+            echo "Process failed to start within timeout"
             pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+            return 1
+        }
+
+        # Replace the PM2 start section with this
+        if ! start_pm2_process; then
+            echo "Failed to start PM2 process"
             exit 1
         fi
 
