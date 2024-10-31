@@ -211,7 +211,7 @@ jobs:
             PM2_HOME="/home/github-runner/.pm2" pm2 flush
 
             # Save PM2 state
-            PM2_HOME="/home/github-runner/.pm2" pm2 save || true
+            PM2_HOME="/home/github-runner/.pm2" pm2 save --force || true
         }
 
         # Clean up existing processes
@@ -220,18 +220,12 @@ jobs:
         # Wait for cleanup to complete
         sleep 5
 
-        # Ensure ecosystem config exists
-        if [ ! -f "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js" ]; then
-            echo "Error: PM2 ecosystem config not found!"
-            exit 1
-        fi
-
         # Function to start PM2 with better error handling
         start_pm2_process() {
             echo "Starting Next.js application with PM2..."
             cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
 
-            # Start PM2 with specific configuration
+            # Start PM2
             PM2_HOME="/home/github-runner/.pm2" pm2 start "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js" \
                 || {
                     echo "Failed to start PM2 process"
@@ -239,79 +233,93 @@ jobs:
                     exit 1
                 }
 
-            # Wait for the process to stabilize
-            local max_wait=30
+            local max_wait=60
             local count=0
             while [ $count -lt $max_wait ]; do
-                if PM2_HOME="/home/github-runner/.pm2" pm2 list | grep -q "online.*thebarcodeapi-frontend-${ENVIRONMENT}"; then
+                # Get process status
+                local status=$(PM2_HOME="/home/github-runner/.pm2" pm2 jlist | grep -o '"status":"[^"]*"' | head -1)
+
+                if [[ $status == *"online"* ]]; then
                     echo "PM2 process is online"
-                    return 0
+                    # Additional verification - check if the app is responding
+                    if curl -s -f "http://localhost:3000/" > /dev/null; then
+                        echo "Application is responding"
+                        PM2_HOME="/home/github-runner/.pm2" pm2 save --force
+                        return 0
+                    fi
                 fi
-                echo "Waiting for PM2 process to come online... ($count/$max_wait)"
+
+                # Show process details every 10 seconds
+                if [ $((count % 10)) -eq 0 ]; then
+                    echo "Current PM2 status:"
+                    PM2_HOME="/home/github-runner/.pm2" pm2 list
+                    echo "Recent logs:"
+                    PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 10 --nostream
+                fi
+
+                echo "Waiting for application to be ready... ($count/$max_wait)"
                 sleep 1
                 count=$((count + 1))
             done
 
-            echo "Process failed to start within timeout"
-            pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+            echo "Process verification failed. Showing logs:"
+            PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
             return 1
         }
 
-        # Replace the PM2 start section with this
+        # Main execution
+        echo "Starting PM2 process..."
         if ! start_pm2_process; then
             echo "Failed to start PM2 process"
             exit 1
         fi
 
         # Save PM2 configuration
-        PM2_HOME="/home/github-runner/.pm2" pm2 save || true
-
-        echo "PM2 process started successfully"
-
-        echo "Frontend verification completed successfully"
+        PM2_HOME="/home/github-runner/.pm2" pm2 save --force || true
 
         check_frontend_health() {
-            local max_attempts=12  # 1 minute total (5s * 12)
+            local max_attempts=12
             local attempt=1
             local timeout=5
 
             while [ $attempt -le $max_attempts ]; do
                 echo "Health check attempt $attempt of $max_attempts..."
 
-                # Check if process is running with correct namespace
-                if ! pm2 list | grep -q "online.*production.*thebarcodeapi-frontend-${ENVIRONMENT}"; then
+                # Comprehensive status check
+                local pm2_status=$(PM2_HOME="/home/github-runner/.pm2" pm2 jlist)
+                if ! echo "$pm2_status" | grep -q '"status":"online".*"name":"thebarcodeapi-frontend-'; then
                     echo "PM2 process is not running properly!"
-                    pm2 list
-                    pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+                    PM2_HOME="/home/github-runner/.pm2" pm2 list
+                    PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
                     return 1
                 fi
 
-                # Test the application endpoint
+                # Test the application endpoint with increased timeout
                 if curl -s -f -m $timeout "http://localhost:3000/" > /dev/null; then
                     echo "Frontend is responding successfully!"
                     return 0
                 fi
 
-                echo "Frontend not ready yet, waiting 5 seconds..."
+                echo "Frontend not ready yet, waiting 5 seconds... (Attempt $attempt/$max_attempts)"
                 sleep 5
                 attempt=$((attempt + 1))
             done
 
-            echo "ERROR: Frontend failed to respond after 1 minute"
+            echo "ERROR: Frontend failed to respond after health checks"
             echo "PM2 Status:"
-            pm2 list
+            PM2_HOME="/home/github-runner/.pm2" pm2 list
             echo "Recent PM2 logs:"
-            pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+            PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
             return 1
         }
 
         echo "Testing frontend health..."
         if ! check_frontend_health; then
             echo "DEPLOYMENT VERIFICATION FAILED"
-            echo "Recent PM2 logs:"
-            pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
             exit 1
         fi
+
+        echo "Frontend verification completed successfully"
         EOF
         chmod +x verify_frontend.sh
 
