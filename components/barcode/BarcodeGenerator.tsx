@@ -28,7 +28,7 @@ const BarcodeGenerator: React.FC = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [barcodeUrl, setBarcodeUrl] = useState('');
     const [apiCallUrl, setApiCallUrl] = useState('');
-    const [dpi, setDpi] = useState(300);
+    const [dpi, setDpi] = useState(200);
     const [error, setError] = useState<string | null>(null);
     const [isLimitExceeded, setIsLimitExceeded] = useState(false);
 

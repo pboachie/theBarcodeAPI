@@ -132,7 +132,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         <label className="block text-sm font-medium mb-1">Width: {barcodeWidth}px</label>
         <Slider
           min={50}
-          max={1000}
+          max={600}
           step={1}
           value={[barcodeWidth]}
           onValueChange={([value]) => setBarcodeWidth(value)}
@@ -144,7 +144,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         <label className="block text-sm font-medium mb-1">Height: {barcodeHeight}px</label>
         <Slider
           min={50}
-          max={1000}
+          max={600}
           step={1}
           value={[barcodeHeight]}
           onValueChange={([value]) => setBarcodeHeight(value)}
@@ -164,7 +164,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         <label className="block text-sm font-medium mb-1">DPI: {dpi}</label>
         <Slider
           min={130}
-          max={1000}
+          max={600}
           step={1}
           value={[dpi]}
           onValueChange={([value]) => setDpi(value)}
@@ -172,7 +172,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         />
         <div className="flex justify-between text-xs text-gray-500">
           <span>130</span>
-          <span>1000</span>
+          <span>600</span>
         </div>
       </div>
 
