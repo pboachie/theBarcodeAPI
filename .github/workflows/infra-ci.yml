@@ -396,7 +396,7 @@ jobs:
         PM2_HOME="/home/github-runner/.pm2" pm2 save
 
         # Set final permissions
-        echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi
+        echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
         echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 /opt/thebarcodeapi
 
         # Show logs to help with debugging
@@ -707,7 +707,7 @@ jobs:
 
         # Then move it to the target location with sudo
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv cleanup.sh /opt/thebarcodeapi/cleanup.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/cleanup.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/cleanup.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 755 /opt/thebarcodeapi/cleanup.sh
 
         # Add weekly cleanup to cron with sudo
@@ -736,7 +736,7 @@ jobs:
           if [ ! -d "$dir" ]; then
             echo "Creating directory: $dir"
             sudo mkdir -p "$dir"
-            sudo chown www-data:www-data "$dir"
+            sudo chown github-runner:github-runner "$dir"
             sudo chmod 755 "$dir"
           fi
         }
@@ -749,7 +749,7 @@ jobs:
             echo "Creating script: $script"
             echo "$content" | sudo tee "$script" > /dev/null
             sudo chmod +x "$script"
-            sudo chown www-data:www-data "$script"
+            sudo chown github-runner:github-runner "$script"
           elif [ ! -x "$script" ]; then
             echo "Making script executable: $script"
             sudo chmod +x "$script"
@@ -759,7 +759,7 @@ jobs:
         # Create and verify base directory
         echo "Setting up base directory..."
         sudo mkdir -p /opt/thebarcodeapi
-        sudo chown www-data:www-data /opt/thebarcodeapi
+        sudo chown github-runner:github-runner /opt/thebarcodeapi
         sudo chmod 755 /opt/thebarcodeapi
 
         # Create and verify required directories
@@ -807,7 +807,7 @@ jobs:
 
         # Verify final permissions
         echo "Verifying final permissions..."
-        sudo chown -R www-data:www-data /opt/thebarcodeapi
+        sudo chown -R github-runner:github-runner /opt/thebarcodeapi
         sudo chmod -R 755 /opt/thebarcodeapi
 
         echo "Setup verified and completed successfully"
