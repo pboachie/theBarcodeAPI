@@ -108,7 +108,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         title="Barcode Type"
         options={barcodeTypes}
         value={barcodeType}
-        onChange={handleTypeChange}
+        onChange={handleTypeChange as (value: string) => void}
         disabled={isLimitExceeded}
       />
 
@@ -156,7 +156,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         title="Image Format"
         options={imageFormats}
         value={imageFormat}
-        onChange={setImageFormat}
+        onChange={setImageFormat as (value: string) => void}
         disabled={isLimitExceeded}
       />
 

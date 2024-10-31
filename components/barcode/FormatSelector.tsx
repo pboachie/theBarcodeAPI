@@ -4,12 +4,13 @@ import React from 'react';
 import { useMediaQuery } from 'react-responsive';
 import { Button } from "@/components/ui/button";
 import { CustomSelect } from "@/components/ui/custom-select";
+import { BarcodeType } from './types';
 
 interface FormatSelectorProps {
   title: string;
   options: readonly string[];
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: BarcodeType) => void;
   disabled: boolean;
 }
 
@@ -29,7 +30,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
         <CustomSelect
           options={options.map(opt => opt.toUpperCase())}
           value={value.toUpperCase()}
-          onChange={(val) => onChange(val.toLowerCase())}
+          onChange={(val) => onChange(val.toLowerCase() as BarcodeType)}
           placeholder={`Select ${title.toLowerCase()}`}
         />
       </div>
@@ -46,7 +47,7 @@ export const FormatSelector: React.FC<FormatSelectorProps> = ({
             className="barcode-type-button"
             variant={value === opt ? "outline" : "default"}
             size={isMobile ? "sm" : "lg"}
-            onClick={() => onChange(opt)}
+            onClick={() => onChange(opt as BarcodeType)}
             disabled={disabled}
             data-state={value === opt ? "active" : "inactive"}
           >
