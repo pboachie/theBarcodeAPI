@@ -5,6 +5,7 @@
 :root {
   --foreground: #000000;
   /* --background: #ffffff; */
+  --preview-background: #ffffff;
   --accent-color: #ff0000;
   --hover-color: #e60000;
   --light-bg: #f5f5f5;
@@ -14,11 +15,12 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --foreground: #ffffff;
+    --background: #1a1a1a;
+    --preview-background: #2d2d2d;
     --accent-color: #ff3333;
     --hover-color: #ff4d4d;
     --light-bg: #2d2d2d;
     --light-hover: #404040;
-    --background: #1a1a1a;
   }
 }
 
@@ -37,6 +39,9 @@ body {
 
 .preview-area {
   width: 100%;
+  background-color: var(--preview-background);
+  color: var(--foreground);
+  padding: 1rem;
   max-width: 600px; /* Default size for smaller screens */
 
   /* For screens 1024px and larger */
