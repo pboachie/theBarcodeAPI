@@ -31,6 +31,7 @@ class BarcodeGenerationError(Exception):
 async def generate_barcode_image(barcode_request: BarcodeRequest, writer_options: Dict[str, any]) -> bytes:
     return await asyncio.to_thread(_generate_barcode_image_sync, barcode_request, writer_options)
 
+
 def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options: Dict[str, any]) -> bytes:
     try:
         barcode_class = get_barcode_class(barcode_request.format)
@@ -51,6 +52,9 @@ def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options
                 barcode_options['no_checksum'] = writer_options['no_checksum']
             if 'guardbar' in writer_options:
                 barcode_options['guardbar'] = writer_options['guardbar']
+        else:
+            # Other barcode formats do not have additional options to
+            pass
 
         barcode = barcode_class(barcode_request.data, writer=writer, **barcode_options)
 
@@ -60,6 +64,11 @@ def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options
         # Open the image using Pillow(-SIMD)
         buffer.seek(0)
         img = Image.open(buffer)
+
+        # Validate DPI
+        if barcode_request.dpi > 600:
+            logger.warning("DPI value is unusually high; adjusting to 600.")
+            barcode_request.dpi = 600
 
         # Resize the image
         img = img.resize((barcode_request.width, barcode_request.height), Image.LANCZOS)
