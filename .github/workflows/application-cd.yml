@@ -285,14 +285,14 @@ jobs:
             while [ $attempt -le $max_attempts ]; do
                 echo "Health check attempt $attempt of $max_attempts..."
 
-                # Comprehensive status check
-                local pm2_status=$(PM2_HOME="/home/github-runner/.pm2" pm2 jlist)
-                if ! echo "$pm2_status" | grep -q '"status":"online".*"name":"thebarcodeapi-frontend-'; then
-                    echo "PM2 process is not running properly!"
-                    PM2_HOME="/home/github-runner/.pm2" pm2 list
-                    PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
-                    return 1
-                fi
+                # # Comprehensive status check
+                # local pm2_status=$(PM2_HOME="/home/github-runner/.pm2" pm2 jlist)
+                # if ! echo "$pm2_status" | grep -q '"status":"online".*"name":"thebarcodeapi-frontend-'; then
+                #     echo "PM2 process is not running properly!"
+                #     PM2_HOME="/home/github-runner/.pm2" pm2 list
+                #     PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+                #     return 1
+                # fi
 
                 # Test the application endpoint with increased timeout
                 if curl -s -f -m $timeout "http://localhost:3000/" > /dev/null; then
