@@ -7,20 +7,9 @@ from fastapi import Request, HTTPException
 from starlette.status import HTTP_429_TOO_MANY_REQUESTS
 from app.redis_manager import RedisManager
 from app.dependencies import get_client_ip
+from app.lua_scripts import RATE_LIMIT_SCRIPT
 
 logger = logging.getLogger(__name__)
-
-RATE_LIMIT_SCRIPT = """
-local current
-current = redis.call("INCR", KEYS[1])
-if tonumber(current) == 1 then
-    redis.call("EXPIRE", KEYS[1], ARGV[1])
-end
-if tonumber(current) > tonumber(ARGV[2]) then
-    return -1
-end
-return current
-"""
 
 def rate_limit(times: int, interval: int, period: str):
     """Rate limiting decorator with Lua script for atomic operations"""
