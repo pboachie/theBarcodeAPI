@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query, Response
 from pydantic import ValidationError
 from app.redis_manager import RedisManager
 from app.redis import get_redis_manager
+from app.rate_limiter import rate_limit
 from app.dependencies import get_current_user, get_client_ip
 from app.schemas import BarcodeRequest, UserData, BarcodeFormatEnum, BarcodeImageFormatEnum
 from app.config import settings
