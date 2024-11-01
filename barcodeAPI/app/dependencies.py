@@ -8,6 +8,7 @@ from app.config import settings
 from app.schemas import UserData
 from app.redis import get_redis_manager
 from app.redis_manager import RedisManager
+from app.schemas import BatchPriority
 from datetime import datetime
 import logging
 import pytz
@@ -41,7 +42,14 @@ async def get_current_user(
     if token is None:
         try:
             client_ip = await get_client_ip(request)
-            user_data = await redis_manager.get_user_data_by_ip(client_ip) if client_ip else None
+            logger.info(f"Client IP: {client_ip}")
+            user_data = await redis_manager.batch_processor.add_to_batch(
+                "get_user_data",
+                (client_ip,),
+                priority=BatchPriority.MEDIUM
+            ) if client_ip else None
+
+            logger.info(f"User data: {user_data}")
 
             if not user_data:
                 user_data = UserData(
