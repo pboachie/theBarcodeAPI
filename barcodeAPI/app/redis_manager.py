@@ -53,7 +53,7 @@ class RedisManager:
         try:
             yield conn
         finally:
-            self.redis.connection_pool.release(conn)
+            await self.redis.connection_pool.release(conn)
 
     async def set_user_data(self, user_data: UserData):
         key = self._get_key(user_data.id, user_data.ip_address)
