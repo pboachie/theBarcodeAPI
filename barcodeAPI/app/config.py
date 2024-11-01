@@ -27,11 +27,11 @@ class Settings(BaseSettings):
         extra = "allow"
 
     class RateLimit:
-        unauthenticated: int = 1000
+        unauthenticated: int = 5000
 
         class Tier:
-            unauthenticated: int = 1000
-            basic: int = 5000
+            unauthenticated: int = 5000
+            basic: int = 10000
             standard: int = 15000
             premium: int = 50000
 
