@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Barcode Generator API"])
 
 @router.get("/generate")
+@rate_limit(times=20, interval=1, period="second")
 async def generate_barcode(
     request: Request,
     data: str = Query(..., description="The data to encode in the barcode"),
@@ -86,18 +87,12 @@ async def generate_barcode(
                 username=f"ip:{ip_address}",
                 ip_address=ip_address,
                 tier="unauthenticated",
-                remaining_requests=settings.RateLimit.unauthenticated,
+                remaining_requests=settings.RateLimit.get_limit("unauthenticated"),
                 requests_today=0,
                 last_reset=datetime.now(pytz.utc)
             )
         else:
             user_data = current_user
-
-        # Get rate limit based on user tier
-        if hasattr(settings.RateLimit.Tier, user_data.tier):
-            requests_limit = getattr(settings.RateLimit.Tier, user_data.tier)
-        else:
-            requests_limit = settings.RateLimit.unauthenticated
 
         # Check remaining requests
         if user_data.remaining_requests <= 0:

@@ -43,7 +43,7 @@ async def get_usage(
             username=current_user.username,
             tier=current_user.tier,
             ip_address=client_ip,
-            remaining_requests=settings.RateLimit.Tier.__dict__.get(current_user.tier, settings.RateLimit.unauthenticated),
+            remaining_requests=settings.RateLimit.get_limit(current_user.tier),
             requests_today=0,
             last_reset=datetime.now(pytz.utc)
         )
@@ -55,15 +55,16 @@ async def get_usage(
     start_of_day_pst = current_time_pst.replace(hour=0, minute=0, second=0, microsecond=0)
 
     last_reset = user_data.last_reset.astimezone(pst_tz)
+    user_limits = settings.RateLimit.get_limit(user_data.tier)
 
     if last_reset < start_of_day_pst:
         logger.info("Resetting daily usage count")
         user_data.requests_today = 0
         user_data.last_reset = current_time_pst
-        user_data.remaining_requests = settings.RateLimit.Tier.__dict__.get(user_data.tier, settings.RateLimit.unauthenticated)
+        user_data.remaining_requests = user_limits
         await redis_manager.set_user_data(user_data)
 
-    requests_limit = settings.RateLimit.Tier.__dict__.get(user_data.tier, settings.RateLimit.unauthenticated)
+    requests_limit = user_limits
 
     if user_data.last_reset.tzinfo is None:
         user_data.last_reset = user_data.last_reset.replace(tzinfo=pytz.utc)

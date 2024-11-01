@@ -49,7 +49,7 @@ async def get_current_user(
                     username=f"ip:{client_ip}",
                     tier="unauthenticated",
                     ip_address=client_ip,
-                    remaining_requests=settings.RateLimit.unauthenticated,
+                    remaining_requests=settings.RateLimit().get_limit("unauthenticated"),
                     requests_today=0,
                     last_reset=datetime.now(pytz.utc)
                 )
