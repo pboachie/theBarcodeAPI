@@ -23,6 +23,7 @@ interface BarcodeControlsProps {
   showText: boolean;
   setShowText: (show: boolean) => void;
   isLimitExceeded: boolean;
+  className?: string;
 }
 
 const getDefaultBarcodeText = (type: BarcodeType): string => {
@@ -79,7 +80,8 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
   setDpi,
   showText,
   setShowText,
-  isLimitExceeded
+  isLimitExceeded,
+  className,
 }) => {
   const handleTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newText = e.target.value;
@@ -103,12 +105,12 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
   }, [barcodeText, barcodeType, setBarcodeText]);
 
   return (
-    <div className="controls-area space-y-4 lg:w-1/4 flex-shrink-0">
+    <div className={`controls-area space-y-4 lg:w-1/4 flex-shrink-0 ${className}`}>
       <FormatSelector
         title="Barcode Type"
         options={barcodeTypes}
         value={barcodeType}
-        onChange={handleTypeChange}
+        onChange={handleTypeChange as (value: string) => void}
         disabled={isLimitExceeded}
       />
 
@@ -132,7 +134,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         <label className="block text-sm font-medium mb-1">Width: {barcodeWidth}px</label>
         <Slider
           min={50}
-          max={1000}
+          max={600}
           step={1}
           value={[barcodeWidth]}
           onValueChange={([value]) => setBarcodeWidth(value)}
@@ -144,7 +146,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         <label className="block text-sm font-medium mb-1">Height: {barcodeHeight}px</label>
         <Slider
           min={50}
-          max={1000}
+          max={600}
           step={1}
           value={[barcodeHeight]}
           onValueChange={([value]) => setBarcodeHeight(value)}
@@ -156,7 +158,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         title="Image Format"
         options={imageFormats}
         value={imageFormat}
-        onChange={setImageFormat}
+        onChange={setImageFormat as (value: string) => void}
         disabled={isLimitExceeded}
       />
 
@@ -164,7 +166,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         <label className="block text-sm font-medium mb-1">DPI: {dpi}</label>
         <Slider
           min={130}
-          max={1000}
+          max={600}
           step={1}
           value={[dpi]}
           onValueChange={([value]) => setDpi(value)}
@@ -172,7 +174,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         />
         <div className="flex justify-between text-xs text-gray-500">
           <span>130</span>
-          <span>1000</span>
+          <span>600</span>
         </div>
       </div>
 

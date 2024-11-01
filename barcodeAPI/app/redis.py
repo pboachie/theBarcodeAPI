@@ -8,7 +8,7 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-redis_pool = ConnectionPool.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True, max_connections=500, health_check_interval=30, socket_timeout=10)
+redis_pool = ConnectionPool.from_url(settings.REDIS_URL, encoding="utf-8", decode_responses=True, max_connections=500, health_check_interval=30, socket_timeout=10, db=1)
 redis = Redis(connection_pool=redis_pool)
 redis_manager = RedisManager(redis)
 

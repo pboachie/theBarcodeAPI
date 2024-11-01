@@ -12,7 +12,7 @@ class BatchPriority(Enum):
     HIGH = "high"      # 100ms - User authentication, rate limiting
     MEDIUM = "medium"  # 500ms - Usage tracking, metrics
     LOW = "low"        # 1000ms - Analytics, cleanup
-    
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -179,8 +179,8 @@ class BarcodeFormats(BaseModel):
 class BarcodeRequest(BaseModel):
     data: str = Field(..., description="The data to encode in the barcode")
     format: BarcodeFormatEnum = Field(..., description="Barcode format")
-    width: int = Field(default=200, ge=50, le=1000)
-    height: int = Field(default=100, ge=50, le=1000)
+    width: int = Field(default=200, ge=50, le=600)
+    height: int = Field(default=100, ge=50, le=600)
     module_width: Optional[float] = Field(None, description="The width of one barcode module in mm")
     module_height: Optional[float] = Field(None, description="The height of the barcode modules in mm")
     quiet_zone: Optional[float] = Field(None, description="Distance on the left and right from the border to the first/last barcode module in mm")
@@ -190,7 +190,7 @@ class BarcodeRequest(BaseModel):
     foreground: Optional[str] = Field(None, description="The foreground and text color of the created barcode")
     center_text: Optional[bool] = Field(default=True, description="If true, the text is centered under the barcode; else left aligned")
     image_format: BarcodeImageFormatEnum = Field(default=BarcodeImageFormatEnum.PNG, description="The image file format (e.g., PNG, JPEG, BMP)")
-    dpi: Optional[int] = Field(default=300, ge=130, le=1000, description="DPI to calculate the image size in pixels")
+    dpi: Optional[int] = Field(default=300, ge=130, le=600, description="DPI to calculate the image size in pixels")
     add_checksum: Optional[bool] = Field(None, description="Add the checksum to code or not (for Code 39)")
     no_checksum: Optional[bool] = Field(None, description="Do not add checksum (for EAN-13)")
     guardbar: Optional[bool] = Field(None, description="Add guardbar (for EAN-13)")
@@ -251,7 +251,7 @@ class SVGWriterOptions(WriterOptions):
 
 class ImageWriterOptions(WriterOptions):
     format: str = Field(default="PNG", description="The image file format (e.g., PNG, JPEG, BMP)")
-    dpi: int = Field(default=300, description="DPI to calculate the image size in pixels")
+    dpi: int = Field(default=200, description="DPI to calculate the image size in pixels")
 
 class UsageResponse(BaseModel):
     requests_today: int
