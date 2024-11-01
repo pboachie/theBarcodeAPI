@@ -63,7 +63,9 @@ class RedisManager:
         except Exception as ex:
             logger.error(f"Error in set_user_data: {str(ex)}")
 
-    async def get_user_data(self, user_id: Optional[int], ip_address: str) -> Optional[UserData]:
+    async def get_user_data(
+        self, user_id: Optional[int], ip_address: str
+    ) -> Optional[UserData]:
         """Get user data from Redis"""
         try:
             key = self._get_key(user_id, ip_address)
@@ -76,7 +78,9 @@ class RedisManager:
             logger.error(f"Error fetching user data: {str(ex)}")
             return None
 
-    def _get_key(self, user_id: Optional[int] = None, ip_address: Optional[str] = None) -> str:
+    def _get_key(
+        self, user_id: Optional[int] = None, ip_address: Optional[str] = None
+    ) -> str:
         """Generate Redis key for user data"""
         if user_id is None or user_id == -1:
             ip_str = self.ip_cache.get(ip_address)
@@ -92,13 +96,19 @@ class RedisManager:
         return f"user_data:{user_id}"
 
     async def check_rate_limit(self, key: str) -> bool:
-        """Batched version of check_rate_limit"""
-        return await self.batch_processor.add_to_batch("check_rate_limit", key)
+        """check rate limit for a given key"""
+        result = await self.batch_processor.add_to_batch(
+            "check_rate_limit", key, priority=BatchPriority.HIGH
+        )
 
-    async def increment_usage(self, user_id: Optional[int], ip_address: str) -> Optional[UserData]:
+        return result
+
+    async def increment_usage(
+        self, user_id: Optional[int], ip_address: str
+    ) -> Optional[UserData]:
         """Increment usage count and update user data using Lua script"""
         try:
-            rate_limit = settings.RateLimit.get_limit('unauthenticated')
+            rate_limit = settings.RateLimit.get_limit("unauthenticated")
             current_time = datetime.now(pytz.utc).isoformat()
             user_id_str = str(user_id) if user_id else "-1"
             result = await self.redis.evalsha(
@@ -107,7 +117,7 @@ class RedisManager:
                 user_id_str,
                 ip_address,
                 rate_limit,
-                current_time
+                current_time,
             )
             return UserData.parse_raw(result)
         except Exception as ex:
@@ -117,15 +127,17 @@ class RedisManager:
                 username=f"ip:{ip_address}",
                 ip_address=ip_address,
                 tier="unauthenticated",
-                remaining_requests=settings.RateLimit.get_limit('unauthenticated'),
+                remaining_requests=settings.RateLimit.get_limit("unauthenticated"),
                 requests_today=1,
-                last_reset=datetime.now(pytz.utc)
+                last_reset=datetime.now(pytz.utc),
             )
 
     async def get_all_user_keys(self):
         try:
             async with self.get_connection():
-                return await self.redis.keys("user_data:*") + await self.redis.keys("ip:*")
+                return await self.redis.keys("user_data:*") + await self.redis.keys(
+                    "ip:*"
+                )
         except Exception as ex:
             logger.error(f"Error getting all user keys: {str(ex)}")
             return []
@@ -153,15 +165,23 @@ class RedisManager:
                 for data in all_user_data:
                     key_type, key_id, user_data = data
                     if key_type == "ip":
-                        user = await self.get_user_data(ip_address=key_id)
+                        user = await self.batch_processor.add_to_batch(
+                            "get_user_data",
+                            {"ip_address": key_id},
+                            priority=BatchPriority.HIGH,
+                        )
                     else:
-                        user = await self.get_user_data(user_id=int(key_id))
+                        user = await self.batch_processor.add_to_batch(
+                            "get_user_data",
+                            {"user_id": int(key_id)},
+                            priority=BatchPriority.LOW,
+                        )
 
                     if user:
                         usage = Usage(
                             user_id=user.id,
                             requests_today=user.requests_today,
-                            last_reset=user.last_reset
+                            last_reset=user.last_reset,
                         )
                         db.add(usage)
 
@@ -181,8 +201,14 @@ class RedisManager:
                     await self.set_username_to_id_mapping(user.username, user.id)
                     requests_limit = settings.RateLimit.get_limit(user.tier)
 
-                    user_requests = await self.redis.get(f"user_data:{user.id}:requests_today")
-                    user_requests = int(user_requests) if user_requests and int(user_requests) >= 0 else 0
+                    user_requests = await self.redis.get(
+                        f"user_data:{user.id}:requests_today"
+                    )
+                    user_requests = (
+                        int(user_requests)
+                        if user_requests and int(user_requests) >= 0
+                        else 0
+                    )
 
                     user_data = UserData(
                         id=user.id,
@@ -191,7 +217,7 @@ class RedisManager:
                         tier=user.tier,
                         remaining_requests=requests_limit,
                         requests_today=user_requests,
-                        last_reset=datetime.now()
+                        last_reset=datetime.now(),
                     )
                     await self.set_user_data(user_data)
 
@@ -199,7 +225,9 @@ class RedisManager:
             logger.error(f"Error syncing username mappings: {str(ex)}")
             raise
 
-    async def get_user_data(self, user_id: Optional[int], ip_address: str) -> Optional[UserData]:
+    async def get_user_data(
+        self, user_id: Optional[int], ip_address: str
+    ) -> Optional[UserData]:
         """Get user data from Redis"""
         try:
             key = self._get_key(user_id, ip_address)
@@ -215,9 +243,9 @@ class RedisManager:
                     username=f"ip:{ip_address}",
                     ip_address=ip_address,
                     tier="unauthenticated",
-                    remaining_requests=settings.RateLimit.get_limit('unauthenticated'),
+                    remaining_requests=settings.RateLimit.get_limit("unauthenticated"),
                     requests_today=0,
-                    last_reset=datetime.now(pytz.utc)
+                    last_reset=datetime.now(pytz.utc),
                 )
 
         except Exception as ex:
@@ -228,9 +256,9 @@ class RedisManager:
                 username=f"ip:{ip_address}",
                 ip_address=ip_address,
                 tier="unauthenticated",
-                remaining_requests=settings.RateLimit.get_limit('unauthenticated'),
+                remaining_requests=settings.RateLimit.get_limit("unauthenticated"),
                 requests_today=0,
-                last_reset=datetime.now(pytz.utc)
+                last_reset=datetime.now(pytz.utc),
             )
 
     async def get_user_data_by_ip(self, ip_address: str) -> Optional[UserData]:
@@ -239,16 +267,20 @@ class RedisManager:
                 user_data = await self.redis.get(f"ip:{ip_address}")
                 if user_data:
                     user_data = UserData.parse_raw(user_data)
-                    return await self.get_user_data(user_id=int(user_data.id), ip_address=user_data.ip_address)
+                    return await self.get_user_data(
+                        user_id=int(user_data.id), ip_address=user_data.ip_address
+                    )
                 else:
                     return UserData(
                         id=-1,
                         username=f"ip:{ip_address}",
                         tier="unauthenticated",
                         ip_address=ip_address,
-                        remaining_requests=settings.RateLimit.get_limit('unauthenticated'),
+                        remaining_requests=settings.RateLimit.get_limit(
+                            "unauthenticated"
+                        ),
                         requests_today=0,
-                        last_reset=datetime.now(pytz.utc)
+                        last_reset=datetime.now(pytz.utc),
                     )
         except Exception as ex:
             logger.error(f"Error fetching user data by IP: {str(ex)}")
@@ -307,19 +339,18 @@ class RedisManager:
     async def get_connection_stats(self) -> RedisConnectionStats:
         try:
             async with self.get_connection():
-                info = await self.redis.info('clients')
+                info = await self.redis.info("clients")
                 return RedisConnectionStats(
-                    connected_clients=info['connected_clients'],
-                    blocked_clients=info['blocked_clients'],
-                    tracking_clients=info.get('tracking_clients', 99999)
+                    connected_clients=info["connected_clients"],
+                    blocked_clients=info["blocked_clients"],
+                    tracking_clients=info.get("tracking_clients", 99999),
                 )
         except Exception as ex:
             logger.error(f"Error getting connection stats: {str(ex)}")
             return RedisConnectionStats(
-                connected_clients=99999,
-                blocked_clients=99999,
-                tracking_clients=99999
+                connected_clients=99999, blocked_clients=99999, tracking_clients=99999
             )
+
     # async def clean_expired_tokens(self):
     #     try:
     #         all_user_keys = await self.redis.keys("user:*:active_tokens")
