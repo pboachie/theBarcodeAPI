@@ -73,7 +73,7 @@ class RedisManager:
                     username=f"ip:{ip_address}",
                     ip_address=ip_address,
                     tier="unauthenticated",
-                    remaining_requests=settings.RateLimit.unauthenticated - 1,  # Subtract this request
+                    remaining_requests=settings.RateLimit.get_limit('unauthenticated') - 1,
                     requests_today=1,  # This is the first request
                     last_reset=datetime.now(pytz.utc)
                 )
@@ -96,7 +96,7 @@ class RedisManager:
                 username=f"ip:{ip_address}",
                 ip_address=ip_address,
                 tier="unauthenticated",
-                remaining_requests=settings.RateLimit.unauthenticated - 1,
+                remaining_requests=settings.RateLimit.get_limit('unauthenticated'),
                 requests_today=1,
                 last_reset=datetime.now(pytz.utc)
             )
@@ -163,10 +163,7 @@ class RedisManager:
 
                 for user in users:
                     await self.set_username_to_id_mapping(user.username, user.id)
-                    requests_limit = settings.RateLimit.Tier.__dict__.get(
-                        user.tier,
-                        settings.RateLimit.unauthenticated
-                    )
+                    requests_limit = settings.RateLimit.get_limit(user.tier)
 
                     user_requests = await self.redis.get(f"user_data:{user.id}:requests_today")
                     user_requests = int(user_requests) if user_requests and int(user_requests) >= 0 else 0
@@ -202,7 +199,7 @@ class RedisManager:
                     username=f"ip:{ip_address}",
                     ip_address=ip_address,
                     tier="unauthenticated",
-                    remaining_requests=settings.RateLimit.unauthenticated,
+                    remaining_requests=settings.RateLimit.get_limit('unauthenticated'),
                     requests_today=0,
                     last_reset=datetime.now(pytz.utc)
                 )
@@ -215,7 +212,7 @@ class RedisManager:
                 username=f"ip:{ip_address}",
                 ip_address=ip_address,
                 tier="unauthenticated",
-                remaining_requests=settings.RateLimit.unauthenticated,
+                remaining_requests=settings.RateLimit.get_limit('unauthenticated'),
                 requests_today=0,
                 last_reset=datetime.now(pytz.utc)
             )
@@ -233,7 +230,7 @@ class RedisManager:
                         username=f"ip:{ip_address}",
                         tier="unauthenticated",
                         ip_address=ip_address,
-                        remaining_requests=settings.RateLimit.unauthenticated,
+                        remaining_requests=settings.RateLimit.get_limit('unauthenticated'),
                         requests_today=0,
                         last_reset=datetime.now(pytz.utc)
                     )
