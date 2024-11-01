@@ -11,10 +11,13 @@ from sqlalchemy.future import select
 import logging
 import pytz
 import asyncio
+import ipaddress
 
 from app.config import settings
 from app.schemas import BatchPriority, UserData, RedisConnectionStats
 from app.models import User, Usage
+
+from .lua_scripts import INCREMENT_USAGE_SCRIPT, GET_ALL_USER_DATA_SCRIPT
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +26,17 @@ class RedisManager:
     def __init__(self, redis: Redis):
         self.redis = redis
         self.batch_processor = MultiLevelBatchProcessor(self)
+        self.increment_usage_sha = None
+        self.ip_cache = {}
+
+    async def load_lua_scripts(self):
+        """Load Lua scripts into Redis and store their SHAs"""
+        self.increment_usage_sha = await self.redis.script_load(INCREMENT_USAGE_SCRIPT)
 
     async def start(self):
-        """Start the batch processor"""
+        """Start the batch processor and load Lua scripts"""
         logger.info("Starting batch processor...")
+        await self.load_lua_scripts()
         await self.batch_processor.start()
         logger.info("Batch processor started.")
 
@@ -43,11 +53,7 @@ class RedisManager:
         try:
             yield conn
         finally:
-            await self.redis.connection_pool.release(conn)
-
-    async def get_user_data(self, user_id: Optional[int], ip_address: str) -> Optional[UserData]:
-        """Batched version of get_user_data"""
-        return await self.batch_processor.add_to_batch("get_user_data", (user_id, ip_address))
+            self.redis.connection_pool.release(conn)
 
     async def set_user_data(self, user_data: UserData):
         key = self._get_key(user_data.id, user_data.ip_address)
@@ -57,40 +63,55 @@ class RedisManager:
         except Exception as ex:
             logger.error(f"Error in set_user_data: {str(ex)}")
 
+    async def get_user_data(self, user_id: Optional[int], ip_address: str) -> Optional[UserData]:
+        """Get user data from Redis"""
+        try:
+            key = self._get_key(user_id, ip_address)
+            async with self.get_connection():
+                data = await self.redis.get(key)
+                if data:
+                    return UserData.parse_raw(data)
+                return None
+        except Exception as ex:
+            logger.error(f"Error fetching user data: {str(ex)}")
+            return None
+
+    def _get_key(self, user_id: Optional[int] = None, ip_address: Optional[str] = None) -> str:
+        """Generate Redis key for user data"""
+        if user_id is None or user_id == -1:
+            ip_str = self.ip_cache.get(ip_address)
+            if ip_str is None:
+                try:
+                    ip = ipaddress.ip_address(ip_address)
+                    ip_str = ip.compressed  # Normalize IP address
+                    self.ip_cache[ip_address] = ip_str
+                except ValueError:
+                    logger.error(f"Invalid IP address: {ip_address}")
+                    ip_str = ip_address  # Fallback to original IP address if invalid
+            return f"ip:{ip_str}"
+        return f"user_data:{user_id}"
+
     async def check_rate_limit(self, key: str) -> bool:
         """Batched version of check_rate_limit"""
         return await self.batch_processor.add_to_batch("check_rate_limit", key)
 
     async def increment_usage(self, user_id: Optional[int], ip_address: str) -> Optional[UserData]:
-        """Increment usage count and update user data"""
+        """Increment usage count and update user data using Lua script"""
         try:
-            # Get current user data
-            user_data = await self.get_user_data(user_id, ip_address)
-            if not user_data:
-                # Create new user data if it doesn't exist
-                user_data = UserData(
-                    id=user_id if user_id else -1,
-                    username=f"ip:{ip_address}",
-                    ip_address=ip_address,
-                    tier="unauthenticated",
-                    remaining_requests=settings.RateLimit.get_limit('unauthenticated') - 1,
-                    requests_today=1,  # This is the first request
-                    last_reset=datetime.now(pytz.utc)
-                )
-            else:
-                # Update existing user data
-                user_data.requests_today += 1
-                user_data.remaining_requests -= 1
-
-            # Store updated user data
-            key = self._get_key(user_id, ip_address)
-            await self.redis.set(key, user_data.json(), ex=86400)  # Expire in 24 hours
-
-            return user_data
-
+            rate_limit = settings.RateLimit.get_limit('unauthenticated')
+            current_time = datetime.now(pytz.utc).isoformat()
+            user_id_str = str(user_id) if user_id else "-1"
+            result = await self.redis.evalsha(
+                self.increment_usage_sha,
+                0,
+                user_id_str,
+                ip_address,
+                rate_limit,
+                current_time
+            )
+            return UserData.parse_raw(result)
         except Exception as ex:
             logger.error(f"Error incrementing usage: {str(ex)}")
-            # Return a default user data object in case of error
             return UserData(
                 id=user_id if user_id else -1,
                 username=f"ip:{ip_address}",
@@ -100,12 +121,6 @@ class RedisManager:
                 requests_today=1,
                 last_reset=datetime.now(pytz.utc)
             )
-
-    def _get_key(self, user_id: Optional[int] = None, ip_address: Optional[str] = None) -> str:
-        """Generate Redis key for user data"""
-        if user_id is None or user_id == -1:
-            return f"ip:{ip_address}"
-        return f"user_data:{user_id}"
 
     async def get_all_user_keys(self):
         try:
@@ -129,23 +144,24 @@ class RedisManager:
             logger.error(f"Error resetting daily usage: {str(ex)}")
 
     async def sync_to_database(self, db: AsyncSession):
-        all_keys = await self.get_all_user_keys()
+        """Synchronize all user data from Redis to the database"""
         try:
-            async with self.get_connection(), db.begin():
-                for key in all_keys:
-                    key_parts = key.split(':', 1)
-                    key_type = key_parts[0]
-                    key_id = key_parts[1]
-                    if key_type == "ip":
-                        user_data = await self.get_user_data(ip_address=key_id)
-                    else:
-                        user_data = await self.get_user_data(user_id=int(key_id))
+            # Execute the Lua script to retrieve all user data
+            all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, [], [])
 
-                    if user_data:
+            async with db.begin():
+                for data in all_user_data:
+                    key_type, key_id, user_data = data
+                    if key_type == "ip":
+                        user = await self.get_user_data(ip_address=key_id)
+                    else:
+                        user = await self.get_user_data(user_id=int(key_id))
+
+                    if user:
                         usage = Usage(
-                            user_id=user_data.id,
-                            requests_today=user_data.requests_today,
-                            last_reset=user_data.last_reset
+                            user_id=user.id,
+                            requests_today=user.requests_today,
+                            last_reset=user.last_reset
                         )
                         db.add(usage)
 
