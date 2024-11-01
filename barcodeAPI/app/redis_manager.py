@@ -98,7 +98,7 @@ class RedisManager:
     async def check_rate_limit(self, key: str) -> bool:
         """check rate limit for a given key"""
         result = await self.batch_processor.add_to_batch(
-            "check_rate_limit", key, priority=BatchPriority.HIGH
+            "check_rate_limit", key, priority=BatchPriority.MEDIUM
         )
 
         return result
@@ -168,13 +168,13 @@ class RedisManager:
                         user = await self.batch_processor.add_to_batch(
                             "get_user_data",
                             {"ip_address": key_id},
-                            priority=BatchPriority.HIGH,
+                            priority=BatchPriority.MEDIUM,
                         )
                     else:
                         user = await self.batch_processor.add_to_batch(
                             "get_user_data",
                             {"user_id": int(key_id)},
-                            priority=BatchPriority.LOW,
+                            priority=BatchPriority.MEDIUM,
                         )
 
                     if user:
