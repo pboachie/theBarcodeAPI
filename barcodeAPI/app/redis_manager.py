@@ -112,7 +112,7 @@ class RedisManager:
         try:
             return await self.batch_processor.add_to_batch(
                 "increment_usage",
-                (user_id, ip_address),
+                (user_id, str(ip_address)),
                 priority=BatchPriority.URGENT
             )
         except Exception as ex:
