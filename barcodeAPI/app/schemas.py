@@ -9,9 +9,10 @@ import json
 logger = logging.getLogger(__name__)
 
 class BatchPriority(Enum):
-    HIGH = "high"      # 100ms - User authentication, rate limiting
-    MEDIUM = "medium"  # 500ms - Usage tracking, metrics
-    LOW = "low"        # 1000ms - Analytics, cleanup
+    URGENT = "urgent" # 50ms
+    HIGH = "high" # 500ms
+    MEDIUM = "medium" # 1s
+    LOW = "low" # 2s
 
 class Token(BaseModel):
     access_token: str

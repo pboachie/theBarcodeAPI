@@ -323,7 +323,7 @@ jobs:
         EOF
         chmod +x verify_frontend.sh
 
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" | sudo tee /tmp/env_vars > /dev/null
         ./verify_frontend.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
 
