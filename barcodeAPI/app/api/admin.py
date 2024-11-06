@@ -62,7 +62,7 @@ async def get_users(
                     username=user.username,
                     tier=user.tier,
                     ip_address=None,
-                    remaining_requests=settings.RateLimit.Tier.__dict__[user.tier],
+                    remaining_requests=settings.RateLimit.get_limit(user.tier),
                     requests_today=0,
                     last_reset=datetime.now()
                 ).dict())
@@ -135,7 +135,7 @@ async def create_user(
             username=new_user.username,
             ip_address=None,
             tier=new_user.tier,
-            remaining_requests=settings.RateLimit.Tier.__dict__[new_user.tier],
+            remaining_requests=settings.RateLimit.get_limit(new_user.tier),
             requests_today=0,
             last_reset=datetime.now()
         )

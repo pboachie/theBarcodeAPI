@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query, Response
 from pydantic import ValidationError
 from app.redis_manager import RedisManager
 from app.redis import get_redis_manager
+from app.rate_limiter import rate_limit
 from app.dependencies import get_current_user, get_client_ip
 from app.schemas import BarcodeRequest, UserData, BarcodeFormatEnum, BarcodeImageFormatEnum
 from app.config import settings
@@ -18,12 +19,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Barcode Generator API"])
 
 @router.get("/generate")
+@rate_limit(times=20, interval=1, period="second")
 async def generate_barcode(
     request: Request,
     data: str = Query(..., description="The data to encode in the barcode"),
     format: BarcodeFormatEnum = Query(..., description="Barcode format"),
-    width: int = Query(default=200, ge=50, le=1000),
-    height: int = Query(default=100, ge=50, le=1000),
+    width: int = Query(default=200, ge=50, le=600),
+    height: int = Query(default=100, ge=50, le=600),
     module_width: Optional[float] = Query(None, description="The width of one barcode module in mm"),
     module_height: Optional[float] = Query(None, description="The height of the barcode modules in mm"),
     quiet_zone: Optional[float] = Query(None, description="Distance on the left and right from the border to the first/last barcode module in mm"),
@@ -33,7 +35,7 @@ async def generate_barcode(
     foreground: Optional[str] = Query(None, description="The foreground and text color of the created barcode"),
     center_text: Optional[bool] = Query(True, description="If true, the text is centered under the barcode; else left aligned"),
     image_format: BarcodeImageFormatEnum = Query(default=BarcodeImageFormatEnum.PNG, description="The image file format"),
-    dpi: Optional[int] = Query(default=300, ge=130, le=1000, description="DPI to calculate the image size in pixels"),
+    dpi: Optional[int] = Query(default=200, ge=130, le=600, description="DPI to calculate the image size in pixels"),
     add_checksum: Optional[bool] = Query(None, description="Add the checksum to code or not (for Code 39)"),
     no_checksum: Optional[bool] = Query(None, description="Do not add checksum (for EAN-13)"),
     guardbar: Optional[bool] = Query(None, description="Add guardbar (for EAN-13)"),
@@ -85,18 +87,12 @@ async def generate_barcode(
                 username=f"ip:{ip_address}",
                 ip_address=ip_address,
                 tier="unauthenticated",
-                remaining_requests=settings.RateLimit.unauthenticated,
+                remaining_requests=settings.RateLimit.get_limit("unauthenticated"),
                 requests_today=0,
                 last_reset=datetime.now(pytz.utc)
             )
         else:
             user_data = current_user
-
-        # Get rate limit based on user tier
-        if hasattr(settings.RateLimit.Tier, user_data.tier):
-            requests_limit = getattr(settings.RateLimit.Tier, user_data.tier)
-        else:
-            requests_limit = settings.RateLimit.unauthenticated
 
         # Check remaining requests
         if user_data.remaining_requests <= 0:

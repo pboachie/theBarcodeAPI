@@ -31,11 +31,69 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/backups"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
 
-    - name: Configure sudoers
+    # - name: Configure sudoers
+    #   run: |
+    #     echo "Configuring sudoers..."
+    #     echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat << 'EOF' | sudo tee /etc/sudoers.d/github-runner
+    #     # PM2 related commands
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/npm
+
+    #     # System service commands
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart nginx
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart docker
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
+
+    #     # Directory and file operations
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/chown -R * /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/chmod -R * /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -rf /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/cp -R * /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/mv * /opt/thebarcodeapi/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/ln -sf * /opt/thebarcodeapi/*
+
+    #     # Docker related
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/docker
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/local/bin/docker-compose
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/docker-compose
+
+    #     # Temp directory operations
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/env_vars
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/docker_vars
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/tee /tmp/env_vars
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/tee /tmp/docker_vars
+
+    #     # Package management
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get update
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get upgrade -y
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y *
+
+    #     # Group management
+    #     github-runner ALL=(ALL) NOPASSWD: /usr/sbin/usermod -aG docker github-runner
+
+    #     # Allow nginx configuration
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/cp * /etc/nginx/sites-available/*
+    #     github-runner ALL=(ALL) NOPASSWD: /bin/ln -sf /etc/nginx/sites-available/* /etc/nginx/sites-enabled/*
+    #     EOF
+
+    #     sudo chmod 0440 /etc/sudoers.d/github-runner
+
+    - name: Set PM2 permissions
       run: |
-        echo "Configuring sudoers..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2, /usr/bin/npm" | sudo tee /etc/sudoers.d/github-runner'
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 0440 /etc/sudoers.d/github-runner
+        # Create PM2 home directory with correct permissions
+        mkdir -p /home/github-runner/.pm2
+        chmod 700 /home/github-runner/.pm2
+
+        # Ensure PM2 files are owned by github-runner
+        touch /home/github-runner/.pm2/pm2.log
+        chmod 600 /home/github-runner/.pm2/pm2.log
+
+        # Create PM2 startup script directory
+        mkdir -p /home/github-runner/.pm2/logs
+        chmod 700 /home/github-runner/.pm2/logs
 
     - name: Create system update script
       run: |
@@ -265,6 +323,9 @@ jobs:
         #!/bin/bash
         set -e
 
+        # move to theBarcodeAPI directory
+        cd /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI
+
         # Read environment variables from file
         source /tmp/env_vars
 
@@ -281,6 +342,7 @@ jobs:
             name: 'thebarcodeapi-frontend-${ENVIRONMENT}',
             script: 'npm',
             args: 'start',
+            namespace: '${ENVIRONMENT}',
             env: {
               NODE_ENV: '${ENVIRONMENT}',
               ENVIRONMENT: '${ENVIRONMENT}',
@@ -288,23 +350,23 @@ jobs:
               NODE_OPTIONS: '--max-old-space-size=512'
             },
             cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
-            instances: 2,
-            exec_mode: 'cluster',
+            instances: 1,
+            exec_mode: 'fork',
             autorestart: true,
             watch: false,
             max_memory_restart: '512M',
             wait_ready: true,
-            listen_timeout: 60000,
-            kill_timeout: 10000,
-            exp_backoff_restart_delay: 2000,
-            restart_delay: 10000,
+            listen_timeout: 30000,
+            kill_timeout: 5000,
+            exp_backoff_restart_delay: 100,
+            restart_delay: 2000,
             max_restarts: 3,
             error_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log',
             out_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/out.log',
             merge_logs: true,
             min_uptime: '60s',
-            increment_var: 'PORT',
-            node_args: '--expose-gc'
+            node_args: '--expose-gc',
+            increment_var: 'PORT'
           }]
         };
         EEOF
@@ -334,7 +396,7 @@ jobs:
         PM2_HOME="/home/github-runner/.pm2" pm2 save
 
         # Set final permissions
-        echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data /opt/thebarcodeapi
+        echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
         echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 /opt/thebarcodeapi
 
         # Show logs to help with debugging
@@ -362,6 +424,12 @@ jobs:
         # Clean up
         echo "$SUDO_PASSWORD" | sudo -S rm -f /tmp/env_vars
 
+    - name: List source directory contents (Before)
+      run: ls -l /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/
+
+    - name: List destination directory contents (Before)
+      run: ls -l .
+
     - name: Configure Backend Docker Environment
       run: |
         echo "Creating Docker environment setup script..."
@@ -387,7 +455,7 @@ jobs:
         echo "$SUDO_PASSWORD" | sudo -S cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
 
         # Create .env file before Docker build
-        cat > /opt/thebarcodeapi/barcodeAPI/.env << EOL
+        echo "$SUDO_PASSWORD" | sudo -S cat > /opt/thebarcodeapi/barcodeAPI/.env << EOL
         DB_PASSWORD=${DB_PASSWORD}
         POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
         SECRET_KEY=${API_SECRET_KEY}
@@ -398,6 +466,10 @@ jobs:
         ALGORITHM=HS256
         ACCESS_TOKEN_EXPIRE_MINUTES=30
         EOL
+
+        # Set permission for .env file
+        echo "$SUDO_PASSWORD" | sudo -S chmod 600 /opt/thebarcodeapi/barcodeAPI/.env
+        echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/.env
 
         # Create docker-compose.yml
         cat > docker-compose.yml << EOL
@@ -523,8 +595,7 @@ jobs:
         chmod +x wait-for-it.sh
 
         # Set permissions
-        chown -R www-data:www-data /opt/thebarcodeapi
-        chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
+        chown -R github-runner:github-runner /opt/thebarcodeapi
         chmod -R 755 /opt/thebarcodeapi/barcodeAPI
 
         echo "Docker environment setup completed"
@@ -549,6 +620,13 @@ jobs:
         # Clean up
         echo "$SUDO_PASSWORD" | sudo -S  rm -f /tmp/env_vars
 
+
+    - name: List source directory contents (Before)
+      run: ls -l /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/
+
+    - name: List destination directory contents (Before)
+      run: ls -l .
+      
     - name: Fix Permissions
       run: |
         echo "Fixing permissions..."
@@ -562,7 +640,7 @@ jobs:
         mkdir -p /opt/thebarcodeapi/backups
 
         # Set ownership
-        chown -R www-data:www-data /opt/thebarcodeapi
+        chown -R github-runner:github-runner /opt/thebarcodeapi
 
         # Set directory permissions
         find /opt/thebarcodeapi -type d -exec chmod 755 {} \;
@@ -587,7 +665,7 @@ jobs:
         chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
         # set ownership for backup folder
-        chown www-data:www-data /opt/thebarcodeapi/backups
+        chown github-runner:github-runner /opt/thebarcodeapi/backups
         echo "Permissions fixed successfully"
         EOF
 
@@ -615,7 +693,7 @@ jobs:
 
         # Move to destination with sudo
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv pre-backup-check.sh /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 755 /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
 
         # Update cron job with sudo
@@ -642,7 +720,7 @@ jobs:
 
         # Then move it to the target location with sudo
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv cleanup.sh /opt/thebarcodeapi/cleanup.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/cleanup.sh
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/cleanup.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 755 /opt/thebarcodeapi/cleanup.sh
 
         # Add weekly cleanup to cron with sudo
@@ -671,7 +749,7 @@ jobs:
           if [ ! -d "$dir" ]; then
             echo "Creating directory: $dir"
             sudo mkdir -p "$dir"
-            sudo chown www-data:www-data "$dir"
+            sudo chown github-runner:github-runner "$dir"
             sudo chmod 755 "$dir"
           fi
         }
@@ -684,7 +762,7 @@ jobs:
             echo "Creating script: $script"
             echo "$content" | sudo tee "$script" > /dev/null
             sudo chmod +x "$script"
-            sudo chown www-data:www-data "$script"
+            sudo chown github-runner:github-runner "$script"
           elif [ ! -x "$script" ]; then
             echo "Making script executable: $script"
             sudo chmod +x "$script"
@@ -694,7 +772,7 @@ jobs:
         # Create and verify base directory
         echo "Setting up base directory..."
         sudo mkdir -p /opt/thebarcodeapi
-        sudo chown www-data:www-data /opt/thebarcodeapi
+        sudo chown github-runner:github-runner /opt/thebarcodeapi
         sudo chmod 755 /opt/thebarcodeapi
 
         # Create and verify required directories
@@ -742,7 +820,7 @@ jobs:
 
         # Verify final permissions
         echo "Verifying final permissions..."
-        sudo chown -R www-data:www-data /opt/thebarcodeapi
+        sudo chown -R github-runner:github-runner /opt/thebarcodeapi
         sudo chmod -R 755 /opt/thebarcodeapi
 
         echo "Setup verified and completed successfully"

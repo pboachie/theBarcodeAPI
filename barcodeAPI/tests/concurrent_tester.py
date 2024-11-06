@@ -9,8 +9,8 @@ TOTAL_DURATION = 3  # seconds
 
 async def send_request(session, semaphore):
     async with semaphore:
-        width = random.randint(100, 1000)
-        height = random.randint(100, 1000)
+        width = random.randint(100, 600)
+        height = random.randint(100, 600)
         url = f"{BASE_URL}?data=123456789012&width={width}&height={height}"
 
         list_of_formats = ["code128"]

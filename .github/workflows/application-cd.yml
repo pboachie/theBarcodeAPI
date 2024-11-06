@@ -89,51 +89,63 @@ jobs:
         # Set initial permissions
         echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
 
-        # Create new release directory
+        # Create new release directory with timestamp
         TIMESTAMP=$(date +%Y%m%d%H%M%S)
         NEW_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/release-${TIMESTAMP}"
+        CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
+        PREVIOUS_RELEASE_LINK="/opt/thebarcodeapi/${ENVIRONMENT}/previous"
+
         echo "Creating new release directory: $NEW_RELEASE"
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$NEW_RELEASE"
         echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner "$NEW_RELEASE"
 
-        # Verify source files exist
-        pwd
-        ls -la
-        if [ ! -d "./.next" ]; then
-            echo "Error: .next directory not found!"
-            exit 1
-        fi
-
-        # Copy build files
+        # Copy build files to new release
         echo "Copying build files to new release directory"
         echo "$SUDO_PASSWORD" | sudo -S cp -R ./.next "$NEW_RELEASE/"
         echo "$SUDO_PASSWORD" | sudo -S cp -R ./public "$NEW_RELEASE/"
         echo "$SUDO_PASSWORD" | sudo -S cp ./package.json "$NEW_RELEASE/"
         echo "$SUDO_PASSWORD" | sudo -S cp ./package-lock.json "$NEW_RELEASE/"
 
-        # Change to new release directory
+        # Install dependencies in new release
         cd "$NEW_RELEASE"
-
-        # Install production dependencies
         npm ci --omit=dev
 
-        # Create and verify current directory exists
-        CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$(dirname "$CURRENT_DIR")"
-
-        # Update symlink
-        echo "Creating symlink to new release"
-        echo "Source: $NEW_RELEASE"
-        echo "Target: $CURRENT_DIR"
-        echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$NEW_RELEASE" "$CURRENT_DIR"
-
-        # Verify symlink creation
-        if [ ! -L "$CURRENT_DIR" ]; then
-            echo "Error: Failed to create symlink"
-            exit 1
+        # Keep track of current release before switching
+        if [ -L "$CURRENT_DIR" ]; then
+            CURRENT_RELEASE=$(readlink -f "$CURRENT_DIR")
+            echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$CURRENT_RELEASE" "$PREVIOUS_RELEASE_LINK"
         fi
 
-        # Clean up old releases
+        # Atomic symlink swap
+        echo "Creating symlink to new release"
+        echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$NEW_RELEASE" "$CURRENT_DIR.new"
+        echo "$SUDO_PASSWORD" | sudo -S mv -Tf "$CURRENT_DIR.new" "$CURRENT_DIR"
+
+        # Verify symlink
+        if [ ! -L "$CURRENT_DIR" ] || [ ! -d "$(readlink -f "$CURRENT_DIR")" ]; then
+            echo "Error: Failed to create symlink correctly"
+            if [ -L "$PREVIOUS_RELEASE_LINK" ]; then
+                echo "Rolling back to previous release..."
+                echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
+                exit 1
+            fi
+        fi
+
+        # Restart PM2 with zero downtime
+        echo "Restarting PM2 process..."
+        pm2 list | grep "thebarcodeapi-frontend-${ENVIRONMENT}" | awk '{print $2}' | while read process; do
+            echo "Reloading process: $process"
+            PM2_HOME="/home/github-runner/.pm2" pm2 reload "$process" --update-env || {
+                echo "Failed to reload PM2 process, rolling back..."
+                if [ -L "$PREVIOUS_RELEASE_LINK" ]; then
+                    echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
+                    PM2_HOME="/home/github-runner/.pm2" pm2 reload "$process" --update-env
+                fi
+                exit 1
+            }
+        done
+
+        # Clean up old releases (keep last 5)
         echo "Cleaning up old releases"
         cd "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
         OLD_RELEASES=$(ls -1dt */ | tail -n +6)
@@ -141,17 +153,11 @@ jobs:
             echo "$SUDO_PASSWORD" | sudo -S rm -rf $OLD_RELEASES
         fi
 
-        # Manage PM2 process
-        echo "Managing PM2 process..."
-        if pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
-            PM2_HOME="/home/github-runner/.pm2" pm2 restart "thebarcodeapi-frontend-${ENVIRONMENT}" || true
-        fi
-
         cd "$CURRENT_DIR"
 
         # Set final permissions
-        echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data "/opt/thebarcodeapi/${ENVIRONMENT}"
-        echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "/opt/thebarcodeapi/${ENVIRONMENT}"
+        echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data "/opt/thebarcodeapi/${ENVIRONMENT}/current"
+        echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "/opt/thebarcodeapi/${ENVIRONMENT}/current"
 
         echo "Frontend deployment completed"
         EOF
@@ -185,38 +191,131 @@ jobs:
         echo "Checking current symlink:"
         ls -la "/opt/thebarcodeapi/${ENVIRONMENT}/current"
 
-        # Check PM2 process status
-        echo "Checking Next.js application status:"
-        pm2 list | grep "thebarcodeapi-frontend-${ENVIRONMENT}" || {
-            echo "ERROR: PM2 process not found!"
-            exit 1
+        # PM2 Process Management
+        echo "Managing PM2 process..."
+
+        # Function to safely stop and delete PM2 processes
+        cleanup_pm2() {
+            local app_name="$1"
+            echo "Cleaning up PM2 processes for $app_name..."
+
+            # Stop all instances
+            PM2_HOME="/home/github-runner/.pm2" pm2 stop "$app_name" || true
+            sleep 5
+
+            # Delete all instances
+            PM2_HOME="/home/github-runner/.pm2" pm2 delete "$app_name" || true
+            sleep 5
+
+            # Flush PM2 logs
+            PM2_HOME="/home/github-runner/.pm2" pm2 flush
+
+            # Save PM2 state
+            PM2_HOME="/home/github-runner/.pm2" pm2 save --force || true
         }
 
-        # Function to test frontend health with timeout and retries
+        # Clean up existing processes
+        cleanup_pm2 "thebarcodeapi-frontend-${ENVIRONMENT}"
+
+        # Wait for cleanup to complete
+        sleep 5
+
+        # Function to start PM2 with better error handling
+        start_pm2_process() {
+            echo "Starting Next.js application with PM2..."
+            cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
+
+            # Start PM2
+            PM2_HOME="/home/github-runner/.pm2" pm2 start "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js" \
+                || {
+                    echo "Failed to start PM2 process"
+                    pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+                    exit 1
+                }
+
+            local max_wait=60
+            local count=0
+            while [ $count -lt $max_wait ]; do
+                # Get process status
+                local status=$(PM2_HOME="/home/github-runner/.pm2" pm2 jlist | grep -o '"status":"[^"]*"' | head -1)
+
+                if [[ $status == *"online"* ]]; then
+                    echo "PM2 process is online"
+                    # Additional verification - check if the app is responding
+                    if curl -s -f "http://localhost:3000/" > /dev/null; then
+                        echo "Application is responding"
+                        PM2_HOME="/home/github-runner/.pm2" pm2 save --force
+                        return 0
+                    fi
+                fi
+
+                # Show process details every 10 seconds
+                if [ $((count % 10)) -eq 0 ]; then
+                    echo "Current PM2 status:"
+                    PM2_HOME="/home/github-runner/.pm2" pm2 list
+                    echo "Recent logs:"
+                    PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 10 --nostream
+                fi
+
+                echo "Waiting for application to be ready... ($count/$max_wait)"
+                sleep 1
+                count=$((count + 1))
+            done
+
+            echo "Process verification failed. Showing logs:"
+            PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+            return 1
+        }
+
+        # Main execution
+        echo "Starting PM2 process..."
+        if ! start_pm2_process; then
+            echo "Failed to start PM2 process"
+            exit 1
+        fi
+
+        # Save PM2 configuration
+        PM2_HOME="/home/github-runner/.pm2" pm2 save --force || true
+
         check_frontend_health() {
-            local max_attempts=12  # 1 minute total (5s * 12)
+            local max_attempts=12
             local attempt=1
+            local timeout=5
 
             while [ $attempt -le $max_attempts ]; do
                 echo "Health check attempt $attempt of $max_attempts..."
-                if curl -s -f "http://localhost:3000/" > /dev/null; then
+
+                # # Comprehensive status check
+                # local pm2_status=$(PM2_HOME="/home/github-runner/.pm2" pm2 jlist)
+                # if ! echo "$pm2_status" | grep -q '"status":"online".*"name":"thebarcodeapi-frontend-'; then
+                #     echo "PM2 process is not running properly!"
+                #     PM2_HOME="/home/github-runner/.pm2" pm2 list
+                #     PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+                #     return 1
+                # fi
+
+                # Test the application endpoint with increased timeout
+                if curl -s -f -m $timeout "http://localhost:3000/" > /dev/null; then
                     echo "Frontend is responding successfully!"
                     return 0
                 fi
-                echo "Frontend not ready yet, waiting 5 seconds..."
+
+                echo "Frontend not ready yet, waiting 5 seconds... (Attempt $attempt/$max_attempts)"
                 sleep 5
                 attempt=$((attempt + 1))
             done
 
-            echo "ERROR: Frontend failed to respond after 1 minute"
+            echo "ERROR: Frontend failed to respond after health checks"
+            echo "PM2 Status:"
+            PM2_HOME="/home/github-runner/.pm2" pm2 list
+            echo "Recent PM2 logs:"
+            PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
             return 1
         }
 
         echo "Testing frontend health..."
         if ! check_frontend_health; then
             echo "DEPLOYMENT VERIFICATION FAILED"
-            echo "Recent PM2 logs:"
-            pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
             exit 1
         fi
 
@@ -224,7 +323,7 @@ jobs:
         EOF
         chmod +x verify_frontend.sh
 
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" > /tmp/env_vars
+        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" | sudo tee /tmp/env_vars > /dev/null
         ./verify_frontend.sh
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
 
