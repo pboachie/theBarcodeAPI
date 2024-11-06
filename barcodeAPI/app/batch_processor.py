@@ -29,6 +29,66 @@ class BatchProcessor:
         self._batch_lock = Lock()
         logger.info(f"Initialized BatchProcessor with size={batch_size}, interval={interval_ms}ms ({self.interval:.3f}s)")
 
+    def _handle_batch_error(self, current_batch: List[Tuple[str, Any, str]]):
+        """Handle errors for different types of batch operations"""
+        for operation, item, batch_id in current_batch:
+            future = self.pending_results.get(batch_id)
+            if not future or future.done():
+                continue
+
+            try:
+                # Set appropriate default values based on operation type
+                if operation == "check_rate_limit":
+                    # Default to rate limited for safety
+                    future.set_result(False)
+
+                elif operation == "is_token_active":
+                    # Default to invalid token for safety
+                    future.set_result(False)
+
+                elif operation == "get_active_token":
+                    # Default to no token
+                    future.set_result(None)
+
+                elif operation == "set_user_data":
+                    # Default to operation failed
+                    future.set_result(False)
+
+                elif operation == "set_username_mapping":
+                    # Default to operation failed
+                    future.set_result(False)
+
+                elif operation == "reset_daily_usage":
+                    # Default to operation failed
+                    future.set_result(False)
+
+                elif operation in ["get_user_data", "get_user_data_by_ip", "increment_usage"]:
+                    # For user data operations, extract IP address and return default user data
+                    if isinstance(item, tuple):
+                        ip_address = item[1] if len(item) > 1 else "unknown"
+                    elif isinstance(item, dict):
+                        ip_address = item.get('ip_address', "unknown")
+                    else:
+                        ip_address = str(item)
+
+                    future.set_result(self.redis_manager.create_default_user_data(ip_address))
+
+                else:
+                    logger.error(f"Unknown operation type in error handler: {operation}")
+                    future.set_result(None)
+
+            except Exception as ex:
+                logger.error(f"Error in batch error handler for operation {operation}: {str(ex)}")
+                try:
+                    future.set_result(None)
+                except Exception:
+                    pass
+
+            finally:
+                # Clean up the pending result
+                self.pending_results.pop(batch_id, None)
+
+
     async def _process_batches(self):
         """Continuously process batches at the specified interval"""
         logger.info(f"Starting batch processor with interval {self.interval:.3f}s")
@@ -171,6 +231,14 @@ class BatchProcessor:
                     await self._process_token_checks(items)
                 elif operation == "get_active_token":
                     await self._process_get_tokens(items)
+                elif operation == "set_user_data":
+                    await self._process_set_user_data(items)
+                elif operation == "reset_daily_usage":
+                    await self._process_reset_daily_usage(items)
+                elif operation == "set_username_mapping":
+                    await self._process_username_mappings(items)
+                elif operation == "get_user_data_by_ip":
+                    await self._process_get_user_data_by_ip(items)
                 else:
                     logger.warning(f"Unknown operation type: {operation}")
 
@@ -181,18 +249,121 @@ class BatchProcessor:
 
         except Exception as ex:
             logger.error(f"Error processing batch: {str(ex)}\n{traceback.format_exc()}")
-            for operation, item, batch_id in current_batch:
+            self._handle_batch_error(current_batch)
+
+    async def _process_set_user_data(self, items):
+        """Process batch of set user data operations"""
+        try:
+            pipe = self.redis_manager.redis.pipeline()
+            for (user_data,), batch_id in items:
+                key = self.redis_manager._get_key(user_data.id, user_data.ip_address)
+                pipe.set(key, user_data.json(), ex=86400)
+
+            results = await pipe.execute()
+
+            for i, ((_, ), batch_id) in enumerate(items):
                 future = self.pending_results.get(batch_id)
                 if future and not future.done():
-                    if operation == "check_rate_limit":
-                        future.set_result(False)
-                    elif operation == "is_token_active":
-                        future.set_result(False)
-                    elif operation == "get_active_token":
-                        future.set_result(None)
-                    else:
-                        ip_address = item[1] if isinstance(item, tuple) and len(item) > 1 else "unknown"
+                    future.set_result(results[i])
+        except Exception as ex:
+            logger.error(f"Error in set_user_data batch: {str(ex)}")
+            for (_, ), batch_id in items:
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(False)
+
+    async def _process_reset_daily_usage(self, items):
+        """Process batch of reset daily usage operations"""
+        try:
+            pipe = self.redis_manager.redis.pipeline()
+            update_tasks = []
+
+            for (key,), batch_id in items:
+                update_tasks.append(self._reset_single_usage(pipe, key, batch_id))
+
+            await asyncio.gather(*update_tasks)
+            results = await pipe.execute()
+
+            for i, ((_, ), batch_id) in enumerate(items):
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(results[i])
+        except Exception as ex:
+            logger.error(f"Error in reset_daily_usage batch: {str(ex)}")
+            for (_, ), batch_id in items:
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(False)
+
+    async def _reset_single_usage(self, pipe, key: str, batch_id: str):
+        """Reset usage for a single key"""
+        try:
+            result = await self.redis_manager.redis.get(key)
+            if result:
+                user_data = UserData.parse_raw(result)
+                user_data.requests_today = 0
+                pipe.set(key, user_data.json(), ex=86400)
+        except Exception as ex:
+            logger.error(f"Error resetting usage for key {key}: {str(ex)}")
+
+    async def _process_username_mappings(self, items):
+        """Process batch of username to ID mapping operations"""
+        try:
+            pipe = self.redis_manager.redis.pipeline()
+            for (username, user_id), batch_id in items:
+                pipe.set(f"user_data:{username}:username", user_id)
+
+            results = await pipe.execute()
+
+            for i, ((_, _), batch_id) in enumerate(items):
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(results[i])
+        except Exception as ex:
+            logger.error(f"Error in username mapping batch: {str(ex)}")
+            for (_, _), batch_id in items:
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(False)
+
+    async def _process_get_user_data_by_ip(self, items):
+        """Process batch of get user data by IP operations"""
+        try:
+            tasks = []
+            for (ip_address,), batch_id in items:
+                task = asyncio.create_task(self._get_single_user_data_by_ip(ip_address, batch_id))
+                tasks.append(task)
+            await asyncio.gather(*tasks)
+        except Exception as ex:
+            logger.error(f"Error in get_user_data_by_ip batch: {str(ex)}")
+            for (ip_address,), batch_id in items:
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(self.redis_manager.create_default_user_data(ip_address))
+
+    async def _get_single_user_data_by_ip(self, ip_address: str, batch_id: str):
+        """Get user data for a single IP"""
+        try:
+            key = f"ip:{ip_address}"
+            result = await self.redis_manager.redis.get(key)
+
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                if result:
+                    try:
+                        user_data = UserData.parse_raw(result)
+                        full_data = await self._get_single_user_data(user_data.ip_address, f"{batch_id}_full")
+                        future.set_result(full_data)
+                    except Exception:
                         future.set_result(self.redis_manager.create_default_user_data(ip_address))
+                else:
+                    future.set_result(self.redis_manager.create_default_user_data(ip_address))
+        except Exception as ex:
+            logger.error(f"Error getting user data by IP: {str(ex)}")
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                future.set_result(self.redis_manager.create_default_user_data(ip_address))
+
 
     async def _process_check_rate_limit(self, items):
         """Process batch of rate limit checks"""
