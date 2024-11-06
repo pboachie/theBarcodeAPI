@@ -46,7 +46,7 @@ async def get_current_user(
             user_data = await redis_manager.batch_processor.add_to_batch(
                 "get_user_data",
                 (client_ip,),
-                priority=BatchPriority.MEDIUM
+                priority=BatchPriority.HIGH
             ) if client_ip else None
 
             logger.info(f"User data: {user_data}")

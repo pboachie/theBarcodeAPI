@@ -56,12 +56,16 @@ class RedisManager:
             await self.redis.connection_pool.release(conn)
 
     async def set_user_data(self, user_data: UserData):
-        key = self._get_key(user_data.id, user_data.ip_address)
+        """Set user data with batch processing"""
         try:
-            async with self.get_connection():
-                await self.redis.set(key, user_data.json(), ex=86400)
+            return await self.batch_processor.add_to_batch(
+                "set_user_data",
+                (user_data,),
+                priority=BatchPriority.HIGH
+            )
         except Exception as ex:
             logger.error(f"Error in set_user_data: {str(ex)}")
+            return False
 
     async def get_user_data(
         self, user_id: Optional[int], ip_address: str
@@ -96,41 +100,28 @@ class RedisManager:
         return f"user_data:{user_id}"
 
     async def check_rate_limit(self, key: str) -> bool:
-        """check rate limit for a given key"""
-        result = await self.batch_processor.add_to_batch(
-            "check_rate_limit", key, priority=BatchPriority.MEDIUM
-        )
-
-        return result
-
-    async def increment_usage(
-        self, user_id: Optional[int], ip_address: str
-    ) -> Optional[UserData]:
-        """Increment usage count and update user data using Lua script"""
+        """Check rate limit for a given key"""
         try:
-            rate_limit = settings.RateLimit.get_limit("unauthenticated")
-            current_time = datetime.now(pytz.utc).isoformat()
-            user_id_str = str(user_id) if user_id else "-1"
-            result = await self.redis.evalsha(
-                self.increment_usage_sha,
-                0,
-                user_id_str,
-                ip_address,
-                rate_limit,
-                current_time,
+            return await self.batch_processor.add_to_batch(
+                "check_rate_limit",
+                (key,),
+                priority=BatchPriority.URGENT
             )
-            return UserData.parse_raw(result)
         except Exception as ex:
-            logger.error(f"Error incrementing usage: {str(ex)}")
-            return UserData(
-                id=user_id if user_id else -1,
-                username=f"ip:{ip_address}",
-                ip_address=ip_address,
-                tier="unauthenticated",
-                remaining_requests=settings.RateLimit.get_limit("unauthenticated"),
-                requests_today=1,
-                last_reset=datetime.now(pytz.utc),
+            logger.error(f"Error in check_rate_limit: {str(ex)}")
+            return False
+
+    async def increment_usage(self, user_id: Optional[int], ip_address: str) -> Optional[UserData]:
+        """Increment usage count and update user data"""
+        try:
+            return await self.batch_processor.add_to_batch(
+                "increment_usage",
+                (user_id, str(ip_address)),
+                priority=BatchPriority.URGENT
             )
+        except Exception as ex:
+            logger.error(f"Error in increment_usage: {str(ex)}")
+            return self.create_default_user_data(ip_address)
 
     async def get_all_user_keys(self):
         try:
@@ -143,15 +134,18 @@ class RedisManager:
             return []
 
     async def reset_daily_usage(self):
+        """Reset daily usage with batch processing"""
         try:
-            async with self.get_connection():
-                keys = await self.get_all_user_keys()
-                for key in keys:
-                    user_data = await self.redis.get(key)
-                    if user_data:
-                        user_data = UserData.parse_raw(user_data)
-                        user_data.requests_today = 0
-                        await self.redis.set(key, user_data.json(), ex=86400)
+            keys = await self.get_all_user_keys()
+            tasks = []
+            for key in keys:
+                task = self.batch_processor.add_to_batch(
+                    "reset_daily_usage",
+                    (key,),
+                    priority=BatchPriority.LOW
+                )
+                tasks.append(task)
+            await asyncio.gather(*tasks)
         except Exception as ex:
             logger.error(f"Error resetting daily usage: {str(ex)}")
 
@@ -168,13 +162,13 @@ class RedisManager:
                         user = await self.batch_processor.add_to_batch(
                             "get_user_data",
                             {"ip_address": key_id},
-                            priority=BatchPriority.MEDIUM,
+                            priority=BatchPriority.HIGH,
                         )
                     else:
                         user = await self.batch_processor.add_to_batch(
                             "get_user_data",
                             {"user_id": int(key_id)},
-                            priority=BatchPriority.MEDIUM,
+                            priority=BatchPriority.HIGH,
                         )
 
                     if user:
@@ -262,29 +256,16 @@ class RedisManager:
             )
 
     async def get_user_data_by_ip(self, ip_address: str) -> Optional[UserData]:
+        """Get user data by IP with batch processing"""
         try:
-            async with self.get_connection():
-                user_data = await self.redis.get(f"ip:{ip_address}")
-                if user_data:
-                    user_data = UserData.parse_raw(user_data)
-                    return await self.get_user_data(
-                        user_id=int(user_data.id), ip_address=user_data.ip_address
-                    )
-                else:
-                    return UserData(
-                        id=-1,
-                        username=f"ip:{ip_address}",
-                        tier="unauthenticated",
-                        ip_address=ip_address,
-                        remaining_requests=settings.RateLimit.get_limit(
-                            "unauthenticated"
-                        ),
-                        requests_today=0,
-                        last_reset=datetime.now(pytz.utc),
-                    )
+            return await self.batch_processor.add_to_batch(
+                "get_user_data_by_ip",
+                (ip_address,),
+                priority=BatchPriority.HIGH
+            )
         except Exception as ex:
             logger.error(f"Error fetching user data by IP: {str(ex)}")
-        return None
+            return self.create_default_user_data(ip_address)
 
     async def add_active_token(self, user_id: int, token: str, expire_time: int = 3600):
         try:
@@ -295,11 +276,13 @@ class RedisManager:
             logger.error(f"Error adding active token: {str(ex)}")
 
     async def get_active_token(self, user_id: int) -> Optional[str]:
+        """Get active token for a user"""
         try:
-            async with self.get_connection():
-                key = f"user_data:{user_id}:active_token"
-                token = await self.redis.get(key)
-                return token if token else None
+            return await self.batch_processor.add_to_batch(
+                "get_active_token",
+                (user_id,),
+                priority=BatchPriority.HIGH
+            )
         except Exception as ex:
             logger.error(f"Error getting active token: {str(ex)}")
             return None
@@ -313,18 +296,28 @@ class RedisManager:
             logger.error(f"Error removing active token: {str(ex)}")
 
     async def is_token_active(self, user_id: int, token: str) -> bool:
+        """Check if a token is active"""
         try:
-            stored_token = await self.get_active_token(user_id)
-            return stored_token == token
+            return await self.batch_processor.add_to_batch(
+                "is_token_active",
+                (user_id, token),
+                priority=BatchPriority.URGENT
+            )
         except Exception as ex:
             logger.error(f"Error checking if token is active: {str(ex)}")
-        return False
+            return False
 
     async def set_username_to_id_mapping(self, username: str, user_id: int):
+        """Set username to ID mapping with batch processing"""
         try:
-            await self.redis.set(f"user_data:{username}:username", user_id)
+            return await self.batch_processor.add_to_batch(
+                "set_username_mapping",
+                (username, user_id),
+                priority=BatchPriority.LOW
+            )
         except Exception as ex:
             logger.error(f"Error setting username to ID mapping: {str(ex)}")
+            return False
 
     async def check_redis(self) -> str:
         try:
