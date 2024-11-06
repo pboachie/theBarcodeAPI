@@ -102,12 +102,52 @@ class BatchProcessor:
             ip_address = item[0] if isinstance(item, tuple) else "unknown"
             return self.create_default_user_data(ip_address)
 
+    async def _process_get_user_data(self, items):
+        """Process batch of get_user_data operations"""
+        try:
+            tasks = []
+            for (ip_address,), batch_id in items:
+                task = asyncio.create_task(self._get_single_user_data(ip_address, batch_id))
+                tasks.append(task)
+            await asyncio.gather(*tasks)
+        except Exception as ex:
+            logger.error(f"Error in get_user_data batch: {str(ex)}")
+            for (ip_address,), batch_id in items:
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(self.redis_manager.create_default_user_data(ip_address))
+
+    async def _get_single_user_data(self, ip_address: str, batch_id: str):
+        """Process a single get_user_data request"""
+        try:
+            ip_address = str(ip_address)
+            key = self.redis_manager._get_key(None, ip_address)
+            result = await self.redis_manager.redis.get(key)
+
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                if result:
+                    try:
+                        user_data = UserData.parse_raw(result)
+                        future.set_result(user_data)
+                    except Exception:
+                        future.set_result(self.redis_manager.create_default_user_data(ip_address))
+                else:
+                    future.set_result(self.redis_manager.create_default_user_data(ip_address))
+        except Exception as ex:
+            logger.error(f"Error getting user data: {str(ex)}")
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                future.set_result(self.redis_manager.create_default_user_data(ip_address))
+
+
     async def _process_batch(self):
         """Process the current batch of operations"""
         if not self.batch:
             return
 
         current_batch = []
+        start_time = time.time()
         try:
             async with self._batch_lock:
                 current_batch = self.batch.copy()
@@ -120,29 +160,172 @@ class BatchProcessor:
 
             for operation, items in operation_groups.items():
                 logger.debug(f"Processing operation group: {operation} with {len(items)} items")
-                if operation == "get_user_data":
-                    try:
-                        # Process items concurrently for faster response
-                        tasks = []
-                        for (ip_address,), batch_id in items:
-                            task = asyncio.create_task(self._process_single_item(ip_address, batch_id))
-                            tasks.append(task)
-                        await asyncio.gather(*tasks)
 
-                    except Exception as ex:
-                        logger.error(f"Error in get_user_data: {str(ex)}")
-                        for (ip_address,), batch_id in items:
-                            future = self.pending_results.get(batch_id)
-                            if future and not future.done():
-                                future.set_result(self.create_default_user_data(ip_address))
+                if operation == "get_user_data":
+                    await self._process_get_user_data(items)
+                elif operation == "increment_usage":
+                    await self._process_increment_usage(items)
+                elif operation == "check_rate_limit":
+                    await self._process_check_rate_limit(items)
+                elif operation == "is_token_active":
+                    await self._process_token_checks(items)
+                elif operation == "get_active_token":
+                    await self._process_get_tokens(items)
+                else:
+                    logger.warning(f"Unknown operation type: {operation}")
+
+            # Log processing time for monitoring
+            process_time = (time.time() - start_time) * 1000
+            logger.debug(f"Batch processed in {process_time:.2f}ms")
+
 
         except Exception as ex:
-            logger.error(f"Error processing batch: {str(ex)}")
+            logger.error(f"Error processing batch: {str(ex)}\n{traceback.format_exc()}")
             for operation, item, batch_id in current_batch:
                 future = self.pending_results.get(batch_id)
                 if future and not future.done():
-                    ip_address = item[0] if isinstance(item, tuple) else "unknown"
-                    future.set_result(self.create_default_user_data(ip_address))
+                    if operation == "check_rate_limit":
+                        future.set_result(False)
+                    elif operation == "is_token_active":
+                        future.set_result(False)
+                    elif operation == "get_active_token":
+                        future.set_result(None)
+                    else:
+                        ip_address = item[1] if isinstance(item, tuple) and len(item) > 1 else "unknown"
+                        future.set_result(self.redis_manager.create_default_user_data(ip_address))
+
+    async def _process_check_rate_limit(self, items):
+        """Process batch of rate limit checks"""
+        try:
+            tasks = []
+            for (key,), batch_id in items:
+                task = asyncio.create_task(self._check_single_rate_limit(key, batch_id))
+                tasks.append(task)
+            await asyncio.gather(*tasks)
+        except Exception as ex:
+            logger.error(f"Error in check_rate_limit batch: {str(ex)}")
+            for (key,), batch_id in items:
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(False)
+
+    async def _process_increment_usage(self, items):
+        """Process batch of usage increments"""
+        try:
+            tasks = []
+            for (user_id, ip_address), batch_id in items:
+                task = asyncio.create_task(
+                    self._increment_single_usage(user_id, str(ip_address), batch_id)
+                )
+                tasks.append(task)
+            await asyncio.gather(*tasks)
+        except Exception as ex:
+            logger.error(f"Error in increment_usage batch: {str(ex)}")
+            for (_, ip_address), batch_id in items:
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(self.redis_manager.create_default_user_data(ip_address))
+
+    async def _process_token_checks(self, items):
+        """Process batch of token validity checks"""
+        try:
+            tasks = []
+            for (user_id, token), batch_id in items:
+                task = asyncio.create_task(self._check_single_token(user_id, token, batch_id))
+                tasks.append(task)
+            await asyncio.gather(*tasks)
+        except Exception as ex:
+            logger.error(f"Error in token checks batch: {str(ex)}")
+            for (_, _), batch_id in items:
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(False)
+
+    async def _process_get_tokens(self, items):
+        """Process batch of token retrievals"""
+        try:
+            tasks = []
+            for (user_id,), batch_id in items:
+                task = asyncio.create_task(self._get_single_token(user_id, batch_id))
+                tasks.append(task)
+            await asyncio.gather(*tasks)
+        except Exception as ex:
+            logger.error(f"Error in get tokens batch: {str(ex)}")
+            for (_, _), batch_id in items:
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(None)
+
+    # Helper methods for individual processing
+    async def _check_single_rate_limit(self, key: str, batch_id: str):
+        """Process a single rate limit check"""
+        try:
+            result = await self.redis_manager.redis.get(key)
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                future.set_result(bool(result))
+        except Exception as ex:
+            logger.error(f"Error checking rate limit: {str(ex)}")
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                future.set_result(False)
+
+    async def _increment_single_usage(self, user_id: Optional[int], ip_address: str, batch_id: str):
+        """Process a single increment usage request"""
+        try:
+            ip_address = str(ip_address)  # Ensure ip_address is string
+            rate_limit = settings.RateLimit.get_limit("unauthenticated")
+            current_time = datetime.now(pytz.utc).isoformat()
+            user_id_str = str(user_id) if user_id else "-1"
+
+            result = await self.redis_manager.redis.evalsha(
+                self.redis_manager.increment_usage_sha,
+                0,
+                user_id_str,
+                ip_address,
+                rate_limit,
+                current_time,
+            )
+
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                try:
+                    user_data = UserData.parse_raw(result)
+                    future.set_result(user_data)
+                except Exception as parse_ex:
+                    logger.error(f"Error parsing user data: {str(parse_ex)}")
+                    future.set_result(self.redis_manager.create_default_user_data(ip_address))
+        except Exception as ex:
+            logger.error(f"Error incrementing usage: {str(ex)}")
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                future.set_result(self.redis_manager.create_default_user_data(ip_address))
+
+    async def _check_single_token(self, user_id: int, token: str, batch_id: str):
+        """Process a single token check"""
+        try:
+            stored_token = await self.redis_manager.redis.get(f"user_data:{user_id}:active_token")
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                future.set_result(stored_token == token)
+        except Exception as ex:
+            logger.error(f"Error checking token: {str(ex)}")
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                future.set_result(False)
+
+    async def _get_single_token(self, user_id: int, batch_id: str):
+        """Process a single token retrieval"""
+        try:
+            token = await self.redis_manager.redis.get(f"user_data:{user_id}:active_token")
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                future.set_result(token)
+        except Exception as ex:
+            logger.error(f"Error getting token: {str(ex)}")
+            future = self.pending_results.get(batch_id)
+            if future and not future.done():
+                future.set_result(None)
 
     async def _process_single_item(self, ip_address: str, batch_id: str):
         """Process a single item concurrently"""
