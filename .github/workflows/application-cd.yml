@@ -39,12 +39,16 @@ jobs:
 
     - uses: actions/checkout@v3
       with:
-        fetch-depth: 2  # Fetch last 2 commits to compare changes
+        fetch-depth: 0  # Get all commits
         ref: ${{ steps.get_branch.outputs.branch }} # Checkout the specified branch
 
     - name: Check for frontend changes
       id: check_changes
       run: |
+        # Debug information
+        echo "Current directory: $(pwd)"
+        echo "Event type: ${{ github.event_name }}"
+
         # Check if this is a first deployment
         if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/current" ]; then
           echo "First deployment detected"
@@ -53,26 +57,44 @@ jobs:
         fi
 
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          # For manual triggers, compare with the deployed version
-          DEPLOYED_COMMIT=$(readlink -f "/opt/thebarcodeapi/${ENVIRONMENT}/current" | grep -o '[^-]*$')
-          if [ -n "$DEPLOYED_COMMIT" ]; then
-            CHANGES=$(git diff --name-only $DEPLOYED_COMMIT HEAD | grep -E '^(src/|public/|package.*json|next\.config\.js|tailwind\.config\.js)')
+          # For manual triggers, we'll check the current deployment
+          CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
+
+          if [ -f "${CURRENT_DIR}/.git-commit" ]; then
+            DEPLOYED_COMMIT=$(cat "${CURRENT_DIR}/.git-commit")
+            echo "Found deployed commit: ${DEPLOYED_COMMIT}"
+
+            # Verify the commit exists in git history
+            if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
+              echo "Comparing changes with deployed commit ${DEPLOYED_COMMIT}"
+              CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- 'src/' 'public/' 'package.json' 'package-lock.json' 'next.config.js' 'tailwind.config.js' || true)
+            else
+              echo "Deployed commit ${DEPLOYED_COMMIT} not found in history, forcing update"
+              CHANGES="force_update"
+            fi
           else
-            # If we can't determine the deployed commit, assume changes
+            echo "No .git-commit file found in current deployment, forcing update"
             CHANGES="force_update"
           fi
         else
           # For automated triggers, compare with previous commit
-          CHANGES=$(git diff --name-only HEAD^ HEAD | grep -E '^(src/|public/|package.*json|next\.config\.js|tailwind\.config\.js)')
+          echo "Comparing with previous commit"
+          CHANGES=$(git diff --name-only HEAD^ HEAD -- 'src/' 'public/' 'package.json' 'package-lock.json' 'next.config.js' 'tailwind.config.js' || true)
         fi
 
         if [ ! -z "$CHANGES" ]; then
-          echo "Frontend changes detected"
+          echo "Frontend changes detected:"
+          echo "$CHANGES"
           echo "changes=true" >> $GITHUB_OUTPUT
         else
           echo "No frontend changes detected"
           echo "changes=false" >> $GITHUB_OUTPUT
         fi
+
+    - name: Store Git commit hash
+      if: steps.check_changes.outputs.changes == 'true'
+      run:  |
+        git rev-parse HEAD > .git-commit
 
     - name: Validate Environment Variables
       run: |
@@ -240,6 +262,12 @@ jobs:
 
         echo "Frontend deployment completed"
         EOF
+
+        # Modify the deploy_frontend.sh script to include copying .git-commit
+        sed -i '/echo "$SUDO_PASSWORD" | sudo -S cp .\/package-lock.json "$NEW_RELEASE\/"/a\
+        if [ -f ".git-commit" ]; then\
+            echo "$SUDO_PASSWORD" | sudo -S cp ./.git-commit "$NEW_RELEASE/"\
+        fi' deploy_frontend.sh
 
         # Make the script executable
         chmod +x deploy_frontend.sh
