@@ -7,6 +7,12 @@ on:
     types:
       - completed
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: false
+        default: 'main'
+
 
 env:
   DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
@@ -22,7 +28,51 @@ jobs:
     runs-on: self-hosted
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     steps:
+    - name: Determine branch
+      id: get_branch
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "branch=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+        else
+          echo "branch=main" >> $GITHUB_OUTPUT
+        fi
+
     - uses: actions/checkout@v3
+      with:
+        fetch-depth: 2  # Fetch last 2 commits to compare changes
+        ref: ${{ steps.get_branch.outputs.branch }} # Checkout the specified branch
+
+    - name: Check for frontend changes
+      id: check_changes
+      run: |
+        # Check if this is a first deployment
+        if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/current" ]; then
+          echo "First deployment detected"
+          echo "changes=true" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # For manual triggers, compare with the deployed version
+          DEPLOYED_COMMIT=$(readlink -f "/opt/thebarcodeapi/${ENVIRONMENT}/current" | grep -o '[^-]*$')
+          if [ -n "$DEPLOYED_COMMIT" ]; then
+            CHANGES=$(git diff --name-only $DEPLOYED_COMMIT HEAD | grep -E '^(src/|public/|package.*json|next\.config\.js|tailwind\.config\.js)')
+          else
+            # If we can't determine the deployed commit, assume changes
+            CHANGES="force_update"
+          fi
+        else
+          # For automated triggers, compare with previous commit
+          CHANGES=$(git diff --name-only HEAD^ HEAD | grep -E '^(src/|public/|package.*json|next\.config\.js|tailwind\.config\.js)')
+        fi
+
+        if [ ! -z "$CHANGES" ]; then
+          echo "Frontend changes detected"
+          echo "changes=true" >> $GITHUB_OUTPUT
+        else
+          echo "No frontend changes detected"
+          echo "changes=false" >> $GITHUB_OUTPUT
+        fi
 
     - name: Validate Environment Variables
       run: |
@@ -42,27 +92,43 @@ jobs:
         fi
 
     - name: Use Node.js
+      if: steps.check_changes.outputs.changes == 'true'
       uses: actions/setup-node@v3
       with:
         node-version: '20.x'
         cache: 'npm'
 
+    - name: Cache Next.js build
+      if: steps.check_changes.outputs.changes == 'true'
+      uses: actions/cache@v3
+      with:
+        path: |
+          .next/cache
+        key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+        restore-keys: |
+          ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+          ${{ runner.os }}-nextjs-
+
     - name: Install dependencies
+      if: steps.check_changes.outputs.changes == 'true'
       run: npm ci
 
     - name: Run linter
+      if: steps.check_changes.outputs.changes == 'true'
       run: npm run lint
 
     - name: Build
+      if: steps.check_changes.outputs.changes == 'true'
       run: npm run build
 
     - name: Deploy Frontend
       run: |
-        # Create env vars file in current directory
+        # Create env vars file
         cat > .env_vars << EOF
         ENVIRONMENT=${{ env.ENVIRONMENT }}
         NODE_ENV=production
         SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
+        CHANGES=${{ steps.check_changes.outputs.changes }}
         EOF
 
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 .env_vars
@@ -80,6 +146,19 @@ jobs:
         source .env_vars
 
         echo "Starting frontend deployment..."
+
+        if [ "$CHANGES" == "false" ]; then
+          echo "No changes detected in frontend files. Restarting PM2 process only..."
+
+          # Restart PM2 with zero downtime
+          pm2 list | grep "thebarcodeapi-frontend-${ENVIRONMENT}" | awk '{print $2}' | while read process; do
+              echo "Reloading process: $process"
+              PM2_HOME="/home/github-runner/.pm2" pm2 reload "$process" --update-env
+          done
+
+          exit 0
+        fi
+
 
         # Create base directories first
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi
