@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 from app.config import settings
 import logging
+import gc
 
 logger = logging.getLogger(__name__)
 
@@ -50,4 +51,5 @@ async def init_db():
 
 async def close_db_connection():
     await engine.dispose()
-    logger.info("Database connections closed")
+    logger.debug("Database connections closed")
+    gc.collect()
