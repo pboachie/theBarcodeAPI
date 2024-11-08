@@ -36,12 +36,12 @@ RUN chmod +x /app/start.sh && \
     chmod -R 755 /app
 
 # Update alembic.ini (to work with interactive and non interactive users)
-RUN DATABASE_URL=$(grep DATABASE_URL .env | cut -d '=' -f2 | tr -d '\r\n') && \
-    if sed --version >/dev/null 2>&1; then \
-        sed -i "s|<POSTGRES_URL>|${DATABASE_URL}|g" alembic.ini; \
-    else \
-        sed -i "" "s|<POSTGRES_URL>|${DATABASE_URL}|g" alembic.ini; \
-    fi
+# RUN DATABASE_URL=$(grep DATABASE_URL .env | cut -d '=' -f2 | tr -d '\r\n') && \
+#     if sed --version >/dev/null 2>&1; then \
+#         sed -i "s|<POSTGRES_URL>|${DATABASE_URL}|g" alembic.ini; \
+#     else \
+#         sed -i "" "s|<POSTGRES_URL>|${DATABASE_URL}|g" alembic.ini; \
+#     fi
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
