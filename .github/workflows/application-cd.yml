@@ -480,8 +480,10 @@ jobs:
                 'alembic/' \
                 'requirements.txt' \
                 'Dockerfile' \
-                'docker-compose.yml' \
-                'alembic.ini' \
+                '*.yml' \
+                '*.ini' \
+                'scripts/' \
+                '*.sh' \
                 || true)
             else
               echo "Deployed commit ${DEPLOYED_COMMIT} not found in history, forcing update"
@@ -499,8 +501,10 @@ jobs:
             'alembic/' \
             'requirements.txt' \
             'Dockerfile' \
-            'docker-compose.yml' \
-            'alembic.ini' \
+            '*.yml' \
+            '*.ini' \
+            'scripts/' \
+            '*.sh' \
             || true)
         fi
 
