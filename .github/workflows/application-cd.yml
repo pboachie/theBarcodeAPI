@@ -558,6 +558,116 @@ jobs:
         rm -rf /tmp/.buildx-cache
         mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
+    - name: Check for backend changes
+      id: check_changes
+      run: |
+        # Debug information
+        echo "Current directory: $(pwd)"
+        echo "Event type: ${{ github.event_name }}"
+        echo "Git branch: $(git rev-parse --abbrev-ref HEAD)"
+
+        # Check if this is a first deployment
+        if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data" ]; then
+          echo "First deployment detected"
+          echo "changes=true" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # For manual triggers, we'll check the current deployment
+          if [ -f "/opt/thebarcodeapi/barcodeAPI/.git-commit" ]; then
+            DEPLOYED_COMMIT=$(cat "/opt/thebarcodeapi/barcodeAPI/.git-commit")
+            echo "Found deployed commit: ${DEPLOYED_COMMIT}"
+
+            if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
+              echo "Comparing changes with deployed commit ${DEPLOYED_COMMIT}"
+              CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- \
+                'api/' \
+                'alembic/' \
+                'requirements.txt' \
+                'Dockerfile' \
+                '*.yml' \
+                '*.ini' \
+                'scripts/' \
+                '*.sh' \
+                || true)
+            else
+              echo "Deployed commit not found in history, forcing update"
+              CHANGES="force_update"
+            fi
+          else
+            echo "No .git-commit file found, forcing update"
+            CHANGES="force_update"
+          fi
+        else
+          # For automated triggers, compare with previous commit
+          echo "Comparing with previous commit"
+          CHANGES=$(git diff --name-only HEAD^ HEAD -- \
+            'api/' \
+            'alembic/' \
+            'requirements.txt' \
+            'Dockerfile' \
+            '*.yml' \
+            '*.ini' \
+            'scripts/' \
+            '*.sh' \
+            || true)
+        fi
+
+        if [ ! -z "$CHANGES" ]; then
+          echo "Backend changes detected:"
+          echo "$CHANGES"
+          echo "changes=true" >> $GITHUB_OUTPUT
+        else
+          echo "No backend changes detected"
+          echo "changes=false" >> $GITHUB_OUTPUT
+        fi
+
+        # Debug output
+        echo "Git diff output:"
+        git diff --name-only HEAD^ HEAD || true
+
+    - name: Store Git commit hash
+      if: steps.check_changes.outputs.changes == 'true'
+      run: |
+        git rev-parse HEAD > .git-commit
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeAPI/
+
+    - name: Set up Docker Buildx
+      if: steps.check_changes.outputs.changes == 'true'
+      uses: docker/setup-buildx-action@v3
+      with:
+        install: true
+
+    - name: Cache Docker layers
+      if: steps.check_changes.outputs.changes == 'true'
+      uses: actions/cache@v3
+      with:
+        path: |
+          /tmp/.buildx-cache
+          ~/.docker/buildx
+        key: ${{ runner.os }}-buildx-${{ hashFiles('api/**', 'Dockerfile', 'requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+
+    - name: Build and cache Docker image
+      if: steps.check_changes.outputs.changes == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: false
+        load: true
+        tags: barcodeapi:latest
+        cache-from: type=local,src=/tmp/.buildx-cache
+        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+    - name: Move cache
+      if: steps.check_changes.outputs.changes == 'true'
+      run: |
+        rm -rf /tmp/.buildx-cache
+        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
     - name: Setup Initial Directories
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
