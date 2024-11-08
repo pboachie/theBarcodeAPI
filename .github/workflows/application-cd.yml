@@ -522,11 +522,31 @@ jobs:
         echo "Git diff output:"
         git diff --name-only HEAD^ HEAD || true
 
-    - name: Store Git commit hash
-      if: steps.check_changes.outputs.changes == 'true'
+    - name: Setup Backend Files
       run: |
-        git rev-parse HEAD > .git-commit
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeAPI/
+        # Create backend directory if it doesn't exist
+        BACKEND_DIR="/opt/thebarcodeapi/barcodeAPI"
+
+        # Ensure directory exists and is clean
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "$BACKEND_DIR"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf "$BACKEND_DIR"/*
+
+        # Copy all files from current directory to backend directory
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./* "$BACKEND_DIR/"
+
+        # Copy hidden files as well (like .env.example, .gitignore, etc)
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./.* "$BACKEND_DIR/" 2>/dev/null || true
+
+        # Set proper permissions
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "$BACKEND_DIR"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$BACKEND_DIR"
+
+        # Make sure all .sh files are executable
+        find "$BACKEND_DIR" -type f -name "*.sh" -exec sudo chmod +x {} \;
+
+        echo "Backend files copied successfully to $BACKEND_DIR"
+        echo "Contents of $BACKEND_DIR:"
+        ls -la "$BACKEND_DIR"
 
     - name: Debug Directory
       id: get_dir
@@ -558,7 +578,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: |
-          /tmp/.buildx-cache
+          /opt/thebarcodeapi/barcodeAPI/.buildx-cache
           ~/.docker/buildx
         key: ${{ runner.os }}-buildx-${{ hashFiles('api/**', 'Dockerfile', 'requirements.txt') }}
         restore-keys: |
@@ -568,19 +588,19 @@ jobs:
       if: steps.check_changes.outputs.changes == 'true'
       uses: docker/build-push-action@v5
       with:
-        context: ${{ steps.get_dir.outputs.working_dir }}
-        file: ${{ steps.get_dir.outputs.working_dir }}/Dockerfile
+        context: /opt/thebarcodeapi/barcodeAPI
+        file: /opt/thebarcodeapi/barcodeAPI/Dockerfile
         push: false
         load: true
         tags: barcodeapi:latest
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+        cache-from: type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
+        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=max
 
     - name: Move cache
       if: steps.check_changes.outputs.changes == 'true'
       run: |
-        rm -rf /tmp/.buildx-cache
-        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+        rm -rf ${{ steps.get_dir.outputs.working_dir }}/.buildx-cache
+        mv ${{ steps.get_dir.outputs.working_dir }}/.buildx-cache-new ${{ steps.get_dir.outputs.working_dir }}/.buildx-cache
 
     - name: Store Git commit hash
       if: steps.check_changes.outputs.changes == 'true'
