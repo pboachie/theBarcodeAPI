@@ -465,6 +465,7 @@ jobs:
         REDIS_URL=redis://redis:6379
         ALGORITHM=HS256
         ACCESS_TOKEN_EXPIRE_MINUTES=30
+        ENVIRONMENT=${ENVIRONMENT}
         EOL
 
         # Set permission for .env file
