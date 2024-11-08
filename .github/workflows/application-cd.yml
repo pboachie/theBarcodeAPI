@@ -559,7 +559,8 @@ jobs:
 
     - name: Verify Dockerfile
       run: |
-        if [ ! -f "$CURRENT_DIR/Dockerfile" ]; then
+        cd /opt/thebarcodeapi/barcodeAPI
+        if [ ! -f "Dockerfile" ]; then
           echo "Dockerfile not found in current directory!"
           echo "Current directory: $(pwd)"
           echo "Contents:"
@@ -599,8 +600,8 @@ jobs:
     - name: Move cache
       if: steps.check_changes.outputs.changes == 'true'
       run: |
-        rm -rf ${{ steps.get_dir.outputs.working_dir }}/.buildx-cache
-        mv ${{ steps.get_dir.outputs.working_dir }}/.buildx-cache-new ${{ steps.get_dir.outputs.working_dir }}/.buildx-cache
+        rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+        mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache-new /opt/thebarcodeapi/barcodeAPI/.buildx-cache
 
     - name: Store Git commit hash
       if: steps.check_changes.outputs.changes == 'true'
@@ -674,6 +675,8 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
 
     - name: Create and run backend deployment script
+      env:
+        CHANGES: ${{ steps.check_changes.outputs.changes }}
       run: |
         # Create deployment script
         cat > deploy_backend.sh << 'EOF'
