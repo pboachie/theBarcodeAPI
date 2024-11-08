@@ -532,10 +532,10 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf "$BACKEND_DIR"/*
 
         # Copy all files from current directory to backend directory
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./* "$BACKEND_DIR/"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./barcodeAPI/* "$BACKEND_DIR/"
 
         # Copy hidden files as well (like .env.example, .gitignore, etc)
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./.* "$BACKEND_DIR/" 2>/dev/null || true
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./barcodeAPI/.* "$BACKEND_DIR/" 2>/dev/null || true
 
         # Set proper permissions
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "$BACKEND_DIR"
