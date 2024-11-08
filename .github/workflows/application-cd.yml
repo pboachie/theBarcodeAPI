@@ -539,7 +539,7 @@ jobs:
 
     - name: Verify Dockerfile
       run: |
-        if [ ! -f "Dockerfile" ]; then
+        if [ ! -f "$CURRENT_DIR/Dockerfile" ]; then
           echo "Dockerfile not found in current directory!"
           echo "Current directory: $(pwd)"
           echo "Contents:"
