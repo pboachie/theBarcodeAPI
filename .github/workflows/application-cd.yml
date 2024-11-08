@@ -522,15 +522,37 @@ jobs:
     - name: Set up Docker Buildx
       if: steps.check_changes.outputs.changes == 'true'
       uses: docker/setup-buildx-action@v3
+      with:
+        install: true
 
     - name: Cache Docker layers
       if: steps.check_changes.outputs.changes == 'true'
       uses: actions/cache@v3
       with:
-        path: /tmp/.buildx-cache
+        path: |
+          /tmp/.buildx-cache
+          ~/.docker/buildx
         key: ${{ runner.os }}-buildx-${{ hashFiles('api/**', 'Dockerfile', 'requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-buildx-
+
+    - name: Build and cache Docker image
+      if: steps.check_changes.outputs.changes == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: false
+        load: true
+        tags: barcodeapi:latest
+        cache-from: type=local,src=/tmp/.buildx-cache
+        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+
+    - name: Move cache
+      if: steps.check_changes.outputs.changes == 'true'
+      run: |
+        rm -rf /tmp/.buildx-cache
+        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
     - name: Setup Initial Directories
       run: |
@@ -649,10 +671,10 @@ jobs:
 
           # Verify health
           for service in "db" "redis" "api"; do
-            if ! $DOCKER_COMPOSE ps $service 2>/dev/null | grep -q "healthy"; then
-              echo "Service $service is not healthy, restarting..."
-              $DOCKER_COMPOSE restart $service
-            fi
+            timeout 300 bash -c "until $DOCKER_COMPOSE ps $service 2>/dev/null | grep -q 'healthy'; do
+              echo 'Waiting for $service to become healthy...'
+              sleep 5
+            done"
           done
 
           echo "Backend health verified"
@@ -749,11 +771,15 @@ jobs:
         sudo chown -R 999:999 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
         sudo chmod -R 755 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
 
-
-        # Build and start containers
-        echo "Building and starting containers..."
-        $DOCKER_COMPOSE build --no-cache api
-        $DOCKER_COMPOSE up -d
+        # Use cached image if available
+        if docker image inspect barcodeapi:latest >/dev/null 2>&1; then
+          echo "Using cached image"
+          $DOCKER_COMPOSE up -d
+        else
+          echo "Building fresh image"
+          $DOCKER_COMPOSE build --no-cache api
+          $DOCKER_COMPOSE up -d
+        fi
 
         # Check container health
         check_container_health() {
