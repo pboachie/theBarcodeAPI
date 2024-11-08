@@ -95,6 +95,6 @@ print_colored "36" "Supported RPS:    $SUPPORTED_WORKERS Requests/Second"
 
 # Start the application
 print_header "Starting Application"
-print_colored "32" "Starting application with $WORKERS workers"
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS
+print_colored "32" "Starting application with 1 worker(s)"
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers 1 # $WORKERS
 # exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header # --workers $WORKERS
