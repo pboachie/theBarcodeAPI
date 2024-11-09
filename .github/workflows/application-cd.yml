@@ -128,6 +128,13 @@ jobs:
           ${{ runner.os }}-nextjs-20x-
           ${{ runner.os }}-nextjs-
 
+    - name: Install dependencies
+      if: steps.check_frontend_changes.outputs.changes == 'true'
+      run: |
+        npm ci
+        # Create .next/cache directory if it doesn't exist
+        mkdir -p .next/cache
+
     - name: Cache Debug
       if: steps.check_frontend_changes.outputs.changes == 'true'
       run: |
@@ -135,15 +142,16 @@ jobs:
         ls -la .next/cache || echo "No .next/cache found"
         echo "Cache contents for node_modules:"
         ls -la node_modules || echo "No node_modules found"
+        echo "Total size of node_modules:"
+        du -sh node_modules 2>/dev/null || echo "No node_modules found"
+        echo "Total size of .next/cache:"
+        du -sh .next/cache 2>/dev/null || echo "No .next/cache found"
+
     - name: Store Git commit hash
       if: steps.check_frontend_changes.outputs.changes == 'true'
       run:  |
         git rev-parse HEAD > .git-commit
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/${{ env.ENVIRONMENT }}/current/
-
-    - name: Install dependencies
-      if: steps.check_frontend_changes.outputs.changes == 'true'
-      run: npm ci
 
     - name: Run linter
       if: steps.check_frontend_changes.outputs.changes == 'true'
@@ -151,7 +159,10 @@ jobs:
 
     - name: Build
       if: steps.check_frontend_changes.outputs.changes == 'true'
-      run: npm run build
+      run: |
+        npm run build
+        echo "Cache contents after build:"
+        ls -la .next/cache/
 
     - name: Deploy Frontend
       run: |
