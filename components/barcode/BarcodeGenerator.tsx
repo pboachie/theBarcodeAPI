@@ -109,10 +109,15 @@ const BarcodeGenerator: React.FC = () => {
             }
         }, 420);
     }, [isLimitExceeded]);
+    // Add a mounted ref to prevent double requests
+    const isMounted = useRef(false);
 
-    // Add a new useEffect for initial barcode generation
     useEffect(() => {
-        const generateInitialBarcode = async () => {
+        if (isMounted.current) return;
+        isMounted.current = true;
+
+        const initializeBarcode = async () => {
+            setIsLoading(true);
             if (!isLimitExceeded) {
                 const displayText = getBarcodeText(barcodeType, barcodeText);
 
@@ -130,15 +135,14 @@ const BarcodeGenerator: React.FC = () => {
                 );
                 if (url) {
                     setBarcodeUrl(url);
-                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${barcodeType}&width=${barcodeWidth}&height=${barcodeHeight}&image_format=${imageFormat}&dpi=${dpi}&center_text=${showText}`);
+                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${barcodeType}&width=${barcodeWidth}&height=${barcodeHeight}&image_format=${imageFormat}&dpi=${dpi}¢er_text=${showText}`);
                 }
             }
+            setIsLoading(false);
         };
 
-        generateInitialBarcode();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []); // Runs only once on mount
-
+        initializeBarcode();
+    }, []);
     useEffect(() => {
         debouncedUpdateBarcode(
             barcodeType,
