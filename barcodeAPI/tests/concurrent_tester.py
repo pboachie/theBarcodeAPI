@@ -4,8 +4,8 @@ import random
 from time import time
 
 BASE_URL = "http://localhost:8000/api/generate"
-REQUESTS_PER_SECOND = 100 # Currently working with 32 workers (Implement Pipeline to speed up requests)
-TOTAL_DURATION = 3  # seconds
+REQUESTS_PER_SECOND = 200 # A worker can handle about 42 requests per second on average
+TOTAL_DURATION = 1  # seconds
 
 async def send_request(session, semaphore):
     async with semaphore:
