@@ -174,9 +174,8 @@ const BarcodeGenerator: React.FC = () => {
                             }
                         </CardTitle>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="flex flex-col gap-6">
                         <div className="flex flex-col lg:flex-row gap-6">
-                            {/* BarcodeDisplay appears first on mobile and second on desktop */}
                             <div className="order-1 lg:order-2 flex-1 flex justify-center items-center overflow-auto">
                                 <BarcodeDisplay
                                     isLoading={isLoading}
@@ -206,15 +205,9 @@ const BarcodeGenerator: React.FC = () => {
                             />
                         </div>
 
-                        <div className="barcode-display flex-1 flex justify-center items-center overflow-auto flex-grow">
-                            <div className="preview-area space-y-4 lg:w-2/3">
-                                {/* <BarcodeDisplay
-                                    isLoading={isLoading}
-                                    isLimitExceeded={isLimitExceeded}
-                                    error={error}
-                                    barcodeUrl={barcodeUrl}
-                                /> */}
-
+                        {/* API Call section */}
+                        <div className="api-call-section order-last mt-6">
+                            <div className="space-y-4">
                                 <ApiCallDisplay
                                     apiCallUrl={apiCallUrl}
                                     onCopy={handleCopy}
