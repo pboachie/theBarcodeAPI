@@ -13,6 +13,7 @@ import { BarcodeType, ImageFormat } from './types';
 import { cleanupBarcodeUrl, generateBarcode } from './barcodeService';
 import { ApiCallDisplay } from './ApiCallDisplay';
 import { ActionButtons } from './ActionButtons';
+import { getBarcodeText } from './barcodeConfig';
 
 const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN ||
   (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com');
@@ -87,9 +88,11 @@ const BarcodeGenerator: React.FC = () => {
 
         timeoutRef.current = setTimeout(async () => {
             if (!isLimitExceeded) {
+                const displayText = getBarcodeText(type as BarcodeType, text);
+
                 const url = await generateBarcode(
                     type,
-                    text,
+                    displayText,
                     width,
                     height,
                     format,
@@ -101,11 +104,40 @@ const BarcodeGenerator: React.FC = () => {
                 );
                 if (url) {
                     setBarcodeUrl(url);
-                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(text)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`);
+                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`);
                 }
             }
-        }, 740);
+        }, 420);
     }, [isLimitExceeded]);
+
+    // Add a new useEffect for initial barcode generation
+    useEffect(() => {
+        const generateInitialBarcode = async () => {
+            if (!isLimitExceeded) {
+                const displayText = getBarcodeText(barcodeType, barcodeText);
+
+                const url = await generateBarcode(
+                    barcodeType,
+                    displayText,
+                    barcodeWidth,
+                    barcodeHeight,
+                    imageFormat,
+                    dpi,
+                    showText,
+                    setIsLoading,
+                    setError,
+                    setIsLimitExceeded
+                );
+                if (url) {
+                    setBarcodeUrl(url);
+                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${barcodeType}&width=${barcodeWidth}&height=${barcodeHeight}&image_format=${imageFormat}&dpi=${dpi}&center_text=${showText}`);
+                }
+            }
+        };
+
+        generateInitialBarcode();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []); // Runs only once on mount
 
     useEffect(() => {
         debouncedUpdateBarcode(
