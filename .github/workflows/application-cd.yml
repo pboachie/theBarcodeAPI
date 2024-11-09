@@ -521,17 +521,6 @@ jobs:
         # Debug output
         echo "Git diff output:"
         git diff --name-only HEAD^ HEAD || true
-    - name: Store Git commit hash
-      if: steps.check_backend_changes.outputs.changes == 'true'
-      run: |
-        cd /opt/thebarcodeapi/barcodeAPI
-        if [ ! -f "Dockerfile" ]; then
-          echo "Dockerfile not found in current directory!"
-          echo "Current directory: $(pwd)"
-          echo "Contents:"
-          ls -la
-          exit 1
-        fi
 
     - name: Set up Docker Buildx
       if: steps.check_backend_changes.outputs.changes == 'true'
