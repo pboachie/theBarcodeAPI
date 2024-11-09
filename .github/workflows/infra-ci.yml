@@ -350,7 +350,7 @@ jobs:
               NODE_OPTIONS: '--max-old-space-size=512'
             },
             cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
-            instances: 1,
+            instances: 2,
             exec_mode: 'fork',
             autorestart: true,
             watch: false,
