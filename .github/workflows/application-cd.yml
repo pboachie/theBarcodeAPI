@@ -115,7 +115,7 @@ jobs:
           local url="http://localhost:3000"
           [ "${ENVIRONMENT}" = "production" ] && url="https://${DOMAIN_NAME}"
 
-          for i in {1..6}; do
+          for i in {1..60}; do
             if curl -s -f -m 5 "$url" > /dev/null; then
               return 0
             fi
