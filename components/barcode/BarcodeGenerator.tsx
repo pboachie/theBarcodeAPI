@@ -163,71 +163,66 @@ const BarcodeGenerator: React.FC = () => {
     }, [barcodeUrl]);
 
     return (
-        <div className="barcode-generator-container p-4 md:p-8">
-            <Card className="max-w-full mx-auto">
-                <CardHeader>
-                    <CardTitle className="text-2xl font-bold text-center">
-                        The Barcode API {process.env.NODE_ENV === 'development' ?
-                            <span className="text-red-500">DEV v{apiVersion}*</span> :
-                            <span className="text-green-500">v{apiVersion}</span>
-                        }
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex flex-col lg:flex-row gap-6">
-                        {/* BarcodeDisplay appears first on mobile and second on desktop */}
-                        <div className="order-1 lg:order-2 flex-1 flex justify-center items-center overflow-auto">
-                            <BarcodeDisplay
-                                isLoading={isLoading}
+        <div className='container mx-auto'>
+            <div className="barcode-generator-container p-4 md:p-8">
+                <Card className="max-w-full mx-auto">
+                    <CardHeader>
+                        <CardTitle className="text-2xl font-bold text-center">
+                            The Barcode API {process.env.NODE_ENV === 'development' ?
+                                <span className="text-red-500">DEV v{apiVersion}*</span> :
+                                <span className="text-green-500">v{apiVersion}</span>
+                            }
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-6">
+                        <div className="flex flex-col lg:flex-row gap-6">
+                            <div className="order-1 lg:order-2 flex-1 flex justify-center items-center overflow-auto">
+                                <BarcodeDisplay
+                                    isLoading={isLoading}
+                                    isLimitExceeded={isLimitExceeded}
+                                    error={error}
+                                    barcodeUrl={barcodeUrl}
+                                />
+                            </div>
+                            {/* BarcodeControls appears second on mobile and first on desktop */}
+                            <BarcodeControls
+                                barcodeType={barcodeType}
+                                setBarcodeType={handleBarcodeTypeChange}
+                                barcodeText={barcodeText}
+                                setBarcodeText={setBarcodeText}
+                                barcodeWidth={barcodeWidth}
+                                setBarcodeWidth={setBarcodeWidth}
+                                barcodeHeight={barcodeHeight}
+                                setBarcodeHeight={setBarcodeHeight}
+                                imageFormat={imageFormat}
+                                setImageFormat={setImageFormat}
+                                dpi={dpi}
+                                setDpi={setDpi}
+                                showText={showText}
+                                setShowText={setShowText}
                                 isLimitExceeded={isLimitExceeded}
-                                error={error}
-                                barcodeUrl={barcodeUrl}
+                                className="order-2 lg:order-1"
                             />
                         </div>
-                        {/* BarcodeControls appears second on mobile and first on desktop */}
-                        <BarcodeControls
-                            barcodeType={barcodeType}
-                            setBarcodeType={handleBarcodeTypeChange}
-                            barcodeText={barcodeText}
-                            setBarcodeText={setBarcodeText}
-                            barcodeWidth={barcodeWidth}
-                            setBarcodeWidth={setBarcodeWidth}
-                            barcodeHeight={barcodeHeight}
-                            setBarcodeHeight={setBarcodeHeight}
-                            imageFormat={imageFormat}
-                            setImageFormat={setImageFormat}
-                            dpi={dpi}
-                            setDpi={setDpi}
-                            showText={showText}
-                            setShowText={setShowText}
-                            isLimitExceeded={isLimitExceeded}
-                            className="order-2 lg:order-1"
-                        />
-                    </div>
 
-                    <div className="barcode-display flex-1 flex justify-center items-center overflow-auto flex-grow">
-                        <div className="preview-area space-y-4 lg:w-2/3">
-                            {/* <BarcodeDisplay
-                                isLoading={isLoading}
-                                isLimitExceeded={isLimitExceeded}
-                                error={error}
-                                barcodeUrl={barcodeUrl}
-                            /> */}
+                        {/* API Call section */}
+                        <div className="api-call-section order-last mt-6">
+                            <div className="space-y-4">
+                                <ApiCallDisplay
+                                    apiCallUrl={apiCallUrl}
+                                    onCopy={handleCopy}
+                                />
 
-                            <ApiCallDisplay
-                                apiCallUrl={apiCallUrl}
-                                onCopy={handleCopy}
-                            />
-
-                            <ActionButtons
-                                onCopy={handleCopy}
-                                onDownload={handleDownload}
-                                barcodeUrl={barcodeUrl}
-                            />
+                                <ActionButtons
+                                    onCopy={handleCopy}
+                                    onDownload={handleDownload}
+                                    barcodeUrl={barcodeUrl}
+                                />
+                            </div>
                         </div>
-                    </div>
-                </CardContent>
-            </Card>
+                    </CardContent>
+                </Card>
+            </div>
         </div>
     );
 };
