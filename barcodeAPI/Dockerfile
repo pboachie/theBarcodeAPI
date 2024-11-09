@@ -1,4 +1,3 @@
-# Dockerfile
 FROM python:3.9-slim-buster
 
 # Set environment variables
@@ -26,22 +25,23 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir --upgrade bcrypt psutil
 
-# Copy init.db.sh and set permissions
-COPY init-db.sh ./
-RUN chmod +x init-db.sh
-
-# Copy scripts and set permissions
-COPY start.sh scripts/* ./
-RUN chmod +x start.sh && \
-    if [ -d "scripts" ]; then chmod +x scripts/*.sh; fi
-
-# Copy project files
+# Copy all files first
 COPY . .
-COPY .env .
 
-# Update alembic.ini
-RUN DATABASE_URL=$(grep DATABASE_URL .env | cut -d '=' -f2) && \
-    sed -i "s|<POSTGRES_URL>|${DATABASE_URL}|g" alembic.ini
+# Set correct permissions for scripts
+RUN chmod +x /app/start.sh && \
+    chmod +x /app/init-db.sh && \
+    # Ensure the app directory and its contents are accessible
+    chown -R root:root /app && \
+    chmod -R 755 /app
+
+# Update alembic.ini (to work with interactive and non interactive users)
+# RUN DATABASE_URL=$(grep DATABASE_URL .env | cut -d '=' -f2 | tr -d '\r\n') && \
+#     if sed --version >/dev/null 2>&1; then \
+#         sed -i "s|<POSTGRES_URL>|${DATABASE_URL}|g" alembic.ini; \
+#     else \
+#         sed -i "" "s|<POSTGRES_URL>|${DATABASE_URL}|g" alembic.ini; \
+#     fi
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \

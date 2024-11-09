@@ -458,6 +458,7 @@ jobs:
         # Debug information
         echo "Current directory: $(pwd)"
         echo "Event type: ${{ github.event_name }}"
+        echo "Git branch: $(git rev-parse --abbrev-ref HEAD)"
 
         # Check if this is a first deployment
         if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data" ]; then
@@ -520,12 +521,17 @@ jobs:
         # Debug output
         echo "Git diff output:"
         git diff --name-only HEAD^ HEAD || true
-
     - name: Store Git commit hash
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
-        git rev-parse HEAD > .git-commit
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeAPI/
+        cd /opt/thebarcodeapi/barcodeAPI
+        if [ ! -f "Dockerfile" ]; then
+          echo "Dockerfile not found in current directory!"
+          echo "Current directory: $(pwd)"
+          echo "Contents:"
+          ls -la
+          exit 1
+        fi
 
     - name: Set up Docker Buildx
       if: steps.check_backend_changes.outputs.changes == 'true'
@@ -538,7 +544,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: |
-          /tmp/.buildx-cache
+          /opt/thebarcodeapi/barcodeAPI/.buildx-cache
           ~/.docker/buildx
         key: ${{ runner.os }}-buildx-${{ hashFiles('api/**', 'Dockerfile', 'requirements.txt') }}
         restore-keys: |
@@ -548,19 +554,28 @@ jobs:
       if: steps.check_backend_changes.outputs.changes == 'true'
       uses: docker/build-push-action@v5
       with:
-        context: .
-        file: ./Dockerfile
+        context: /opt/thebarcodeapi/barcodeAPI
+        file: /opt/thebarcodeapi/barcodeAPI/Dockerfile
         push: false
         load: true
         tags: barcodeapi:latest
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+        cache-from: type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
+        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=max
+        build-args: |
+          DEBIAN_FRONTEND=noninteractive
+          PYTHON_ENV=production
 
     - name: Move cache
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
-        rm -rf /tmp/.buildx-cache
-        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+        rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+        mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache-new /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+
+    - name: Store Git commit hash
+      if: steps.check_backend_changes.outputs.changes == 'true'
+      run: |
+        git rev-parse HEAD > .git-commit
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeAPI/
 
     - name: Setup Initial Directories
       run: |
@@ -613,7 +628,7 @@ jobs:
 
     - name: Create .env file for backend
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /opt/thebarcodeapi/barcodeAPI/.env << EOF
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         SECRET_KEY=${{ env.API_SECRET_KEY }}
@@ -624,10 +639,25 @@ jobs:
         ALGORITHM=HS256
         ACCESS_TOKEN_EXPIRE_MINUTES=30
         EOF'
+
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
 
+        # Verify .env file was created and has content
+        echo "Verifying .env file:"
+        if [ -f "/opt/thebarcodeapi/barcodeAPI/.env" ]; then
+          echo "File exists"
+          echo "File permissions:"
+          ls -l /opt/thebarcodeapi/barcodeAPI/.env
+          echo "File contents:"
+          cat /opt/thebarcodeapi/barcodeAPI/.env
+        else
+          echo "ERROR: .env file not created!"
+          exit 1
+        fi
     - name: Create and run backend deployment script
+      env:
+        CHANGES: ${{ steps.check_backend_changes.outputs.changes }}
       run: |
         # Create deployment script
         cat > deploy_backend.sh << 'EOF'
@@ -898,7 +928,7 @@ jobs:
         # EOF'
 
         # Set proper permissions
-        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
+        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/.env
         # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
 
         echo "Verifying backend deployment..."
@@ -934,8 +964,12 @@ jobs:
       if: always()
       run: |
         cd /opt/thebarcodeapi/barcodeAPI
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f .env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
+
+    - name: Final cleanup
+      if: always()
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
 
     - name: Final Status Check
       run: |

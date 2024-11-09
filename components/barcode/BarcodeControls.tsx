@@ -1,11 +1,12 @@
 // BarcodeControls.tsx
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { BarcodeType, barcodeTypes, ImageFormat, imageFormats, maxChars } from './types';
 import { FormatSelector } from './FormatSelector';
+import { getBarcodeText } from './barcodeConfig';
 
 interface BarcodeControlsProps {
   barcodeType: BarcodeType;
@@ -25,45 +26,6 @@ interface BarcodeControlsProps {
   isLimitExceeded: boolean;
   className?: string;
 }
-
-const getDefaultBarcodeText = (type: BarcodeType): string => {
-  switch (type) {
-    case 'ean13':
-      return '123456789123';
-    case 'code39':
-      return 'ABC 1234';
-    case 'ean':
-      return '5901234123457';
-    case 'ean8':
-      return '1234567';
-    case 'jan':
-      return '453456999999';
-    case 'itf':
-      return '01234567890123';
-    case 'ean14':
-      return '1234567890123';
-    case 'upc':
-      return '12345678901';
-    case 'upca':
-      return '01234567890';
-    case 'isbn':
-      return '9781234567890';
-    case 'isbn10':
-      return '123456789';
-    case 'isbn13':
-      return '978123456789';
-    case 'gs1_128':
-      return '0101234567890128BAR-IT';
-    case 'gtin':
-      return '01234567890128';
-    case 'issn':
-      return '1234567';
-    case 'pzn':
-      return '123456';
-    default:
-      return 'Change Me!';
-  }
-};
 
 export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
   barcodeType,
@@ -94,15 +56,8 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
 
   const handleTypeChange = (newType: BarcodeType) => {
     setBarcodeType(newType);
-    setBarcodeText(getDefaultBarcodeText(newType));
+    setBarcodeText(getBarcodeText(newType)); // Updated usage
   };
-
-  // Set initial default text if empty
-  useEffect(() => {
-    if (!barcodeText) {
-      setBarcodeText(getDefaultBarcodeText(barcodeType));
-    }
-  }, [barcodeText, barcodeType, setBarcodeText]);
 
   return (
     <div className={`controls-area space-y-4 lg:w-1/4 flex-shrink-0 ${className}`}>
