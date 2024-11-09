@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postbuild": "next-sitemap"
   },
   "dependencies": {
     "@pm2/io": "^6.0.1",
@@ -35,7 +36,9 @@
     "react": "^18",
     "react-dom": "^18",
     "react-responsive": "^10.0.0",
-    "tailwind-merge": "^2.5.4"
+    "tailwind-merge": "^2.5.4",
+    "next-seo": "^6.0.0",
+    "next-sitemap": "^4.0.6"
   },
   "devDependencies": {
     "@types/node": "^20.16.13",
