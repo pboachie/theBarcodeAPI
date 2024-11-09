@@ -31,7 +31,7 @@ if user_exists == 1 then
     local updates = {
         "requests_today", requests_today + 1,
         "remaining_requests", new_remaining,
-        "last_request", current_time  -- Changed from last_reset to last_request for consistency
+        "last_request", current_time
     }
 
     -- Preserve existing fields

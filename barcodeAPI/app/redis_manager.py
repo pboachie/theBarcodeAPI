@@ -171,7 +171,7 @@ class RedisManager:
                                 "last_reset": current_time
                             }
 
-                            user_data_dict = self._parse_redis_hash(results[i], defaults)
+                            user_data_dict = self._decode_redis_hash(results[i], defaults)
                             future.set_result(UserData(**user_data_dict))
                         except Exception as ex:
                             logger.error(f"Error parsing user data hash: {ex}")
@@ -190,43 +190,56 @@ class RedisManager:
         """Process batch of increment usage operations"""
         try:
             current_time = datetime.now(pytz.utc).isoformat()
+            operation_futures = []
 
             for (user_id, ip_address), batch_id in items:
                 key = self._get_key(user_id, ip_address)
                 pipe.evalsha(
                     self.increment_usage_sha,
-                    1,  # number of keys
-                    key,  # key
+                    1,
+                    key,
                     str(user_id if user_id else -1),
                     str(ip_address),
                     str(settings.RateLimit.get_limit("unauthenticated")),
                     current_time
                 )
+                operation_futures.append((key, ip_address, batch_id))
 
             results = await pipe.execute()
 
-            for i, ((_, ip_address), batch_id) in enumerate(items):
+            for i, (key, ip_address, batch_id) in enumerate(operation_futures):
+                lua_result = results[i]
                 future = pending_results.get(batch_id)
+
                 if future and not future.done():
                     try:
-                        if results[i]:
-                            data = dict(zip(results[i][::2], results[i][1::2]))
-                            defaults = {
-                                "id": -1,
-                                "ip_address": ip_address,
-                                "username": f"ip:{ip_address}",
-                                "tier": "unauthenticated",
-                                "requests_today": 0,
-                                "remaining_requests": settings.RateLimit.get_limit("unauthenticated"),
-                                "last_request": current_time,
-                                "last_reset": current_time
+                        if lua_result:
+                            # Convert Lua result list to dict
+                            result_dict = {}
+                            for j in range(0, len(lua_result), 2):
+                                k = lua_result[j].decode() if isinstance(lua_result[j], bytes) else str(lua_result[j])
+                                v = lua_result[j+1].decode() if isinstance(lua_result[j+1], bytes) else str(lua_result[j+1])
+                                result_dict[k] = v
+
+                            # Create user data from result
+                            user_data_dict = {
+                                "id": int(result_dict.get("id")) if result_dict.get("id") else -1,
+                                "ip_address": result_dict.get("ip_address", ip_address),
+                                "username": result_dict.get("username", f"ip:{ip_address}"),
+                                "tier": result_dict.get("tier", "unauthenticated"),
+                                "requests_today": int(result_dict.get("requests_today", "0")),
+                                "remaining_requests": int(result_dict.get("remaining_requests", str(settings.RateLimit.get_limit("unauthenticated")))),
+                                "last_request": datetime.fromisoformat(result_dict.get("last_request", current_time)),
+                                "last_reset": datetime.fromisoformat(result_dict.get("last_request", current_time))  # Use same time for both
                             }
-                            user_data_dict = self._parse_redis_hash(data, defaults)
-                            future.set_result(UserData(**user_data_dict))
+
+                            user_data = UserData(**user_data_dict)
+                            future.set_result(user_data)
                         else:
+                            logger.error(f"No result from Lua script for {key}")
                             future.set_result(self.create_default_user_data(ip_address))
                     except Exception as ex:
-                        logger.error(f"Error parsing increment usage result: {ex}")
+                        logger.error(f"Error processing increment result: {ex}")
                         future.set_result(self.create_default_user_data(ip_address))
 
         except Exception as ex:
@@ -896,42 +909,78 @@ class RedisManager:
             logger.error(f"Error fetching user data: {str(ex)}")
             return self.create_default_user_data(ip_address)
 
-    def _parse_redis_hash(self, data: Dict[bytes, bytes], defaults: Dict[str, Any]) -> Dict[str, Any]:
+    def _decode_redis_hash(self, hash_data: Dict[bytes, bytes], defaults: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Parse Redis hash data with proper type conversion and error handling.
+        Decode Redis hash data with proper type conversion.
 
         Args:
-            data: Redis hash response (bytes keys and values)
-            defaults: Default values with expected types
+            hash_data: Raw Redis hash data with byte keys and values
+            defaults: Dictionary of default values with their expected types
 
         Returns:
-            Dict with properly converted values
+            Dict with properly decoded and typed values
         """
         result = {}
         try:
-            for key, default in defaults.items():
-                byte_key = key.encode()
+            # First decode all bytes to strings
+            str_data = {
+                k.decode('utf-8') if isinstance(k, bytes) else k:
+                v.decode('utf-8') if isinstance(v, bytes) else v
+                for k, v in hash_data.items()
+            }
 
-                # Get value from Redis data or use default
-                if byte_key in data:
-                    value = data[byte_key]
+            logger.debug(f"Decoded Redis hash data: {str_data}")
+
+            # Convert values based on default types
+            for key, default in defaults.items():
+                if key in str_data:
+                    value = str_data[key].strip()
                     try:
                         if isinstance(default, int):
-                            # Handle integer conversion
-                            result[key] = int(value.decode().strip() or 0)
+                            result[key] = int(value) if value else default
                         elif isinstance(default, datetime):
-                            # Handle datetime conversion with validation
-                            date_str = value.decode().strip()
-                            if date_str:
-                                result[key] = datetime.fromisoformat(date_str)
-                            else:
-                                result[key] = default
+                            result[key] = datetime.fromisoformat(value) if value else default
                         else:
-                            # Handle string and other types
-                            decoded = value.decode().strip()
-                            result[key] = decoded if decoded else default
+                            result[key] = value if value else default
                     except (ValueError, TypeError) as ex:
-                        logger.debug(f"Error converting value for key {key}: {ex}")
+                        logger.error(f"Error converting {key}={value}: {ex}")
+                        result[key] = default
+                else:
+                    result[key] = default
+
+            return result
+
+        except Exception as ex:
+            logger.error(f"Error decoding Redis hash: {ex}")
+            return defaults
+
+
+    def _parse_redis_hash(self, data: Dict[bytes, bytes], defaults: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse Redis hash data with proper type conversion"""
+        result = {}
+        try:
+            # Convert byte keys and values to strings
+            str_data = {
+                k.decode('utf-8') if isinstance(k, bytes) else k:
+                v.decode('utf-8') if isinstance(v, bytes) else v
+                for k, v in data.items()
+            }
+
+            logger.debug(f"Decoded Redis data: {str_data}")
+
+            # Convert values based on default types
+            for key, default in defaults.items():
+                if key in str_data:
+                    value = str_data[key].strip()
+                    try:
+                        if isinstance(default, int):
+                            result[key] = int(value) if value else default
+                        elif isinstance(default, datetime):
+                            result[key] = datetime.fromisoformat(value) if value else default
+                        else:
+                            result[key] = value if value else default
+                    except (ValueError, TypeError) as ex:
+                        logger.error(f"Error converting {key}={value}: {ex}")
                         result[key] = default
                 else:
                     result[key] = default
@@ -956,13 +1005,24 @@ class RedisManager:
     async def increment_usage(self, user_id: Optional[int], ip_address: str) -> UserData:
         """Increment usage count with batch processing"""
         try:
-            return await self.batch_processor.add_to_batch(
+            key = self._get_key(user_id, ip_address)
+            logger.debug(f"Starting increment_usage for {key}")
+
+            result = await self.batch_processor.add_to_batch(
                 "increment_usage",
                 (user_id, str(ip_address)),
                 priority=BatchPriority.URGENT
             )
+
+            if not isinstance(result, UserData):
+                logger.error(f"Invalid result type from increment: {type(result)}")
+                return self.create_default_user_data(ip_address)
+
+            logger.debug(f"Increment completed for {key}: requests={result.requests_today}, remaining={result.remaining_requests}")
+            return result
+
         except Exception as ex:
-            logger.error(f"Error in increment_usage: {str(ex)}")
+            logger.error(f"Error in increment_usage: {ex}")
             return self.create_default_user_data(ip_address)
 
     async def check_rate_limit(self, key: str) -> bool:

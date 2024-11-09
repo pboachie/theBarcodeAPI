@@ -95,9 +95,10 @@ class BatchProcessor:
             # Group operations
             operation_groups = self._group_operations(current_batch)
 
-            # Process each group
-            async with self.redis_manager.get_pipeline() as pipe:
+            # Use a single pipeline for the entire batch
+            async with self.get_pipeline() as pipe:
                 for operation, items in operation_groups.items():
+                    logger.debug(f"Processing operation group: {operation} with {len(items)} items")
                     await self.redis_manager.process_batch_operation(operation, items, pipe, self.pending_results)
 
             process_time = (time.time() - start_time) * 1000
@@ -125,14 +126,18 @@ class BatchProcessor:
                 self._cleanup_future(batch_id, None)
 
     def _cleanup_future(self, batch_id: str, default_value: Any = None):
-        """Safely cleanup a future"""
+        """Safely cleanup a future with logging"""
         future = self.pending_results.get(batch_id)
-        if future and not future.done():
+        if future:
             try:
-                future.set_result(default_value)
-            except Exception:
+                if not future.done():
+                    logger.debug(f"Setting result for batch_id {batch_id}: {default_value}")
+                    future.set_result(default_value)
+            except Exception as ex:
+                logger.error(f"Error setting future result: {ex}")
                 future.cancel()
-        self.pending_results.pop(batch_id, None)
+            finally:
+                self.pending_results.pop(batch_id, None)
 
     def _create_default_user_data(self, item: Any) -> UserData:
         """Create default user data based on item type"""
