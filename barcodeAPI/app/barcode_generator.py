@@ -78,6 +78,10 @@ def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options
         img.save(new_buffer, format=writer_options.get('image_format', 'PNG'), optimize=True)
         new_buffer.seek(0)
 
+        # Close and delete the original image
+        img.close()
+        del img
+
         return new_buffer.getvalue()
 
     except BarcodeError as e:

@@ -67,6 +67,12 @@ To get started with theBarcodeAPI, you can run the project locally or access it 
 
     Fill in the necessary values in the `.env` file.
 
+    Source the environment variables:
+
+    ```bash
+    source .env
+    ```
+
 3. **Build and run the Docker containers:**
     - BACKEND:
         ```bash
@@ -105,10 +111,3 @@ Key environment variables:
 ## Database Migrations
 
 Database migrations are handled using Alembic. The `start.sh` script automatically applies migrations on startup.
-
-## Testing
-
-To run the tests, use the following command:
-
-```bash
-docker-compose run api pytest

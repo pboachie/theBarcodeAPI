@@ -66,17 +66,17 @@ def calculate_optimal_workers():
     # Use 75% of available cores, rounded down
     workers_by_cpu = int((cpu_cores * 2) + 1)
 
-    # Allocate 1 worker per 0.5GB of available RAM, with a minimum of 2 workers
-    workers_by_ram = max(2, int(available_ram / 0.5))
+    # Allocate 1 worker per 0.25GB of available RAM, with a minimum of 2 workers
+    workers_by_ram = max(2, int(available_ram / 0.25))
 
     # Choose the lower of the two calculations
     workers = min(workers_by_cpu, workers_by_ram)
 
-    # Cap at 32 workers (you can adjust this if needed)
-    workers = min(workers, 32)
+    # Cap at 5 workers
+    workers = min(workers, 5)
 
-    # 1 worker can support 32 requests a second. Return total supported requests (10-5-24)
-    supported_workers = workers * 32
+    # 1 worker can support 42 requests a second. Return total supported requests (11-7-24)
+    supported_workers = workers * 42
 
     return cpu_cores, total_ram, available_ram, workers, supported_workers
 
@@ -93,8 +93,11 @@ print_colored "36" "Available RAM:    ${AVAILABLE_RAM} GB"
 print_colored "36" "Optimal Workers:  $WORKERS"
 print_colored "36" "Supported RPS:    $SUPPORTED_WORKERS Requests/Second"
 
+# Variable holding the number of workers to use
+WORKERS_DISPLAY=1
+
 # Start the application
 print_header "Starting Application"
-print_colored "32" "Starting application with $WORKERS workers"
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS
-# exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header # --workers $WORKERS
+print_colored "32" "Starting application with $WORKERS_DISPLAY workers..."
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS_DISPLAY
+#exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS_DISPLAY
