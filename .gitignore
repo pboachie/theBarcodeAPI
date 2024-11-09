@@ -38,5 +38,3 @@ yarn-error.log*
 *.db
 */build*
 */venv/*
-
-docker-compose.yml

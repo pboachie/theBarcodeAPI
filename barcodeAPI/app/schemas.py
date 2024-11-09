@@ -294,7 +294,8 @@ class UserData(BaseModel):
     tier: str
     remaining_requests: int
     requests_today: int
-    last_reset: datetime
+    last_request: Optional[datetime] = None
+    last_reset: Optional[datetime] = None
 
     class Config:
         json_encoders = {
@@ -306,10 +307,13 @@ class UserData(BaseModel):
     def parse_obj(cls, obj):
         if isinstance(obj, str):
             obj = json.loads(obj)
-        if isinstance(obj.get('last_reset'), str):
-            obj['last_reset'] = datetime.fromisoformat(obj['last_reset'].rstrip('Z'))
+        # Handle datetime fields
+        for field in ['last_reset', 'last_request']:
+            if isinstance(obj.get(field), str):
+                obj[field] = datetime.fromisoformat(obj[field].rstrip('Z'))
         return super().parse_obj(obj)
 
+    @classmethod
     def to_json(self):
         return json.dumps(self.dict(), default=str)
 
