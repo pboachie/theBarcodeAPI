@@ -113,13 +113,12 @@ jobs:
         # Function for health check
         check_health() {
           local url="http://localhost:3000"
-          [ "${ENVIRONMENT}" = "production" ] && url="https://${DOMAIN_NAME}"
-
+          
           for i in {1..60}; do
             if curl -s -f -m 5 "$url" > /dev/null; then
               return 0
             fi
-            echo "Health check attempt $i/6..."
+            echo "Health check attempt $i/60..."
             sleep 5
           done
           return 1
