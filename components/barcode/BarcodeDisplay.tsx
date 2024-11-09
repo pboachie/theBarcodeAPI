@@ -19,7 +19,7 @@ export const BarcodeDisplay: React.FC<BarcodeDisplayProps> = ({
   barcodeUrl
 }) => {
   return (
-    <div className="barcode-container flex-grow p-4 bg-gray-100 rounded-lg flex items-center justify-center">
+    <div className="barcode-container flex-grow max-w-full max-h-full p-4 aspect-video bg-gray-100 rounded-lg flex items-center justify-center overflow-auto">
       <AnimatePresence mode="wait">
         {isLoading ? (
           <motion.div
@@ -45,7 +45,7 @@ export const BarcodeDisplay: React.FC<BarcodeDisplayProps> = ({
             key="barcode"
             src={barcodeUrl}
             alt="Generated Barcode"
-            className="barcode-image max-w-[300px] max-h-[300px] w-auto h-auto object-contain"
+            className="max-w-full max-h-full object-contain"
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.8 }}
