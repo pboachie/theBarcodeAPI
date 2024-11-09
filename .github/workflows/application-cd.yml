@@ -7,6 +7,12 @@ on:
     types:
       - completed
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to deploy'
+        required: false
+        default: 'main'
+
 
 env:
   DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
@@ -22,7 +28,73 @@ jobs:
     runs-on: self-hosted
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     steps:
+    - name: Determine branch
+      id: get_branch
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "branch=${{ github.ref }}" >> $GITHUB_OUTPUT
+        else
+          echo "branch=main" >> $GITHUB_OUTPUT
+        fi
+
     - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Get all commits
+        ref: ${{ steps.get_branch.outputs.branch }} # Checkout the specified branch
+
+    - name: Check for frontend changes
+      id: check_frontend_changes
+      run: |
+        # Debug information
+        echo "Current directory: $(pwd)"
+        echo "Event type: ${{ github.event_name }}"
+
+        # Check if this is a first deployment
+        if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/current" ]; then
+          echo "First deployment detected"
+          echo "changes=true" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # For manual triggers, we'll check the current deployment
+          CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
+
+          if [ -f "${CURRENT_DIR}/.git-commit" ]; then
+            DEPLOYED_COMMIT=$(cat "${CURRENT_DIR}/.git-commit")
+            echo "Found deployed commit: ${DEPLOYED_COMMIT}"
+
+            # Verify the commit exists in git history
+            if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
+              echo "Comparing changes with deployed commit ${DEPLOYED_COMMIT}"
+              CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- 'src/' 'public/' 'package.json' 'package-lock.json' 'next.config.js' 'tailwind.config.js' || true)
+            else
+              echo "Deployed commit ${DEPLOYED_COMMIT} not found in history, forcing update"
+              CHANGES="force_update"
+            fi
+          else
+            echo "No .git-commit file found in current deployment, forcing update"
+            CHANGES="force_update"
+          fi
+        else
+          # For automated triggers, compare with previous commit
+          echo "Comparing with previous commit"
+          CHANGES=$(git diff --name-only HEAD^ HEAD -- 'src/' 'public/' 'package.json' 'package-lock.json' 'next.config.js' 'tailwind.config.js' || true)
+        fi
+
+        if [ ! -z "$CHANGES" ]; then
+          echo "Frontend changes detected:"
+          echo "$CHANGES"
+          echo "changes=true" >> $GITHUB_OUTPUT
+        else
+          echo "No frontend changes detected"
+          echo "changes=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Store Git commit hash
+      if: steps.check_frontend_changes.outputs.changes == 'true'
+      run:  |
+        git rev-parse HEAD > .git-commit
 
     - name: Validate Environment Variables
       run: |
@@ -42,27 +114,43 @@ jobs:
         fi
 
     - name: Use Node.js
+      if: steps.check_frontend_changes.outputs.changes == 'true'
       uses: actions/setup-node@v3
       with:
         node-version: '20.x'
         cache: 'npm'
 
+    - name: Cache Next.js build
+      if: steps.check_frontend_changes.outputs.changes == 'true'
+      uses: actions/cache@v3
+      with:
+        path: |
+          .next/cache
+        key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+        restore-keys: |
+          ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+          ${{ runner.os }}-nextjs-
+
     - name: Install dependencies
+      if: steps.check_frontend_changes.outputs.changes == 'true'
       run: npm ci
 
     - name: Run linter
+      if: steps.check_frontend_changes.outputs.changes == 'true'
       run: npm run lint
 
     - name: Build
+      if: steps.check_frontend_changes.outputs.changes == 'true'
       run: npm run build
 
     - name: Deploy Frontend
       run: |
-        # Create env vars file in current directory
+        # Create env vars file
         cat > .env_vars << EOF
         ENVIRONMENT=${{ env.ENVIRONMENT }}
         NODE_ENV=production
         SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
+        CHANGES=${{ steps.check_frontend_changes.outputs.changes }}
         EOF
 
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 .env_vars
@@ -80,6 +168,19 @@ jobs:
         source .env_vars
 
         echo "Starting frontend deployment..."
+
+        if [ "$CHANGES" == "false" ]; then
+          echo "No changes detected in frontend files. Restarting PM2 process only..."
+
+          # Restart PM2 with zero downtime
+          pm2 list | grep "thebarcodeapi-frontend-${ENVIRONMENT}" | awk '{print $2}' | while read process; do
+              echo "Reloading process: $process"
+              PM2_HOME="/home/github-runner/.pm2" pm2 reload "$process" --update-env
+          done
+
+          exit 0
+        fi
+
 
         # Create base directories first
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi
@@ -161,6 +262,12 @@ jobs:
 
         echo "Frontend deployment completed"
         EOF
+
+        # Modify the deploy_frontend.sh script to include copying .git-commit
+        sed -i '/echo "$SUDO_PASSWORD" | sudo -S cp .\/package-lock.json "$NEW_RELEASE\/"/a\
+        if [ -f ".git-commit" ]; then\
+            echo "$SUDO_PASSWORD" | sudo -S cp ./.git-commit "$NEW_RELEASE/"\
+        fi' deploy_frontend.sh
 
         # Make the script executable
         chmod +x deploy_frontend.sh
@@ -331,16 +438,163 @@ jobs:
     runs-on: self-hosted
     needs: frontend-deployment
     steps:
-    - uses: actions/checkout@v3
-
-    - name: Validate Environment Variables
+    - name: Determine branch
+      id: get_branch
       run: |
-        for var in ENVIRONMENT DB_PASSWORD POSTGRES_PASSWORD API_SECRET_KEY API_MASTER_KEY; do
-          if [ -z "${!var}" ]; then
-            echo "Error: $var is not set"
-            exit 1
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "branch=${{ github.ref }}" >> $GITHUB_OUTPUT
+        else
+          echo "branch=main" >> $GITHUB_OUTPUT
+        fi
+
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0  # Get all commits
+        ref: ${{ steps.get_branch.outputs.branch }}
+
+    - name: Check for backend changes
+      id: check_backend_changes
+      run: |
+        # Debug information
+        echo "Current directory: $(pwd)"
+        echo "Event type: ${{ github.event_name }}"
+        echo "Git branch: $(git rev-parse --abbrev-ref HEAD)"
+
+        # Check if this is a first deployment
+        if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data" ]; then
+          echo "First deployment detected"
+          echo "changes=true" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          # For manual triggers, we'll check the current deployment
+          if [ -f "/opt/thebarcodeapi/barcodeAPI/.git-commit" ]; then
+            DEPLOYED_COMMIT=$(cat "/opt/thebarcodeapi/barcodeAPI/.git-commit")
+            echo "Found deployed commit: ${DEPLOYED_COMMIT}"
+
+            # Verify the commit exists in git history
+            if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
+              echo "Comparing changes with deployed commit ${DEPLOYED_COMMIT}"
+              CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- \
+                'api/' \
+                'alembic/' \
+                'requirements.txt' \
+                'Dockerfile' \
+                '*.yml' \
+                '*.ini' \
+                'scripts/' \
+                '*.sh' \
+                || true)
+            else
+              echo "Deployed commit ${DEPLOYED_COMMIT} not found in history, forcing update"
+              CHANGES="force_update"
+            fi
+          else
+            echo "No .git-commit file found in current deployment, forcing update"
+            CHANGES="force_update"
           fi
-        done
+        else
+          # For automated triggers, compare with previous commit
+          echo "Comparing with previous commit"
+          CHANGES=$(git diff --name-only HEAD^ HEAD -- \
+            'api/' \
+            'alembic/' \
+            'requirements.txt' \
+            'Dockerfile' \
+            '*.yml' \
+            '*.ini' \
+            'scripts/' \
+            '*.sh' \
+            || true)
+        fi
+
+        if [ ! -z "$CHANGES" ]; then
+          echo "Backend changes detected:"
+          echo "$CHANGES"
+          echo "changes=true" >> $GITHUB_OUTPUT
+        else
+          echo "No backend changes detected"
+          echo "changes=false" >> $GITHUB_OUTPUT
+        fi
+
+        # Debug output
+        echo "Git diff output:"
+        git diff --name-only HEAD^ HEAD || true
+
+    - name: Create .env file for backend
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /opt/thebarcodeapi/barcodeAPI/.env << EOF
+        DB_PASSWORD=${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
+        SECRET_KEY=${{ env.API_SECRET_KEY }}
+        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
+        API_VERSION=${{ vars.API_VERSION }}
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        REDIS_URL=redis://redis:6379
+        ALGORITHM=HS256
+        ACCESS_TOKEN_EXPIRE_MINUTES=30
+        EOF'
+
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
+
+        # Verify .env file was created and has content
+        echo "Verifying .env file:"
+        if [ -f "/opt/thebarcodeapi/barcodeAPI/.env" ]; then
+          echo "File exists"
+          echo "File permissions:"
+          ls -l /opt/thebarcodeapi/barcodeAPI/.env
+          echo "File contents:"
+          cat /opt/thebarcodeapi/barcodeAPI/.env
+        else
+          echo "ERROR: .env file not created!"
+          exit 1
+        fi
+
+    - name: Set up Docker Buildx
+      if: steps.check_backend_changes.outputs.changes == 'true'
+      uses: docker/setup-buildx-action@v3
+      with:
+        install: true
+
+    - name: Cache Docker layers
+      if: steps.check_backend_changes.outputs.changes == 'true'
+      uses: actions/cache@v3
+      with:
+        path: |
+          /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+          ~/.docker/buildx
+        key: ${{ runner.os }}-buildx-${{ hashFiles('api/**', 'Dockerfile', 'requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-
+
+    - name: Build and cache Docker image
+      if: steps.check_backend_changes.outputs.changes == 'true'
+      uses: docker/build-push-action@v5
+      with:
+        context: /opt/thebarcodeapi/barcodeAPI
+        file: /opt/thebarcodeapi/barcodeAPI/Dockerfile
+        push: false
+        load: true
+        tags: barcodeapi:latest
+        cache-from: type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
+        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=max
+        build-args: |
+          DEBIAN_FRONTEND=noninteractive
+          PYTHON_ENV=production
+
+    - name: Move cache
+      if: steps.check_backend_changes.outputs.changes == 'true'
+      run: |
+        rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+        mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache-new /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+
+    - name: Store Git commit hash
+      if: steps.check_backend_changes.outputs.changes == 'true'
+      run: |
+        git rev-parse HEAD > .git-commit
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeAPI/
 
     - name: Setup Initial Directories
       run: |
@@ -391,23 +645,9 @@ jobs:
         # Verify Docker access
         docker ps
 
-    - name: Create .env file for backend
-      run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
-        DB_PASSWORD=${{ env.DB_PASSWORD }}
-        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-        SECRET_KEY=${{ env.API_SECRET_KEY }}
-        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
-        API_VERSION=${{ vars.API_VERSION }}
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        REDIS_URL=redis://redis:6379
-        ALGORITHM=HS256
-        ACCESS_TOKEN_EXPIRE_MINUTES=30
-        EOF'
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
-
     - name: Create and run backend deployment script
+      env:
+        CHANGES: ${{ steps.check_backend_changes.outputs.changes }}
       run: |
         # Create deployment script
         cat > deploy_backend.sh << 'EOF'
@@ -446,6 +686,28 @@ jobs:
 
         echo "Starting backend deployment..."
         echo "Using DOCKER_COMPOSE command: ${DOCKER_COMPOSE}"
+
+        # If no changes detected, just check health and exit
+        if [ "$CHANGES" == "false" ]; then
+          echo "No changes detected in backend files. Verifying health only..."
+
+          # Check if services are running
+          if ! $DOCKER_COMPOSE ps | grep -q "Up"; then
+            echo "Services are not running, starting them..."
+            $DOCKER_COMPOSE up -d
+          fi
+
+          # Verify health
+          for service in "db" "redis" "api"; do
+            timeout 300 bash -c "until $DOCKER_COMPOSE ps $service 2>/dev/null | grep -q 'healthy'; do
+              echo 'Waiting for $service to become healthy...'
+              sleep 5
+            done"
+          done
+
+          echo "Backend health verified"
+          exit 0
+        fi
 
         # Create backup directory
         BACKUP_DIR="/opt/thebarcodeapi/backups/${ENVIRONMENT:-production}/$(date +%Y%m%d_%H%M%S)"
@@ -537,11 +799,15 @@ jobs:
         sudo chown -R 999:999 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
         sudo chmod -R 755 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
 
-
-        # Build and start containers
-        echo "Building and starting containers..."
-        $DOCKER_COMPOSE build --no-cache api
-        $DOCKER_COMPOSE up -d
+        # Use cached image if available
+        if docker image inspect barcodeapi:latest >/dev/null 2>&1; then
+          echo "Using cached image"
+          $DOCKER_COMPOSE up -d
+        else
+          echo "Building fresh image"
+          $DOCKER_COMPOSE build --no-cache api
+          $DOCKER_COMPOSE up -d
+        fi
 
         # Check container health
         check_container_health() {
@@ -652,7 +918,7 @@ jobs:
         # EOF'
 
         # Set proper permissions
-        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
+        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/.env
         # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
 
         echo "Verifying backend deployment..."
@@ -688,8 +954,12 @@ jobs:
       if: always()
       run: |
         cd /opt/thebarcodeapi/barcodeAPI
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f .env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
+
+    - name: Final cleanup
+      if: always()
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
 
     - name: Final Status Check
       run: |

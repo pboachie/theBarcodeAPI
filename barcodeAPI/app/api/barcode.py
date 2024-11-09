@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Barcode Generator API"])
 
 @router.get("/generate")
-@rate_limit(times=20, interval=1, period="second")
+@rate_limit(times=10000 if settings.ENVIRONMENT == 'development' else 50, interval=1, period="second")
 async def generate_barcode(
     request: Request,
     data: str = Query(..., description="The data to encode in the barcode"),

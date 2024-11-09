@@ -1,11 +1,12 @@
 // BarcodeControls.tsx
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { BarcodeType, barcodeTypes, ImageFormat, imageFormats, maxChars } from './types';
 import { FormatSelector } from './FormatSelector';
+import { getBarcodeText } from './barcodeConfig';
 
 interface BarcodeControlsProps {
   barcodeType: BarcodeType;
@@ -13,9 +14,9 @@ interface BarcodeControlsProps {
   barcodeText: string;
   setBarcodeText: (text: string) => void;
   barcodeWidth: number;
-  setBarcodeWidth: (width: number) => void;
+  setBarcodeWidth: React.Dispatch<React.SetStateAction<number>>;
   barcodeHeight: number;
-  setBarcodeHeight: (height: number) => void;
+  setBarcodeHeight: React.Dispatch<React.SetStateAction<number>>;
   imageFormat: ImageFormat;
   setImageFormat: (format: ImageFormat) => void;
   dpi: number;
@@ -25,45 +26,6 @@ interface BarcodeControlsProps {
   isLimitExceeded: boolean;
   className?: string;
 }
-
-const getDefaultBarcodeText = (type: BarcodeType): string => {
-  switch (type) {
-    case 'ean13':
-      return '123456789123';
-    case 'code39':
-      return 'ABC 1234';
-    case 'ean':
-      return '5901234123457';
-    case 'ean8':
-      return '1234567';
-    case 'jan':
-      return '453456999999';
-    case 'itf':
-      return '01234567890123';
-    case 'ean14':
-      return '1234567890123';
-    case 'upc':
-      return '12345678901';
-    case 'upca':
-      return '01234567890';
-    case 'isbn':
-      return '9781234567890';
-    case 'isbn10':
-      return '123456789';
-    case 'isbn13':
-      return '978123456789';
-    case 'gs1_128':
-      return '0101234567890128BAR-IT';
-    case 'gtin':
-      return '01234567890128';
-    case 'issn':
-      return '1234567';
-    case 'pzn':
-      return '123456';
-    default:
-      return 'Change Me!';
-  }
-};
 
 export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
   barcodeType,
@@ -94,18 +56,87 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
 
   const handleTypeChange = (newType: BarcodeType) => {
     setBarcodeType(newType);
-    setBarcodeText(getDefaultBarcodeText(newType));
+    setBarcodeText(getBarcodeText(newType)); // Updated usage
   };
 
-  // Set initial default text if empty
-  useEffect(() => {
-    if (!barcodeText) {
-      setBarcodeText(getDefaultBarcodeText(barcodeType));
+  const [maxDimension, setMaxDimension] = React.useState(600);
+  const hasCalculatedMaxRef = React.useRef(false);
+  const previousBreakpointRef = React.useRef<'mobile' | 'desktop'>(
+    window.innerWidth <= 768 ? 'mobile' : 'desktop'
+  );
+
+  React.useEffect(() => {
+    const calculateAbsoluteMax = () => {
+      const viewportWidth = window.innerWidth;
+      const currentBreakpoint = viewportWidth <= 768 ? 'mobile' : 'desktop';
+
+      // Force recalculation on breakpoint change
+      if (!hasCalculatedMaxRef.current || previousBreakpointRef.current !== currentBreakpoint) {
+        if (currentBreakpoint === 'mobile') {
+          // For mobile: Calculate based on viewport and container constraints
+          const container = document.querySelector('.barcode-container');
+          if (container) {
+            const containerRect = container.getBoundingClientRect();
+            const mobileMax = Math.min(
+              containerRect.width - 32, // Account for padding
+              300 // Hard cap for mobile
+            );
+            setMaxDimension(Math.floor(mobileMax));
+            setBarcodeWidth((prev) => Math.min(Number(prev), mobileMax));
+            setBarcodeHeight((prev) => Math.min(Number(prev), mobileMax));
+
+          }
+        } else {
+          // Desktop calculation remains the same
+          const previewArea = document.querySelector('.preview-area');
+          const container = document.querySelector('.barcode-container');
+          if (previewArea && container) {
+            const previewRect = previewArea.getBoundingClientRect();
+            const containerRect = container.getBoundingClientRect();
+            const maxSize = Math.min(
+              Math.max(Math.min(previewRect.width, containerRect.width) * 0.8, 400),
+              600
+            );
+            setMaxDimension(Math.floor(maxSize));
+          }
+        }
+
+        previousBreakpointRef.current = currentBreakpoint;
+        hasCalculatedMaxRef.current = true;
+      }
+    };
+
+    // Run initial calculation after a short delay to ensure DOM is ready
+    const initialTimer = setTimeout(calculateAbsoluteMax, 100);
+
+    // Set up mutation observer to watch for container size changes
+    const observer = new MutationObserver(() => {
+      hasCalculatedMaxRef.current = false;
+      calculateAbsoluteMax();
+    });
+
+    const container = document.querySelector('.barcode-container');
+    if (container) {
+      observer.observe(container, { attributes: true, childList: true, subtree: true });
     }
-  }, [barcodeText, barcodeType, setBarcodeText]);
+
+    // Handle resize events
+    const handleResize = () => {
+      hasCalculatedMaxRef.current = false;
+      calculateAbsoluteMax();
+    };
+
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      clearTimeout(initialTimer);
+      observer.disconnect();
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [setBarcodeWidth, setBarcodeHeight]);
 
   return (
-    <div className={`controls-area space-y-4 lg:w-1/4 flex-shrink-0 ${className}`}>
+    <div className={`controls-area space-y-4 p-4 lg:w-1/4 flex-shrink-0 ${className}`}>
       <FormatSelector
         title="Barcode Type"
         options={barcodeTypes}
@@ -134,7 +165,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         <label className="block text-sm font-medium mb-1">Width: {barcodeWidth}px</label>
         <Slider
           min={50}
-          max={600}
+          max={maxDimension}
           step={1}
           value={[barcodeWidth]}
           onValueChange={([value]) => setBarcodeWidth(value)}
@@ -146,7 +177,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         <label className="block text-sm font-medium mb-1">Height: {barcodeHeight}px</label>
         <Slider
           min={50}
-          max={600}
+          max={maxDimension}
           step={1}
           value={[barcodeHeight]}
           onValueChange={([value]) => setBarcodeHeight(value)}

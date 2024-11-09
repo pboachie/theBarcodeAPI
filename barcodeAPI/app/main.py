@@ -1,6 +1,7 @@
 # app/main.py
 
 import asyncio
+import gc
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -18,7 +19,7 @@ from app.barcode_generator import BarcodeGenerationError
 from app.database import close_db_connection, init_db, get_db, engine
 from app.redis import redis_manager, close_redis_connection, initialize_redis_manager
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class CustomServerHeaderMiddleware(BaseHTTPMiddleware):
@@ -58,6 +59,8 @@ async def startup():
         await FastAPILimiter.init(redis_manager.redis)
         await initialize_redis_manager()
         asyncio.create_task(log_pool_status())
+        gc.set_debug(gc.DEBUG_LEAK)
+        asyncio.create_task(log_memory_usage())
 
         # Start the redis_manager in the background
         logger.info("Starting Redis manager in the background...")
@@ -65,7 +68,7 @@ async def startup():
 
         async for db in get_db():
             await redis_manager.sync_all_username_mappings(db)
-            # await redis_manager.reset_daily_usage()
+            await redis_manager.reset_daily_usage()
             break
 
     except Exception as e:
@@ -82,7 +85,14 @@ async def shutdown_event():
     await redis_manager.stop()
     await close_redis_connection()
     await close_db_connection()
+    gc.collect()
     logger.info("Shutdown complete")
+
+async def log_memory_usage():
+    while True:
+        gc.collect()
+        logger.debug(f"Garbage collection: {gc.get_count()}")
+        await asyncio.sleep(60)  # Log every minute
 
 # Include routers
 app.include_router(health.router)

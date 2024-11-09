@@ -13,6 +13,7 @@ import { BarcodeType, ImageFormat } from './types';
 import { cleanupBarcodeUrl, generateBarcode } from './barcodeService';
 import { ApiCallDisplay } from './ApiCallDisplay';
 import { ActionButtons } from './ActionButtons';
+import { getBarcodeText } from './barcodeConfig';
 
 const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN ||
   (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com');
@@ -87,9 +88,11 @@ const BarcodeGenerator: React.FC = () => {
 
         timeoutRef.current = setTimeout(async () => {
             if (!isLimitExceeded) {
+                const displayText = getBarcodeText(type as BarcodeType, text);
+
                 const url = await generateBarcode(
                     type,
-                    text,
+                    displayText,
                     width,
                     height,
                     format,
@@ -101,12 +104,45 @@ const BarcodeGenerator: React.FC = () => {
                 );
                 if (url) {
                     setBarcodeUrl(url);
-                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(text)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`);
+                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`);
                 }
             }
-        }, 740);
+        }, 420);
     }, [isLimitExceeded]);
+    // Add a mounted ref to prevent double requests
+    const isMounted = useRef(false);
 
+    useEffect(() => {
+        if (isMounted.current) return;
+        isMounted.current = true;
+
+        const initializeBarcode = async () => {
+            setIsLoading(true);
+            if (!isLimitExceeded) {
+                const displayText = getBarcodeText(barcodeType, barcodeText);
+
+                const url = await generateBarcode(
+                    barcodeType,
+                    displayText,
+                    barcodeWidth,
+                    barcodeHeight,
+                    imageFormat,
+                    dpi,
+                    showText,
+                    setIsLoading,
+                    setError,
+                    setIsLimitExceeded
+                );
+                if (url) {
+                    setBarcodeUrl(url);
+                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${barcodeType}&width=${barcodeWidth}&height=${barcodeHeight}&image_format=${imageFormat}&dpi=${dpi}¢er_text=${showText}`);
+                }
+            }
+            setIsLoading(false);
+        };
+
+        initializeBarcode();
+    }, []);
     useEffect(() => {
         debouncedUpdateBarcode(
             barcodeType,
@@ -131,71 +167,66 @@ const BarcodeGenerator: React.FC = () => {
     }, [barcodeUrl]);
 
     return (
-        <div className="barcode-generator-container p-4 md:p-8">
-            <Card className="max-w-full mx-auto">
-                <CardHeader>
-                    <CardTitle className="text-2xl font-bold text-center">
-                        The Barcode API {process.env.NODE_ENV === 'development' ?
-                            <span className="text-red-500">DEV v{apiVersion}*</span> :
-                            <span className="text-green-500">v{apiVersion}</span>
-                        }
-                    </CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="flex flex-col lg:flex-row gap-6">
-                        {/* BarcodeDisplay appears first on mobile and second on desktop */}
-                        <div className="order-1 lg:order-2 flex-1 flex justify-center items-center overflow-auto">
-                            <BarcodeDisplay
-                                isLoading={isLoading}
+        <div className='container mx-auto'>
+            <div className="barcode-generator-container p-4 md:p-8">
+                <Card className="max-w-full mx-auto">
+                    <CardHeader>
+                        <CardTitle className="text-2xl font-bold text-center">
+                            The Barcode API {process.env.NODE_ENV === 'development' ?
+                                <span className="text-red-500">DEV v{apiVersion}*</span> :
+                                <span className="text-green-500">v{apiVersion}</span>
+                            }
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent className="flex flex-col gap-6">
+                        <div className="flex flex-col lg:flex-row gap-6">
+                            <div className="order-1 lg:order-2 flex-1 flex justify-center items-center overflow-auto">
+                                <BarcodeDisplay
+                                    isLoading={isLoading}
+                                    isLimitExceeded={isLimitExceeded}
+                                    error={error}
+                                    barcodeUrl={barcodeUrl}
+                                />
+                            </div>
+                            {/* BarcodeControls appears second on mobile and first on desktop */}
+                            <BarcodeControls
+                                barcodeType={barcodeType}
+                                setBarcodeType={handleBarcodeTypeChange}
+                                barcodeText={barcodeText}
+                                setBarcodeText={setBarcodeText}
+                                barcodeWidth={barcodeWidth}
+                                setBarcodeWidth={setBarcodeWidth}
+                                barcodeHeight={barcodeHeight}
+                                setBarcodeHeight={setBarcodeHeight}
+                                imageFormat={imageFormat}
+                                setImageFormat={setImageFormat}
+                                dpi={dpi}
+                                setDpi={setDpi}
+                                showText={showText}
+                                setShowText={setShowText}
                                 isLimitExceeded={isLimitExceeded}
-                                error={error}
-                                barcodeUrl={barcodeUrl}
+                                className="order-2 lg:order-1"
                             />
                         </div>
-                        {/* BarcodeControls appears second on mobile and first on desktop */}
-                        <BarcodeControls
-                            barcodeType={barcodeType}
-                            setBarcodeType={handleBarcodeTypeChange}
-                            barcodeText={barcodeText}
-                            setBarcodeText={setBarcodeText}
-                            barcodeWidth={barcodeWidth}
-                            setBarcodeWidth={setBarcodeWidth}
-                            barcodeHeight={barcodeHeight}
-                            setBarcodeHeight={setBarcodeHeight}
-                            imageFormat={imageFormat}
-                            setImageFormat={setImageFormat}
-                            dpi={dpi}
-                            setDpi={setDpi}
-                            showText={showText}
-                            setShowText={setShowText}
-                            isLimitExceeded={isLimitExceeded}
-                            className="order-2 lg:order-1"
-                        />
-                    </div>
 
-                    <div className="barcode-display flex-1 flex justify-center items-center overflow-auto flex-grow">
-                        <div className="preview-area space-y-4 lg:w-2/3">
-                            {/* <BarcodeDisplay
-                                isLoading={isLoading}
-                                isLimitExceeded={isLimitExceeded}
-                                error={error}
-                                barcodeUrl={barcodeUrl}
-                            /> */}
+                        {/* API Call section */}
+                        <div className="api-call-section order-last mt-6">
+                            <div className="space-y-4">
+                                <ApiCallDisplay
+                                    apiCallUrl={apiCallUrl}
+                                    onCopy={handleCopy}
+                                />
 
-                            <ApiCallDisplay
-                                apiCallUrl={apiCallUrl}
-                                onCopy={handleCopy}
-                            />
-
-                            <ActionButtons
-                                onCopy={handleCopy}
-                                onDownload={handleDownload}
-                                barcodeUrl={barcodeUrl}
-                            />
+                                <ActionButtons
+                                    onCopy={handleCopy}
+                                    onDownload={handleDownload}
+                                    barcodeUrl={barcodeUrl}
+                                />
+                            </div>
                         </div>
-                    </div>
-                </CardContent>
-            </Card>
+                    </CardContent>
+                </Card>
+            </div>
         </div>
     );
 };
