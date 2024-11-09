@@ -91,7 +91,7 @@ async def shutdown_event():
 async def log_memory_usage():
     while True:
         gc.collect()
-        logger.info(f"Garbage collection: {gc.get_count()}")
+        logger.debug(f"Garbage collection: {gc.get_count()}")
         await asyncio.sleep(60)  # Log every minute
 
 # Include routers
