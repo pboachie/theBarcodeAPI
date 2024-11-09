@@ -458,6 +458,7 @@ jobs:
         # Debug information
         echo "Current directory: $(pwd)"
         echo "Event type: ${{ github.event_name }}"
+        echo "Git branch: $(git rev-parse --abbrev-ref HEAD)"
 
         # Check if this is a first deployment
         if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data" ]; then
@@ -517,121 +518,59 @@ jobs:
           echo "changes=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Store Git commit hash
-      if: steps.check_changes.outputs.changes == 'true'
-      run: |
-        git rev-parse HEAD > .git-commit
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeAPI/
-
-    - name: Set up Docker Buildx
-      if: steps.check_changes.outputs.changes == 'true'
-      uses: docker/setup-buildx-action@v3
-      with:
-        install: true
-
-    - name: Cache Docker layers
-      if: steps.check_changes.outputs.changes == 'true'
-      uses: actions/cache@v3
-      with:
-        path: |
-          /tmp/.buildx-cache
-          ~/.docker/buildx
-        key: ${{ runner.os }}-buildx-${{ hashFiles('api/**', 'Dockerfile', 'requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-
-
-    - name: Build and cache Docker image
-      if: steps.check_changes.outputs.changes == 'true'
-      uses: docker/build-push-action@v5
-      with:
-        context: .
-        file: ./Dockerfile
-        push: false
-        load: true
-        tags: barcodeapi:latest
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-    - name: Move cache
-      if: steps.check_changes.outputs.changes == 'true'
-      run: |
-        rm -rf /tmp/.buildx-cache
-        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-
-    - name: Check for backend changes
-      id: check_changes
-      run: |
-        # Debug information
-        echo "Current directory: $(pwd)"
-        echo "Event type: ${{ github.event_name }}"
-        echo "Git branch: $(git rev-parse --abbrev-ref HEAD)"
-
-        # Check if this is a first deployment
-        if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data" ]; then
-          echo "First deployment detected"
-          echo "changes=true" >> $GITHUB_OUTPUT
-          exit 0
-        fi
-
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          # For manual triggers, we'll check the current deployment
-          if [ -f "/opt/thebarcodeapi/barcodeAPI/.git-commit" ]; then
-            DEPLOYED_COMMIT=$(cat "/opt/thebarcodeapi/barcodeAPI/.git-commit")
-            echo "Found deployed commit: ${DEPLOYED_COMMIT}"
-
-            if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
-              echo "Comparing changes with deployed commit ${DEPLOYED_COMMIT}"
-              CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- \
-                'api/' \
-                'alembic/' \
-                'requirements.txt' \
-                'Dockerfile' \
-                '*.yml' \
-                '*.ini' \
-                'scripts/' \
-                '*.sh' \
-                || true)
-            else
-              echo "Deployed commit not found in history, forcing update"
-              CHANGES="force_update"
-            fi
-          else
-            echo "No .git-commit file found, forcing update"
-            CHANGES="force_update"
-          fi
-        else
-          # For automated triggers, compare with previous commit
-          echo "Comparing with previous commit"
-          CHANGES=$(git diff --name-only HEAD^ HEAD -- \
-            'api/' \
-            'alembic/' \
-            'requirements.txt' \
-            'Dockerfile' \
-            '*.yml' \
-            '*.ini' \
-            'scripts/' \
-            '*.sh' \
-            || true)
-        fi
-
-        if [ ! -z "$CHANGES" ]; then
-          echo "Backend changes detected:"
-          echo "$CHANGES"
-          echo "changes=true" >> $GITHUB_OUTPUT
-        else
-          echo "No backend changes detected"
-          echo "changes=false" >> $GITHUB_OUTPUT
-        fi
-
         # Debug output
         echo "Git diff output:"
         git diff --name-only HEAD^ HEAD || true
 
-    - name: Store Git commit hash
-      if: steps.check_changes.outputs.changes == 'true'
+    - name: Setup Backend Files
       run: |
-        git rev-parse HEAD > .git-commit
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeAPI/
+        # Create backend directory if it doesn't exist
+        BACKEND_DIR="/opt/thebarcodeapi/barcodeAPI"
+
+        # Ensure directory exists and is clean
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "$BACKEND_DIR"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf "$BACKEND_DIR"/*
+
+        # Copy all files from current directory to backend directory
+        if [ -d "barcodeAPI" ]; then
+          echo "Copying from barcodeAPI subdirectory..."
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./barcodeAPI/* "$BACKEND_DIR/"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./barcodeAPI/.* "$BACKEND_DIR/" 2>/dev/null || true
+        else
+          echo "ERROR: barcodeAPI directory not found!"
+          exit 1
+        fi
+
+        # Set proper permissions
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "$BACKEND_DIR"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$BACKEND_DIR"
+
+        # Make sure all .sh files are executable
+        find "$BACKEND_DIR" -type f -name "*.sh" -exec sudo chmod +x {} \;
+
+        echo "Backend files copied successfully to $BACKEND_DIR"
+        echo "Contents of $BACKEND_DIR:"
+        ls -la "$BACKEND_DIR"
+
+    - name: Debug Directory
+      id: get_dir
+      run: |
+        CURRENT_DIR=$(pwd)
+        echo "Current directory: $CURRENT_DIR"
+        echo "Directory contents:"
+        ls -la
+        echo "working_dir=$CURRENT_DIR" >> $GITHUB_OUTPUT
+
+    - name: Verify Dockerfile
+      run: |
+        cd /opt/thebarcodeapi/barcodeAPI
+        if [ ! -f "Dockerfile" ]; then
+          echo "Dockerfile not found in current directory!"
+          echo "Current directory: $(pwd)"
+          echo "Contents:"
+          ls -la
+          exit 1
+        fi
 
     - name: Set up Docker Buildx
       if: steps.check_changes.outputs.changes == 'true'
@@ -644,7 +583,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: |
-          /tmp/.buildx-cache
+          /opt/thebarcodeapi/barcodeAPI/.buildx-cache
           ~/.docker/buildx
         key: ${{ runner.os }}-buildx-${{ hashFiles('api/**', 'Dockerfile', 'requirements.txt') }}
         restore-keys: |
@@ -654,19 +593,28 @@ jobs:
       if: steps.check_changes.outputs.changes == 'true'
       uses: docker/build-push-action@v5
       with:
-        context: .
-        file: ./Dockerfile
+        context: /opt/thebarcodeapi/barcodeAPI
+        file: /opt/thebarcodeapi/barcodeAPI/Dockerfile
         push: false
         load: true
         tags: barcodeapi:latest
-        cache-from: type=local,src=/tmp/.buildx-cache
-        cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+        cache-from: type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
+        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=max
+        build-args: |
+          DEBIAN_FRONTEND=noninteractive
+          PYTHON_ENV=production
 
     - name: Move cache
       if: steps.check_changes.outputs.changes == 'true'
       run: |
-        rm -rf /tmp/.buildx-cache
-        mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+        rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+        mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache-new /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+
+    - name: Store Git commit hash
+      if: steps.check_changes.outputs.changes == 'true'
+      run: |
+        git rev-parse HEAD > .git-commit
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeAPI/
 
     - name: Setup Initial Directories
       run: |
@@ -719,7 +667,7 @@ jobs:
 
     - name: Create .env file for backend
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /opt/thebarcodeapi/barcodeAPI/.env << EOF
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         SECRET_KEY=${{ env.API_SECRET_KEY }}
@@ -730,10 +678,25 @@ jobs:
         ALGORITHM=HS256
         ACCESS_TOKEN_EXPIRE_MINUTES=30
         EOF'
+
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
 
+        # Verify .env file was created and has content
+        echo "Verifying .env file:"
+        if [ -f "/opt/thebarcodeapi/barcodeAPI/.env" ]; then
+          echo "File exists"
+          echo "File permissions:"
+          ls -l /opt/thebarcodeapi/barcodeAPI/.env
+          echo "File contents:"
+          cat /opt/thebarcodeapi/barcodeAPI/.env
+        else
+          echo "ERROR: .env file not created!"
+          exit 1
+        fi
     - name: Create and run backend deployment script
+      env:
+        CHANGES: ${{ steps.check_changes.outputs.changes }}
       run: |
         # Create deployment script
         cat > deploy_backend.sh << 'EOF'
@@ -1004,7 +967,7 @@ jobs:
         # EOF'
 
         # Set proper permissions
-        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
+        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/.env
         # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
 
         echo "Verifying backend deployment..."
@@ -1040,8 +1003,12 @@ jobs:
       if: always()
       run: |
         cd /opt/thebarcodeapi/barcodeAPI
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f .env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
+
+    - name: Final cleanup
+      if: always()
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
 
     - name: Final Status Check
       run: |

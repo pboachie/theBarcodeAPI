@@ -465,6 +465,7 @@ jobs:
         REDIS_URL=redis://redis:6379
         ALGORITHM=HS256
         ACCESS_TOKEN_EXPIRE_MINUTES=30
+        ENVIRONMENT=${ENVIRONMENT}
         EOL
 
         # Set permission for .env file
@@ -620,13 +621,12 @@ jobs:
         # Clean up
         echo "$SUDO_PASSWORD" | sudo -S  rm -f /tmp/env_vars
 
-
     - name: List source directory contents (Before)
       run: ls -l /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/
 
     - name: List destination directory contents (Before)
       run: ls -l .
-      
+
     - name: Fix Permissions
       run: |
         echo "Fixing permissions..."
