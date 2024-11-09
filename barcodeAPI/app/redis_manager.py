@@ -1248,17 +1248,42 @@ class RedisManager:
                 except Exception:
                     pass
 
-    # async def clean_expired_tokens(self):
-    #     try:
-    #         all_user_keys = await self.redis.keys("user:*:active_tokens")
-    #         for key in all_user_keys:
-    #             active_tokens = await self.redis.smembers(key)
-    #             for token in active tokens:
-    #                 # Check if token is expired (you may need to decode and check the expiration)
-    #                 # For simplicity, let's assume tokens older than 24 hours are expired. Need to change this later.
-    #                 token_added_time = await self.redis.zscore(f"{key}:timestamps", token)
-    #                 if token_added_time and datetime.now().timestamp() - token_added_time > 86400:
-    #                     await self.redis.srem(key, token)
-    #                     await self.redis.zrem(f"{key}:timestamps", token)
-    #     except Exception as ex:
-    #         logger.error(f"Error cleaning expired tokens: {str(ex)}")
+    async def get_metrics(self) -> dict:
+        """Get batch processing metrics and Redis stats"""
+        try:
+            # Get Redis info
+            info = await self.redis.info()
+            pool = self.redis.connection_pool
+
+            # Get batch processor stats
+            batch_metrics = {
+                priority.name: {
+                    "queue_size": len(processor.batch),
+                    "processing": processor.processing,
+                    "interval_ms": int(processor.interval * 1000)
+                }
+                for priority, processor in self.batch_processor.processors.items()
+            }
+
+            return {
+                "redis": {
+                    "connected_clients": info.get("connected_clients", 0),
+                    "used_memory_human": info.get("used_memory_human", "0"),
+                    "total_connections_received": info.get("total_connections_received", 0),
+                    "total_commands_processed": info.get("total_commands_processed", 0),
+                },
+                "connection_pool": {
+                    "max_connections": pool.max_connections,
+                    "in_use_connections": len(pool._in_use_connections),
+                    "available_connections": len(pool._available_connections)
+                },
+                "batch_processors": batch_metrics
+            }
+        except Exception as ex:
+            logger.error(f"Error getting metrics: {ex}")
+            return {
+                "error": str(ex),
+                "redis": {},
+                "connection_pool": {},
+                "batch_processors": {}
+            }
