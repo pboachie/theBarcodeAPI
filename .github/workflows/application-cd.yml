@@ -32,7 +32,7 @@ jobs:
       id: get_branch
       run: |
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          echo "branch=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.ref }}" >> $GITHUB_OUTPUT
         else
           echo "branch=main" >> $GITHUB_OUTPUT
         fi
@@ -40,7 +40,7 @@ jobs:
     - uses: actions/checkout@v3
       with:
         fetch-depth: 0  # Get all commits
-        ref: ${{ github.ref }} # Checkout the specified branch
+        ref: ${{ steps.get_branch.outputs.branch }} # Checkout the specified branch
 
     - name: Check for frontend changes
       id: check_frontend_changes
@@ -442,7 +442,7 @@ jobs:
       id: get_branch
       run: |
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          echo "branch=${{ github.event.inputs.branch }}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.ref }}" >> $GITHUB_OUTPUT
         else
           echo "branch=main" >> $GITHUB_OUTPUT
         fi
@@ -551,7 +551,7 @@ jobs:
           echo "ERROR: .env file not created!"
           exit 1
         fi
-        
+
     - name: Set up Docker Buildx
       if: steps.check_backend_changes.outputs.changes == 'true'
       uses: docker/setup-buildx-action@v3
