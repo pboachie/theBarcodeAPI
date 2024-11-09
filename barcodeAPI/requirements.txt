@@ -3,7 +3,7 @@ fastapi==0.115.0
 uvicorn==0.31.0
 python-barcode==0.15.1
 # Pillow==10.4.0
-starlette>=0.37.2
+starlette==0.41.2
 Pillow-SIMD==9.5.0.post2
 fastapi-limiter==0.1.6
 redis[hiredis]==5.1.1
