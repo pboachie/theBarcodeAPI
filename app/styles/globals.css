@@ -116,6 +116,20 @@ body {
     width: auto !important;
     height: auto !important;
   }
+
+  .api-call-section {
+    margin-top: 2rem;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .mobile-actions {
+    padding: 1rem;
+    width: 100%;
+    max-width: 300px;
+  }
 }
 
 .barcode-image {
