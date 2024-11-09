@@ -60,7 +60,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
   };
 
   return (
-    <div className={`controls-area space-y-4 lg:w-1/4 flex-shrink-0 ${className}`}>
+    <div className={`controls-area space-y-4 p-4 lg:w-1/4 flex-shrink-0 ${className}`}>
       <FormatSelector
         title="Barcode Type"
         options={barcodeTypes}
