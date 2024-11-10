@@ -258,6 +258,7 @@ class UsageResponse(BaseModel):
     requests_today: int
     requests_limit: int
     remaining_requests: int
+    reset_time: datetime
 
 class UsageRequest(BaseModel):
     user_id: int
@@ -321,7 +322,6 @@ class UserData(BaseModel):
     def from_json(cls, json_str):
         return cls.parse_obj(json.loads(json_str))
 
-
 class HealthResponse(BaseModel):
     status: str
     version: str
@@ -349,4 +349,11 @@ class BatchProcessorResponse(BaseModel):
     """Model for batch processor responses"""
     result: Optional[Any] = None
     error: Optional[str] = None
+
+class BarcodeGenerationError(Exception):
+    def __init__(self, message, error_type):
+        self.message = message
+        self.error_type = error_type
+        super().__init__(self.message)
+
 
