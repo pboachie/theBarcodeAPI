@@ -17,7 +17,7 @@ export const generateBarcode = async (
   setIsLoading(true);
   setError(null);
 
-  const url = `${apiDomain}/api/generate?data=${encodeURIComponent(text.toString())}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`;
+  const url = `${apiDomain}/api/generate?data=${encodeURIComponent(text.toString())}&format=${type.toLowerCase()}&width=${width}&height=${height}&image_format=${format.toUpperCase()}&dpi=${dpi}&center_text=${showText}`;
 
   try {
     const response = await fetch(url);
