@@ -82,12 +82,19 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost",
-        "http://localhost:8000",
+        "http://localhost:3000",  # Add React development server
+        "http://localhost:8000", # Add FastAPI development server
         "https://thebarcodeapi.com"
     ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=[
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining",
+        "X-RateLimit-Reset"
+    ],
+    max_age=3600
 )
 
 async def log_pool_status():
@@ -103,6 +110,13 @@ async def log_pool_status():
 async def startup():
     logger.info("Starting up...")
     try:
+        # Add CORS origins to app state
+        app.state.cors_origins = [
+            "http://localhost",
+            "http://localhost:3000",
+            "http://localhost:8000",
+            "https://thebarcodeapi.com"
+        ]
         await init_db()
         await FastAPILimiter.init(redis_manager.redis)
         await initialize_redis_manager()
@@ -197,5 +211,17 @@ async def add_rate_limit_headers(request: Request, call_next):
     if hasattr(request.state, "rate_limit_headers"):
         for header, value in request.state.rate_limit_headers.items():
             response.headers[header] = value
+
+    return response
+
+# Add a custom middleware to ensure CORS headers are always present
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    origin = request.headers.get("origin")
+
+    if origin in app.state.cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
 
     return response
