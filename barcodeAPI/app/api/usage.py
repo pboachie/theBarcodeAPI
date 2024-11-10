@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from app.dependencies import get_current_user, get_client_ip
 from app.schemas import BatchPriority, UsageResponse, UserData
@@ -13,8 +13,30 @@ from typing import Dict, Any
 import logging
 from functools import lru_cache
 
-router = APIRouter(prefix="/usage", tags=["Usage"])
 logger = logging.getLogger(__name__)
+
+router = APIRouter(
+    prefix="/usage",
+    tags=["Usage Statistics"],
+    responses={
+        status.HTTP_404_NOT_FOUND: {
+            "description": "Resource not found",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Resource not found"}
+                }
+            }
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "Internal server error",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Internal server error occurred"}
+                }
+            }
+        }
+    }
+)
 
 RATE_LIMIT = 100 if settings.ENVIRONMENT == 'development' else 50
 
@@ -49,26 +71,126 @@ def create_usage_response(user_data: UserData, user_limits: int) -> Dict[str, An
         "reset_time": reset_time.isoformat()
     }
 
-@router.get("/metrics", summary="Get batch processing metrics", include_in_schema=False)
+@router.get(
+    "/metrics",
+    summary="Retrieve Batch Processing Metrics",
+    description="""
+    Get detailed metrics for batch processing operations and Redis status.
+
+    This endpoint provides:
+    - Current batch processing queue status
+    - Processing time statistics
+    - Redis connection health
+    - System resource utilization
+
+    Requires master key authentication.
+    """,
+    include_in_schema=False,
+    response_description="Detailed metrics for batch processing and system status",
+    responses={
+        200: {
+            "description": "Successful metrics retrieval",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "queue_size": 42,
+                        "processing_rate": 156.7,
+                        "average_processing_time": 0.31
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Invalid or missing master key",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid master key"}
+                }
+            }
+        }
+    }
+)
 async def get_metrics(
     redis_manager: RedisManager = Depends(get_redis_manager),
     _: None = Depends(verify_master_key),
     __: None = Depends(rate_limit(times=RATE_LIMIT, interval=1, period="second"))
 ):
-    """Get metrics for batch processing operations and Redis status"""
+    """
+    Retrieve detailed metrics for batch processing operations.
+
+    Dependencies:
+        - Redis manager for accessing metrics data
+        - Master key verification for security
+        - Rate limiting to prevent abuse
+
+    Returns:
+        JSONResponse: Metrics data including queue status and processing statistics
+
+    Raises:
+        HTTPException: If metrics retrieval fails or authentication is invalid
+    """
     try:
         return JSONResponse(
             content=await redis_manager.get_metrics(),
-            status_code=200
+            status_code=status.HTTP_200_OK
         )
     except Exception as e:
-        logger.error(f"Error retrieving metrics: {str(e)}")
+        logger.error(f"Metrics retrieval error: {str(e)}", exc_info=True)
         raise HTTPException(
-            status_code=500,
-            detail="Error retrieving metrics"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error retrieving metrics data"
         )
 
-@router.get("/", response_model=UsageResponse)
+@router.get(
+    "/",
+    response_model=UsageResponse,
+    summary="Get Current Usage Statistics",
+    description="""
+    Retrieve detailed usage statistics for the current user or IP address.
+
+    Provides:
+    - Number of requests made today
+    - Request limit based on user tier
+    - Remaining requests for current period
+    - Time until limit reset
+
+    Authentication:
+    - Authenticated users: Limits based on account tier
+    - Unauthenticated users: IP-based default limits
+
+    Rate limiting: 50 requests per second in production, 100 in development.
+    """,
+    response_description="Current usage statistics and limits",
+    responses={
+        200: {
+            "description": "Successful usage statistics retrieval",
+            "headers": {
+                "X-Rate-Limit-Requests": {
+                    "description": "Total requests allowed per day",
+                    "schema": {"type": "integer"}
+                },
+                "X-Rate-Limit-Remaining": {
+                    "description": "Remaining requests for current period",
+                    "schema": {"type": "integer"}
+                },
+                "X-Rate-Limit-Reset": {
+                    "description": "Seconds until limit reset",
+                    "schema": {"type": "integer"}
+                }
+            },
+            "content": {
+                "application/json": {
+                    "example": {
+                        "requests_today": 42,
+                        "requests_limit": 1000,
+                        "remaining_requests": 958,
+                        "reset_time": "2024-11-10T00:00:00Z"
+                    }
+                }
+            }
+        }
+    }
+)
 async def get_usage(
     request: Request,
     redis_manager: RedisManager = Depends(get_redis_manager),
@@ -76,15 +198,24 @@ async def get_usage(
     _: None = Depends(rate_limit(times=RATE_LIMIT, interval=1, period="second"))
 ):
     """
-    Retrieve usage statistics for the current user or IP address.
+    Get detailed usage statistics for the current user.
 
-    This endpoint returns the number of requests made today, the request limit,
-    and the remaining requests for the current period.
+    The endpoint manages usage tracking and limit enforcement:
+    - Tracks requests per day
+    - Enforces tier-based limits
+    - Handles automatic reset at midnight PST
+    - Provides detailed usage headers
 
-    - For authenticated users, the limit is based on their account tier.
-    - For unauthenticated users, a default limit is applied based on their IP address.
+    Args:
+        request: FastAPI request object
+        redis_manager: Redis connection manager
+        user_data: Current user data from authentication
 
-    Rate limited to 5 requests per second.
+    Returns:
+        JSONResponse: Usage statistics with rate limit headers
+
+    Raises:
+        HTTPException: For rate limit exceeded or server errors
     """
     try:
         current_time_pst = datetime.now(PST_TIMEZONE)
@@ -115,8 +246,8 @@ async def get_usage(
         )
 
     except Exception as ex:
-        logger.error("Usage retrieval error", exc_info=ex)
+        logger.error("Usage statistics error", exc_info=ex)
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error retrieving usage statistics"
         )

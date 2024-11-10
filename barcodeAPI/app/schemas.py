@@ -8,11 +8,20 @@ import json
 
 logger = logging.getLogger(__name__)
 
-class BatchPriority(Enum):
-    URGENT = "urgent" # 50ms
-    HIGH = "high" # 500ms
-    MEDIUM = "medium" # 1s
-    LOW = "low" # 2s
+class BatchPriority(str, Enum):
+    """
+    Priority levels for batch processing operations.
+
+    Attributes:
+        URGENT: Highest priority with 50ms target processing time
+        HIGH: High priority with 500ms target processing time
+        MEDIUM: Standard priority with 1s target processing time
+        LOW: Low priority with 2s target processing time
+    """
+    URGENT = "urgent"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
 
 class Token(BaseModel):
     access_token: str
@@ -21,8 +30,39 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import JSONResponse
+from typing import Dict, Any, Optional, List
+from enum import Enum
+import pytz
+from datetime import datetime, timedelta
+
+# Enhanced schema definitions with detailed documentation
+class BatchPriority(str, Enum):
+    """
+    Priority levels for batch processing operations.
+
+    Attributes:
+        URGENT: Highest priority with 50ms target processing time
+        HIGH: High priority with 500ms target processing time
+        MEDIUM: Standard priority with 1s target processing time
+        LOW: Low priority with 2s target processing time
+    """
+    URGENT = "urgent"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
 class BarcodeFormatEnum(str, Enum):
-    code128 = "code128" # Default
+    """
+    Supported barcode format types.
+
+    Each format has specific requirements and use cases:
+    - code128: General-purpose format supporting all 128 ASCII characters
+    - ean13: European Article Number (13 digits)
+    - code39: Alphanumeric format widely used in logistics
+    """
+    code128 = "code128"
     code39 = "code39"
     ean = "ean"
     ean13 = "ean13"
@@ -178,23 +218,107 @@ class BarcodeFormats(BaseModel):
     }
 
 class BarcodeRequest(BaseModel):
-    data: str = Field(..., description="The data to encode in the barcode")
-    format: BarcodeFormatEnum = Field(..., description="Barcode format")
-    width: int = Field(default=200, ge=50, le=600)
-    height: int = Field(default=100, ge=50, le=600)
-    module_width: Optional[float] = Field(None, description="The width of one barcode module in mm")
-    module_height: Optional[float] = Field(None, description="The height of the barcode modules in mm")
-    quiet_zone: Optional[float] = Field(None, description="Distance on the left and right from the border to the first/last barcode module in mm")
-    font_size: Optional[int] = Field(None, description="Font size of the text under the barcode in pt")
-    text_distance: Optional[float] = Field(None, description="Distance between the barcode and the text under it in mm")
-    background: Optional[str] = Field(None, description="The background color of the created barcode")
-    foreground: Optional[str] = Field(None, description="The foreground and text color of the created barcode")
-    center_text: Optional[bool] = Field(default=True, description="If true, the text is centered under the barcode; else left aligned")
-    image_format: BarcodeImageFormatEnum = Field(default=BarcodeImageFormatEnum.PNG, description="The image file format (e.g., PNG, JPEG, BMP)")
-    dpi: Optional[int] = Field(default=300, ge=130, le=600, description="DPI to calculate the image size in pixels")
-    add_checksum: Optional[bool] = Field(None, description="Add the checksum to code or not (for Code 39)")
-    no_checksum: Optional[bool] = Field(None, description="Do not add checksum (for EAN-13)")
-    guardbar: Optional[bool] = Field(None, description="Add guardbar (for EAN-13)")
+    """
+    Request model for barcode generation.
+
+    Attributes:
+        data: The content to be encoded in the barcode
+        format: The barcode format type (see BarcodeFormatEnum)
+        width: Barcode width in pixels (50-600)
+        height: Barcode height in pixels (50-600)
+        module_width: Width of a single barcode module in mm
+        quiet_zone: Margin space around the barcode in mm
+    """
+    data: str = Field(
+        ...,
+        description="Content to encode in the barcode",
+        example="123456789012",
+        min_length=1
+    )
+    format: BarcodeFormatEnum = Field(
+        ...,
+        description="Barcode format type",
+        example="ean13"
+    )
+    width: int = Field(
+        default=200,
+        ge=50,
+        le=600,
+        description="Width of the barcode image in pixels"
+    )
+    height: int = Field(
+        default=100,
+        ge=50,
+        le=600,
+        description="Height of the barcode image in pixels"
+    ),
+    module_width: Optional[float] = Field(
+        None,
+        description="Width of a single barcode module in mm"
+    ),
+    module_height: Optional[float] = Field(
+        None,
+        description="Height of the barcode modules in mm"
+    ),
+    quiet_zone: Optional[float] = Field(
+        None,
+        description="Margin space around the barcode in mm"
+    ),
+    font_size: Optional[int] = Field(
+        None,
+        description="Font size of the text under the barcode in pt"
+    ),
+    text_distance: Optional[float] = Field(
+        None,
+        description="Distance between the barcode and the text under it in mm"
+    ),
+    background: Optional[str] = Field(
+        None,
+        description="Background color of the barcode image"
+    ),
+    foreground: Optional[str] = Field(
+        None,
+        description="Foreground and text color of the barcode image"
+    ),
+    center_text: Optional[bool] = Field(
+        default=True,
+        description="Center the text under the barcode"
+    ),
+    image_format: BarcodeImageFormatEnum = Field(
+        default=BarcodeImageFormatEnum.PNG,
+        description="Image file format for the barcode image"
+    ),
+
+    dpi: Optional[int] = Field(
+        default=200,
+        ge=130,
+        le=600,
+        description="DPI for the barcode image"
+    ),
+    add_checksum: Optional[bool] = Field(
+        None,
+        description="Add the checksum to the barcode data"
+    ),
+    no_checksum: Optional[bool] = Field(
+        None,
+        description="Do not add checksum to the barcode data"
+    ),
+    guardbar: Optional[bool] = Field(
+        None,
+        description="Add guardbar to the barcode image"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "data": "123456789012",
+                "format": "ean13",
+                "width": 200,
+                "height": 100,
+                "module_width": 0.2,
+                "quiet_zone": 6.5
+            }
+        }
 
     @model_validator(mode='before')
     @classmethod
