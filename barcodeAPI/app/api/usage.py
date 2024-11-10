@@ -8,6 +8,7 @@ from app.config import settings
 from app.rate_limiter import rate_limit
 from app.redis import get_redis_manager
 from app.redis_manager import RedisManager
+from app.security import verify_master_key
 from datetime import datetime, timedelta
 import pytz
 import logging
@@ -21,7 +22,8 @@ logger = logging.getLogger(__name__)
     include_in_schema=False
 )
 async def get_metrics(
-    redis_manager: RedisManager = Depends(get_redis_manager)
+    redis_manager: RedisManager = Depends(get_redis_manager),
+    _: None = Depends(verify_master_key)
 ):
     """
     Get metrics for batch processing operations and Redis status
