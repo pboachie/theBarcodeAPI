@@ -1287,3 +1287,42 @@ class RedisManager:
                 "connection_pool": {},
                 "batch_processors": {}
             }
+
+    async def get_user_data_by_username(self, username: str) -> Optional[UserData]:
+        """Retrieve user data by username using batch processor"""
+        try:
+            # Add request to batch processor with high priority
+            batch_response = await self.batch_processor.add_to_batch(
+                "get_user_data",
+                username,
+                priority=BatchPriority.HIGH
+            )
+
+            if not batch_response:
+                logger.warning(f"No data found for username: {username}")
+                return None
+
+
+            # If response is already a UserData object
+            if isinstance(batch_response, UserData):
+                return batch_response
+
+            # Convert Redis hash to UserData object
+            if isinstance(batch_response, dict):
+                user_data_dict = {
+                    "id": int(batch_response.get("id", -1)),
+                    "username": batch_response.get("username", username),
+                    "ip_address": batch_response.get("ip_address", ""),
+                    "tier": batch_response.get("tier", "unauthenticated"),
+                    "requests_today": int(batch_response.get("requests_today", 0)),
+                    "remaining_requests": int(batch_response.get("remaining_requests", 0)),
+                    "last_request": datetime.fromisoformat(batch_response.get("last_request", datetime.now(pytz.UTC).isoformat())),
+                    "last_reset": datetime.fromisoformat(batch_response.get("last_reset", datetime.now(pytz.UTC).isoformat()))
+                }
+                return UserData(**user_data_dict)
+
+            logger.error(f"Unexpected response type for username {username}: {type(batch_response)}")
+            return None
+        except Exception as ex:
+            logger.error(f"Error retrieving user data for username {username}: {str(ex)}")
+            return None
