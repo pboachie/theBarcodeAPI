@@ -20,6 +20,7 @@ from app.config import settings
 from app.barcode_generator import BarcodeGenerationError
 from app.database import close_db_connection, init_db, get_db, engine
 from app.redis import redis_manager, close_redis_connection, initialize_redis_manager
+from app.schemas import SecurityScheme
 
 if settings.ENVIRONMENT == "production":
     logging.basicConfig(level=logging.INFO)
@@ -67,12 +68,12 @@ def custom_openapi():
     )
 
     openapi_schema["components"]["securitySchemes"] = {
-        "bearerAuth": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-        }
+        "bearerAuth": SecurityScheme().dict()
     }
+
+    for path in openapi_schema["paths"].values():
+        for method in path.values():
+            method["security"] = [{"bearerAuth": []}]
 
     app.openapi_schema = openapi_schema
     return app.openapi_schema
