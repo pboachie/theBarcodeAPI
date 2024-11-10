@@ -15,11 +15,11 @@ import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+rate_limit_val = 10000 if settings.ENVIRONMENT == 'development' else 50
 
 router = APIRouter(prefix="/api", tags=["Barcode Generator API"])
 
 @router.get("/generate")
-@rate_limit(times=10000 if settings.ENVIRONMENT == 'development' else 50, interval=1, period="second")
 async def generate_barcode(
     request: Request,
     data: str = Query(..., description="The data to encode in the barcode"),
@@ -40,7 +40,8 @@ async def generate_barcode(
     no_checksum: Optional[bool] = Query(None, description="Do not add checksum (for EAN-13)"),
     guardbar: Optional[bool] = Query(None, description="Add guardbar (for EAN-13)"),
     redis_manager: RedisManager = Depends(get_redis_manager),
-    current_user: UserData = Depends(get_current_user)
+    current_user: UserData = Depends(get_current_user),
+    _: None = Depends(rate_limit(times=rate_limit_val, interval=1, period="second"))
 ):
     """Generate a barcode image based on the provided parameters.
 
