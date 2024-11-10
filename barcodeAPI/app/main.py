@@ -116,6 +116,9 @@ async def log_pool_status():
 async def startup():
     logger.info("Starting up...")
     try:
+        if settings.ENVIRONMENT == "development":
+            gc.set_debug(gc.DEBUG_LEAK)
+
         # Add CORS origins to app state
         app.state.cors_origins = [
             "http://localhost",
@@ -123,11 +126,10 @@ async def startup():
             "http://localhost:8000", # Add FastAPI development server
             "https://thebarcodeapi.com"
         ]
-        await initialize_redis_manager()
 
+        await initialize_redis_manager()
         await init_db()
         await FastAPILimiter.init(redis_manager.redis)
-        # gc.set_debug(gc.DEBUG_LEAK)
 
         # Start the redis_manager in the background
         logger.info("Starting Redis manager in the background...")
