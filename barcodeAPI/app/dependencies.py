@@ -5,10 +5,9 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from typing import Optional, Union, Tuple
 from app.config import settings
-from app.schemas import UserData
+from app.schemas import UserData, BatchProcessorResponse, BatchPriority
 from app.redis import get_redis_manager
 from app.redis_manager import RedisManager
-from app.schemas import BatchPriority
 from datetime import datetime
 import logging
 import pytz
@@ -31,7 +30,7 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme),
     request: Request = None,
     redis_manager: RedisManager = Depends(get_redis_manager)
-) -> Union[UserData, Tuple[Optional[int], str]]:
+) -> UserData:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -42,14 +41,18 @@ async def get_current_user(
     if token is None:
         try:
             client_ip = await get_client_ip(request)
-            logger.info(f"Client IP: {client_ip}")
-            user_data = await redis_manager.batch_processor.add_to_batch(
+            logger.debug(f"Client IP: {client_ip}")
+
+            # Handle batch processor response properly
+            batch_response = await redis_manager.batch_processor.add_to_batch(
                 "get_user_data",
                 (client_ip,),
                 priority=BatchPriority.HIGH
             ) if client_ip else None
 
-            logger.info(f"User data: {user_data}")
+            user_data = batch_response if isinstance(batch_response, UserData) else None
+
+            logger.debug(f"User data: {user_data}")
 
             if not user_data:
                 user_data = UserData(

@@ -16,13 +16,13 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/token", tags=["Authentication"])
 
-@router.post("", response_model=Token, summary="Create access token")
+@router.post("", response_model=Token, summary="Create user access token", include_in_schema=False)
 async def login_for_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
     redis_manager: RedisManager = Depends(get_redis_manager),
-    _: bool = Depends(rate_limit(times=5, interval=5, period="minutes"))
+    _: None = Depends(rate_limit(times=5, interval=5, period="minutes"))
 ):
     """
     Create an access token for user authentication.
@@ -33,18 +33,6 @@ async def login_for_access_token(
     Rate limited to 5 requests per 5 minutes per IP address.
     """
     try:
-        # # Check IP-based rate limit
-        # client_ip = request.client.host
-        # ip_limit_key = f"ip_token_limit:{client_ip}"
-        # ip_request_count = await redis_manager.redis.incr(ip_limit_key)
-        # if ip_request_count == 1:
-        #     await redis_manager.redis.expire(ip_limit_key, 300)  # 5 minutes
-        # if ip_request_count > 5:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        #         detail="Too many token requests. Please try again later.",
-        #     )
-
         async with db.begin():
             result = await db.execute(select(User).filter(User.username == form_data.username))
             user = result.scalar_one_or_none()
@@ -62,11 +50,11 @@ async def login_for_access_token(
         await db.close()
 
 # Rate limit all other endpoints to 1 request per 15 minutes
-@router.get("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed")
-@router.put("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed")
-@router.delete("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed")
+@router.get("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed", include_in_schema=False)
+@router.put("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed", include_in_schema=False)
+@router.delete("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed", include_in_schema=False)
 async def invalid_token_methods(
-    _: bool = Depends(rate_limit(times=1, interval=15, period="minutes"))
+    _: None = Depends(rate_limit(times=1, interval=15, period="minutes"))
 ):
     """
     These methods are not allowed for the token endpoint.

@@ -15,11 +15,11 @@ import logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+rate_limit_val = 10000 if settings.ENVIRONMENT == 'development' else 50
 
-router = APIRouter(prefix="/api", tags=["Barcode Generator API"])
+router = APIRouter(prefix="/api", tags=["Barcodes"])
 
 @router.get("/generate")
-@rate_limit(times=10000 if settings.ENVIRONMENT == 'development' else 50, interval=1, period="second")
 async def generate_barcode(
     request: Request,
     data: str = Query(..., description="The data to encode in the barcode"),
@@ -40,10 +40,10 @@ async def generate_barcode(
     no_checksum: Optional[bool] = Query(None, description="Do not add checksum (for EAN-13)"),
     guardbar: Optional[bool] = Query(None, description="Add guardbar (for EAN-13)"),
     redis_manager: RedisManager = Depends(get_redis_manager),
-    current_user: UserData = Depends(get_current_user)
+    current_user: UserData = Depends(get_current_user),
+    _: None = Depends(rate_limit(times=rate_limit_val, interval=1, period="second"))
 ):
-    """
-    Generate a barcode image based on the provided parameters.
+    """Generate a barcode image based on the provided parameters.
 
     This endpoint creates a barcode image and returns it as a PNG.
     Usage is tracked and limited based on the user's authentication status and tier.
@@ -54,7 +54,6 @@ async def generate_barcode(
     Rate limited to 1000 requests per second.
     """
     try:
-        # Create BarcodeRequest object from query parameters
         barcode_request = BarcodeRequest(
             data=data,
             format=format,
@@ -78,10 +77,9 @@ async def generate_barcode(
         # Get client IP
         ip_address = await get_client_ip(request)
 
-        # Handle user_data properly
         if isinstance(current_user, tuple):
             user_id, _ = current_user
-            # Create a default UserData object for unauthenticated users
+
             user_data = UserData(
                 id=user_id if user_id else -1,
                 username=f"ip:{ip_address}",
@@ -102,9 +100,9 @@ async def generate_barcode(
             )
 
         # Get writer options and generate barcode
-        writer_options = barcode_request.get_writer_options()  # Fixed: Using instance method
+        writer_options = barcode_request.get_writer_options()
         try:
-            barcode_image = await generate_barcode_image(barcode_request, writer_options)  # Fixed: Passing instance
+            barcode_image = await generate_barcode_image(barcode_request, writer_options)
         except BarcodeGenerationError as e:
             logger.error(f"Barcode generation error: {str(e)}")
             raise HTTPException(status_code=400, detail=str(e))
@@ -142,7 +140,7 @@ async def generate_barcode(
         )
 
     except ValidationError as e:
-        logger.error(f"Validation error: {e.errors()}")  # Changed to use errors() method
+        logger.error(f"Validation error: {e.errors()}")
         raise HTTPException(
             status_code=400,
             detail={"message": "Validation error", "errors": e.errors()}

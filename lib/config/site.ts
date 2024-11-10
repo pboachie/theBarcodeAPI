@@ -7,9 +7,9 @@ export const siteConfig = {
     footer: {
       navigation: [
         { href: '/', label: 'Home' },
-        { href: '/mass-generate', label: 'Mass Generate' },
+        { href: '/mass-generate', label: 'Upload', longLabel: 'Mass Generate' },
         { href: '/docs', label: 'Docs', longLabel: 'API Documentation' },
-        { href: '/contact', label: 'Contact Us' }
+        { href: '/support', label: 'Support' }
       ],
       social: [
         {
@@ -18,8 +18,8 @@ export const siteConfig = {
           platform: 'twitter'
         },
         {
-          href: "mailto:info@thebarcodeapi.com",
-          label: "Contact us via email",
+          href: "mailto:support@thebarcodeapi.com",
+          label: "Contact Support via Email",
           platform: 'email'
         }
       ]
