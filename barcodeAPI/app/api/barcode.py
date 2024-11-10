@@ -17,7 +17,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 rate_limit_val = 10000 if settings.ENVIRONMENT == 'development' else 50
 
-router = APIRouter(prefix="/api", tags=["Barcode Generator API"])
+router = APIRouter(prefix="/api", tags=["Barcodes"])
 
 @router.get("/generate")
 async def generate_barcode(

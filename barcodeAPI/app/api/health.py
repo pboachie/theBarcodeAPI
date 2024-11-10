@@ -16,12 +16,12 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/health", tags=["Barcode Generator API System Health"])
+router = APIRouter(prefix="/health", tags=["System Health"])
 
 last_check_time = datetime.min
 cached_health_response = None
 
-@router.get("", response_model=HealthResponse, summary="Check system health")
+@router.get("", response_model=HealthResponse, summary="Check Server Status")
 async def health_check(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),

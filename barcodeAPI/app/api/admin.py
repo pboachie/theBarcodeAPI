@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.get("/admin/users", response_model=UsersResponse)
+@router.get("/admin/users", response_model=UsersResponse, include_in_schema=False)
 async def get_users(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
@@ -77,7 +77,7 @@ async def get_users(
     finally:
         await db.close()
 
-@router.post("/admin/users", response_model=UserCreatedResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/admin/users", response_model=UserCreatedResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 async def create_user(
     user: UserCreate,
     db: AsyncSession = Depends(get_db),
@@ -153,7 +153,7 @@ async def create_user(
             detail=str(e)
         )
 
-@router.post("/admin/sync-db")
+@router.post("/admin/sync-db", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
 async def sync_database(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),

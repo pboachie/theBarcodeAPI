@@ -356,4 +356,9 @@ class BarcodeGenerationError(Exception):
         self.error_type = error_type
         super().__init__(self.message)
 
+class SecurityScheme(BaseModel):
+    type: str = "http"
+    scheme: str = "bearer"
+    bearerFormat: str = "JWT"
+
 
