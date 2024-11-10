@@ -46,7 +46,7 @@ def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options
 
         # Open the image using Pillow(-SIMD)
         buffer.seek(0)
-        img = Image.open(buffer)
+        img = PIL.Image.open(buffer)
 
         # Validate DPI
         if barcode_request.dpi > 600:
@@ -54,7 +54,7 @@ def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options
             barcode_request.dpi = 600
 
         # Resize the image
-        img = img.resize((barcode_request.width, barcode_request.height), Image.LANCZOS)
+        img = img.resize((barcode_request.width, barcode_request.height), PIL.Image.LANCZOS)
 
         # Save the resized image to a new buffer
         try:

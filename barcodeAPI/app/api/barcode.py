@@ -77,23 +77,8 @@ async def generate_barcode(
         # Get client IP
         ip_address = await get_client_ip(request)
 
-        if isinstance(current_user, tuple):
-            user_id, _ = current_user
-
-            user_data = UserData(
-                id=user_id if user_id else -1,
-                username=f"ip:{ip_address}",
-                ip_address=ip_address,
-                tier="unauthenticated",
-                remaining_requests=settings.RateLimit.get_limit("unauthenticated"),
-                requests_today=0,
-                last_reset=datetime.now(pytz.utc)
-            )
-        else:
-            user_data = current_user
-
         # Check remaining requests
-        if user_data.remaining_requests <= 0:
+        if current_user.remaining_requests <= 0:
             raise HTTPException(
                 status_code=429,
                 detail="Rate limit exceeded. Please try again later."
@@ -108,7 +93,7 @@ async def generate_barcode(
             raise HTTPException(status_code=400, detail=str(e))
 
         # Update usage in Redis
-        updated_user_data = await redis_manager.increment_usage(user_id=user_data.id, ip_address=ip_address)
+        updated_user_data = await redis_manager.increment_usage(user_id=current_user.id, ip_address=ip_address)
         if not updated_user_data:
             logger.error("Error updating usage in Redis")
             raise HTTPException(
