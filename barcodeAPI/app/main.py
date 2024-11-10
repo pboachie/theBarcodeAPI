@@ -2,6 +2,7 @@
 
 import asyncio
 import gc
+import io
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -113,8 +114,8 @@ async def startup():
         # Add CORS origins to app state
         app.state.cors_origins = [
             "http://localhost",
-            "http://localhost:3000",
-            "http://localhost:8000",
+            "http://localhost:3000", # Add React development server
+            "http://localhost:8000", # Add FastAPI development server
             "https://thebarcodeapi.com"
         ]
         await init_db()

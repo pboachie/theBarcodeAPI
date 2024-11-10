@@ -8,17 +8,10 @@ from barcode.errors import BarcodeError
 from app.schemas import BarcodeRequest
 from typing import Dict
 import logging
+import PIL.Image
+from PIL import Image
 
 logger = logging.getLogger(__name__)
-
-# Try to import Pillow-SIMD, fall back to regular Pillow if not available
-try:
-    import PIL.Image
-    from PIL import Image
-    logger.info("Using Pillow-SIMD for image processing")
-except ImportError:
-    from PIL import Image
-    logger.warning("Pillow-SIMD not found, falling back to regular Pillow")
 
 
 class BarcodeGenerationError(Exception):
@@ -52,9 +45,6 @@ def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options
                 barcode_options['no_checksum'] = writer_options['no_checksum']
             if 'guardbar' in writer_options:
                 barcode_options['guardbar'] = writer_options['guardbar']
-        else:
-            # Other barcode formats do not have additional options to
-            pass
 
         barcode = barcode_class(barcode_request.data, writer=writer, **barcode_options)
 
@@ -74,15 +64,16 @@ def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options
         img = img.resize((barcode_request.width, barcode_request.height), Image.LANCZOS)
 
         # Save the resized image to a new buffer
-        new_buffer = BytesIO()
-        img.save(new_buffer, format=writer_options.get('image_format', 'PNG'), optimize=True)
-        new_buffer.seek(0)
-
-        # Close and delete the original image
-        img.close()
-        del img
-
-        return new_buffer.getvalue()
+        try:
+            with BytesIO() as new_buffer:
+                img.save(new_buffer, format=writer_options.get('image_format', 'PNG'), optimize=True)
+                new_buffer.seek(0)
+                return new_buffer.getvalue()
+        except Exception as e:
+            raise BarcodeGenerationError(f"Error generating barcode: {str(e)}", "UnexpectedError")
+        finally:
+            img.close()
+            buffer.close()
 
     except BarcodeError as e:
         logger.error(f"Barcode generation error: {str(e)}")
