@@ -55,15 +55,7 @@ async def get_current_user(
             logger.debug(f"User data: {user_data}")
 
             if not user_data:
-                user_data = UserData(
-                    id=-1,
-                    username=f"ip:{client_ip}",
-                    tier="unauthenticated",
-                    ip_address=client_ip,
-                    remaining_requests=settings.RateLimit().get_limit("unauthenticated"),
-                    requests_today=0,
-                    last_reset=datetime.now(pytz.utc)
-                )
+                user_data = await redis_manager.create_default_user_data(client_ip)
 
                 # Store user data in Redis
                 await redis_manager.set_user_data(user_data.json())
