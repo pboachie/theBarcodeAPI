@@ -7,7 +7,7 @@ export const siteConfig = {
     footer: {
       navigation: [
         { href: '/', label: 'Home' },
-        { href: '/mass-generate', label: 'Mass Generate' },
+        { href: '/mass-generate', label: 'Upload', longLabel: 'Mass Generate' },
         { href: '/docs', label: 'Docs', longLabel: 'API Documentation' },
         { href: '/contact', label: 'Contact Us' }
       ],
