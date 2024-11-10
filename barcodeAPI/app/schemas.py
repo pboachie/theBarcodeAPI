@@ -1,6 +1,6 @@
 # app/schemas.py
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from enum import Enum
 from datetime import datetime
 import logging
@@ -344,4 +344,9 @@ class DetailedHealthResponse(BaseModel):
     database_status: Optional[str] = None
     redis_status: Optional[str] = None
     redis_details: Optional[RedisConnectionStats] = None
+
+class BatchProcessorResponse(BaseModel):
+    """Model for batch processor responses"""
+    result: Optional[Any] = None
+    error: Optional[str] = None
 
