@@ -50,7 +50,7 @@ async def get_current_user(
                 priority=BatchPriority.HIGH
             ) if client_ip else None
 
-            user_data = batch_response.result if isinstance(batch_response, BatchProcessorResponse) else None
+            user_data = batch_response if isinstance(batch_response, UserData) else None
 
             logger.debug(f"User data: {user_data}")
 
