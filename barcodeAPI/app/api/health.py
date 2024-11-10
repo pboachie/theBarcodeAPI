@@ -1,19 +1,17 @@
 # app/api/health.py
 
 from fastapi import APIRouter, Depends, BackgroundTasks
-from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from redis.asyncio import Redis
 from app.schemas import HealthResponse, DetailedHealthResponse
 from app.config import settings
 from app.database import get_db, AsyncSessionLocal
 from app.redis import get_redis_manager
 from app.redis_manager import RedisManager
+from app.rate_limiter import rate_limit
 from app.security import verify_master_key
 import logging
 import psutil
-import os
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
@@ -23,16 +21,12 @@ router = APIRouter(prefix="/health", tags=["Barcode Generator API System Health"
 last_check_time = datetime.min
 cached_health_response = None
 
-async def get_rate_limit():
-    """Simple rate limit check that doesn't require request parameters"""
-    return True
-
 @router.get("", response_model=HealthResponse, summary="Check system health")
+@rate_limit(times=3, interval=30, period="second")
 async def health_check(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    redis_manager: RedisManager = Depends(get_redis_manager),
-    _: bool = Depends(get_rate_limit)
+    redis_manager: RedisManager = Depends(get_redis_manager)
 ):
     """
     Perform a basic health check on the system.
@@ -84,11 +78,11 @@ async def health_check(
             redis_status="error"
         )
 
-@router.get("/detailed", response_model=DetailedHealthResponse, summary="Detailed system health check")
+@router.get("/detailed", response_model=DetailedHealthResponse, summary="Detailed system health check", include_in_schema=False)
+@rate_limit(times=3, interval=30, period="second")
 async def get_detailed_health(
     redis_manager: RedisManager = Depends(get_redis_manager),
     _: None = Depends(verify_master_key),
-    __: bool = Depends(get_rate_limit)
 ):
     """
     Retrieve the results of the latest detailed health check.
