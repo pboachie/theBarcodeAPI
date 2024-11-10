@@ -42,7 +42,7 @@ async def get_metrics(
         )
 
 @router.get("/", response_model=UsageResponse)
-@rate_limit(times=10000 if settings.ENVIRONMENT == 'development' else 30, interval=1, period="second")
+@rate_limit(times=10000 if settings.ENVIRONMENT == 'development' else 5, interval=1, period="second")
 async def get_usage(
     request: Request,
     redis_manager: RedisManager = Depends(get_redis_manager),
@@ -57,7 +57,7 @@ async def get_usage(
     - For authenticated users, the limit is based on their account tier.
     - For unauthenticated users, a default limit is applied based on their IP address.
 
-    Rate limited to 30 requests per minute.
+    Rate limited to 5 requests per second.
     """
     try:
         # Check and reset usage if necessary
