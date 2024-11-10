@@ -17,12 +17,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/token", tags=["Authentication"])
 
 @router.post("", response_model=Token, summary="Create user access token", include_in_schema=False)
-@rate_limit(times=5, interval=5, period="minutes")
 async def login_for_access_token(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
-    redis_manager: RedisManager = Depends(get_redis_manager)
+    redis_manager: RedisManager = Depends(get_redis_manager),
+    _: None = Depends(rate_limit(times=5, interval=5, period="minutes"))
 ):
     """
     Create an access token for user authentication.
@@ -53,8 +53,8 @@ async def login_for_access_token(
 @router.get("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed", include_in_schema=False)
 @router.put("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed", include_in_schema=False)
 @router.delete("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed", include_in_schema=False)
-@rate_limit(times=1, interval=15, period="minutes")
 async def invalid_token_methods(
+    _: None = Depends(rate_limit(times=1, interval=15, period="minutes"))
 ):
     """
     These methods are not allowed for the token endpoint.

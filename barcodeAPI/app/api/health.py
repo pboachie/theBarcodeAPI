@@ -22,11 +22,11 @@ last_check_time = datetime.min
 cached_health_response = None
 
 @router.get("", response_model=HealthResponse, summary="Check system health")
-@rate_limit(times=3, interval=30, period="second")
 async def health_check(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    redis_manager: RedisManager = Depends(get_redis_manager)
+    redis_manager: RedisManager = Depends(get_redis_manager),
+    _: None = Depends(rate_limit(times=3, interval=30, period="second"))
 ):
     """
     Perform a basic health check on the system.
@@ -79,10 +79,10 @@ async def health_check(
         )
 
 @router.get("/detailed", response_model=DetailedHealthResponse, summary="Detailed system health check", include_in_schema=False)
-@rate_limit(times=3, interval=30, period="second")
 async def get_detailed_health(
     redis_manager: RedisManager = Depends(get_redis_manager),
     _: None = Depends(verify_master_key),
+    __: None = Depends(rate_limit(times=3, interval=30, period="second"))
 ):
     """
     Retrieve the results of the latest detailed health check.
