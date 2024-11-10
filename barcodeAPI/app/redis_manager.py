@@ -1095,7 +1095,7 @@ class RedisManager:
     async def sync_to_database(self, db: AsyncSession):
         """Synchronize Redis data to database with hash structure"""
         try:
-            all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, [], [])
+            all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0)
 
             async with db.begin():
                 for data in all_user_data:
