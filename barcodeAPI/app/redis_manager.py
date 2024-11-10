@@ -1,7 +1,8 @@
+import traceback
 from redis.asyncio import Redis
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import logging
@@ -9,9 +10,9 @@ import pytz
 import asyncio
 import ipaddress
 import gc
-from enum import Enum
-from collections import defaultdict
 import time
+from json import JSONDecodeError
+import json
 
 from app.config import settings
 from app.schemas import BatchPriority, UserData, RedisConnectionStats
@@ -839,31 +840,57 @@ class RedisManager:
             return item.get('ip_address', "unknown")
         return str(item)
 
-    async def set_user_data(self, user_data: UserData) -> bool:
-        """Set user data directly using hash fields"""
+    async def set_user_data(self, user_data_str: Union[str, UserData]) -> bool:
+        """Set user data in Redis"""
         try:
-            key = self._get_key(user_data.id, user_data.ip_address)
-            current_time = datetime.now(pytz.utc)
+            # Convert string to UserData if needed
+            if isinstance(user_data_str, str):
+                try:
+                    user_data_dict = json.loads(user_data_str)
+                    current_time = datetime.now(pytz.UTC)
+                    user_data_dict.setdefault('last_request', current_time.isoformat())
+                    user_data_dict.setdefault('last_reset', current_time.isoformat())
+                    user_data = UserData(**user_data_dict)
+                except (JSONDecodeError, ValueError) as e:
+                    logger.error(f"Invalid JSON string for user data: {e}")
+                    return False
+            elif isinstance(user_data_str, UserData):
+                user_data = user_data_str
+            else:
+                logger.error(f"Invalid user_data type: {type(user_data_str)}")
+                return False
 
-            mapping = {
-                "id": str(user_data.id),
-                "ip_address": str(user_data.ip_address),
-                "username": str(user_data.username),
-                "tier": str(user_data.tier),
-                "requests_today": str(user_data.requests_today),
-                "remaining_requests": str(user_data.remaining_requests),
-                "last_request": user_data.last_request.isoformat() if user_data.last_request else current_time.isoformat(),
-                "last_reset": user_data.last_reset.isoformat() if user_data.last_reset else current_time.isoformat()
-            }
+            # Validate dates and set defaults if needed
+            if not user_data.last_request:
+                user_data.last_request = datetime.now(pytz.UTC)
+            if not user_data.last_reset:
+                user_data.last_reset = datetime.now(pytz.UTC)
 
-            async with self.get_pipeline() as pipe:
-                pipe.hset(key, mapping=mapping)
-                pipe.expire(key, 86400)  # Set expiration for 24 hours
-                results = await pipe.execute()
-                return bool(results[0])
+            # Create key based on user type
+            key = f"user_data:{user_data.id}" if user_data.id != -1 else f"ip:{user_data.ip_address}"
 
-        except Exception as ex:
-            logger.error(f"Error in set_user_data: {str(ex)}")
+            # Store data in Redis hash
+            async with self.redis.pipeline() as pipe:
+                await pipe.hset(
+                    key,
+                    mapping={
+                        "id": str(user_data.id),
+                        "username": user_data.username or f"ip:{user_data.ip_address}",
+                        "ip_address": user_data.ip_address,
+                        "tier": user_data.tier or "unauthenticated",
+                        "requests_today": str(user_data.requests_today or 0),
+                        "remaining_requests": str(user_data.remaining_requests or settings.RateLimit.get_limit("unauthenticated")),
+                        "last_request": user_data.last_request.isoformat(),
+                        "last_reset": user_data.last_reset.isoformat()
+                    }
+                )
+                await pipe.execute()
+
+            logger.debug(f"Successfully set user data for {key}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in set_user_data: {str(e)}")
             return False
 
     async def get_user_data(self, user_id: Optional[int], ip_address: str) -> UserData:
