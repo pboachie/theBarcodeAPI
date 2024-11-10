@@ -1,15 +1,22 @@
 // app/page.tsx
 
-'use client';
-
 import React from 'react';
 import dynamic from 'next/dynamic';
+import { Metadata } from 'next';
 
-// Dynamically import BarcodeGenerator to avoid SSR issues with window/navigator
 const BarcodeGenerator = dynamic(
   () => import('@/components/barcode/BarcodeGenerator'),
   { ssr: false }
 );
+
+export const metadata: Metadata = {
+  title: 'Barcode Generator',
+  description: 'Generate barcodes quickly and easily with our free online tool',
+  openGraph: {
+    title: 'Barcode Generator | The Barcode API',
+    description: 'Generate barcodes quickly and easily with our free online tool',
+  },
+};
 
 export default function BarcodePage() {
   return (
