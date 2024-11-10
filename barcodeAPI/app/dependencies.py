@@ -1,18 +1,18 @@
 # app/dependencies.py
+import logging
+from datetime import datetime
 
-from fastapi import Depends, HTTPException, status, Request
+import pytz
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
-from typing import Optional, Union, Tuple
+from redis.exceptions import RedisError
+from typing import Optional, Tuple, Union
+
 from app.config import settings
-from app.schemas import UserData, BatchProcessorResponse, BatchPriority
 from app.redis import get_redis_manager
 from app.redis_manager import RedisManager
-from datetime import datetime
-import logging
-import pytz
-import json
-from redis.exceptions import RedisError
+from app.schemas import BatchPriority, UserData
 
 logger = logging.getLogger(__name__)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
