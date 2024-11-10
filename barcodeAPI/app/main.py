@@ -21,7 +21,11 @@ from app.barcode_generator import BarcodeGenerationError
 from app.database import close_db_connection, init_db, get_db, engine
 from app.redis import redis_manager, close_redis_connection, initialize_redis_manager
 
-logging.basicConfig(level=logging.INFO)
+if settings.ENVIRONMENT == "production":
+    logging.basicConfig(level=logging.INFO)
+else:
+    logging.basicConfig(level=logging.DEBUG)
+
 logger = logging.getLogger(__name__)
 
 class CustomServerHeaderMiddleware(BaseHTTPMiddleware):
