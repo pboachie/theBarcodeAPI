@@ -5,20 +5,13 @@ from io import BytesIO
 from barcode import get_barcode_class
 from barcode.writer import ImageWriter
 from barcode.errors import BarcodeError
-from app.schemas import BarcodeRequest
+from app.schemas import BarcodeRequest, BarcodeGenerationError
 from typing import Dict
 import logging
 import PIL.Image
 from PIL import Image
 
 logger = logging.getLogger(__name__)
-
-
-class BarcodeGenerationError(Exception):
-    def __init__(self, message, error_type):
-        self.message = message
-        self.error_type = error_type
-        super().__init__(self.message)
 
 
 async def generate_barcode_image(barcode_request: BarcodeRequest, writer_options: Dict[str, any]) -> bytes:
