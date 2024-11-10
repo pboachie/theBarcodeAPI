@@ -3,6 +3,7 @@ import logging
 from datetime import datetime
 
 import pytz
+import asyncio
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -59,6 +60,13 @@ async def get_current_user(
 
                 # Store user data in Redis
                 await redis_manager.set_user_data(user_data.json())
+
+                # Background task to store user data in the database
+                asyncio.create_task(redis_manager.batch_processor.add_to_batch(
+                    "store_user_data_db",
+                    (user_data.json(),),
+                    priority=BatchPriority.LOW
+                ))
         except RedisError as e:
             logger.error(f"Redis error: {e}")
             raise HTTPException(status_code=503, detail="Service Unavailable")
