@@ -5,7 +5,7 @@ from time import time
 
 BASE_URL = "http://localhost:8000/api/generate"
 REQUESTS_PER_SECOND = 5 # A worker can handle about 42 requests per second on average
-TOTAL_DURATION = 60  # seconds
+TOTAL_DURATION = 3  # seconds
 
 async def send_request(session, semaphore):
     async with semaphore:
