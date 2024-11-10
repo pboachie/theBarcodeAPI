@@ -1082,20 +1082,20 @@ class RedisManager:
             async with db.begin():
                 for index, data in enumerate(all_user_data):
                     try:
-                        key_type, key_id = data[0].decode(), data[1].decode()
+                        key_type, key_id = data[0], data[1]
                         logger.debug(f"Processing record {index + 1}: key_type={key_type}, key_id={key_id}")
                         user_data_dict = {}
 
                         # Convert field-value pairs to dict
                         for field_data in data[2:]:
-                            field = field_data[0].decode()
-                            value = field_data[1].decode()
+                            field = field_data[0]
+                            value = field_data[1]
 
                             logger.debug(f"Field: {field}, Value: {value}")
 
                             # Convert numeric fields
                             if field in ["requests_today", "remaining_requests", "id"]:
-                                value = int(value)
+                                value = int(value) or value
                             # Convert datetime fields
                             elif field in ["last_request", "last_reset"]:
                                 value = datetime.fromisoformat(value)
