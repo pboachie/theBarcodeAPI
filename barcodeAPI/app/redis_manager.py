@@ -739,26 +739,6 @@ class RedisManager:
             for _, batch_id in items:
                 self._cleanup_future(batch_id, self._get_default_value(operation))
 
-    async def _batch_batches(self):
-        """Main batch processing loop"""
-        logger.info(f"Starting batch processor with interval {self.interval:.3f}s")
-        while not self._stopping:
-            try:
-                sleep_time = min(self.interval / 4, 0.05) if self.interval > 0.05 else 0.01
-                await asyncio.sleep(sleep_time)
-
-                if not self.batch or self.processing:
-                    continue
-
-                current_time = time.time()
-                if current_time - self.last_batch_time >= self.interval:
-                    async with self._processing_lock:
-                        await self._batch_current_batch()
-
-            except Exception as ex:
-                logger.error(f"Error in _batch_batches: {str(ex)}")
-                await asyncio.sleep(0.01)
-
     async def _batch_current_batch(self):
         """Process the current batch of operations with error handling"""
         if not self.batch:
@@ -787,7 +767,7 @@ class RedisManager:
 
         except Exception as ex:
             logger.error(f"Error processing batch: {str(ex)}\n{traceback.format_exc()}")
-            self._handle_batch_error(current_batch)
+            self.batch_processor._handle_batch_error(current_batch)
         finally:
             self.processing = False
             self.last_batch_time = time.time()
@@ -1094,19 +1074,24 @@ class RedisManager:
 
     async def sync_to_database(self, db: AsyncSession):
         """Synchronize Redis data to database with hash structure"""
+        logger.debug("Starting sync_to_database process.")
         try:
             all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0)
+            logger.debug(f"Retrieved {len(all_user_data)} user data records from Redis.")
 
             async with db.begin():
-                for data in all_user_data:
+                for index, data in enumerate(all_user_data):
                     try:
                         key_type, key_id = data[0].decode(), data[1].decode()
+                        logger.debug(f"Processing record {index + 1}: key_type={key_type}, key_id={key_id}")
                         user_data_dict = {}
 
                         # Convert field-value pairs to dict
                         for field_data in data[2:]:
                             field = field_data[0].decode()
                             value = field_data[1].decode()
+
+                            logger.debug(f"Field: {field}, Value: {value}")
 
                             # Convert numeric fields
                             if field in ["requests_today", "remaining_requests", "id"]:
@@ -1116,6 +1101,8 @@ class RedisManager:
                                 value = datetime.fromisoformat(value)
 
                             user_data_dict[field] = value
+
+                        logger.debug(f"Parsed user data: {user_data_dict}")
 
                         # Create Usage record
                         usage = Usage(
@@ -1127,14 +1114,15 @@ class RedisManager:
                             tier=user_data_dict.get("tier", "unauthenticated")
                         )
                         db.add(usage)
+                        logger.debug(f"Added Usage record for user_id={usage.user_id}")
                     except Exception as ex:
-                        logger.error(f"Error processing user data record: {ex}")
+                        logger.error(f"Error processing user data record {index + 1}: {ex}", exc_info=True)
                         continue
 
                 await db.commit()
-            logger.info("Redis data synced to database successfully")
+                logger.info("Redis data synced to database successfully.")
         except Exception as ex:
-            logger.error(f"Error syncing Redis data to database: {str(ex)}")
+            logger.error(f"Error syncing Redis data to database: {str(ex)}", exc_info=True)
             raise
 
     async def sync_all_username_mappings(self, db: AsyncSession):
