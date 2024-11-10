@@ -1,4 +1,4 @@
-// types.ts
+// components/types/barcode.ts
 
 export type BarcodeType = typeof barcodeTypes[number];
 export type ImageFormat = typeof imageFormats[number];

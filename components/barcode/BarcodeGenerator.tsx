@@ -9,7 +9,7 @@ import { BarcodeControls } from './BarcodeControls';
 import { BarcodeDisplay } from './BarcodeDisplay';
 import { useToast } from '@/components/ui/use-toast';
 import packageJson from '../../package.json';
-import { BarcodeType, ImageFormat } from './types';
+import { BarcodeType, ImageFormat } from '@/components/types/barcode';
 import { cleanupBarcodeUrl, generateBarcode } from './barcodeService';
 import { ApiCallDisplay } from './ApiCallDisplay';
 import { ActionButtons } from './ActionButtons';
@@ -104,7 +104,9 @@ const BarcodeGenerator: React.FC = () => {
                 );
                 if (url) {
                     setBarcodeUrl(url);
-                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`);
+                    setApiCallUrl(
+                        `/api/generate?data=${encodeURIComponent(displayText)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`
+                    );
                 }
             }
         }, 420);
@@ -135,14 +137,14 @@ const BarcodeGenerator: React.FC = () => {
                 );
                 if (url) {
                     setBarcodeUrl(url);
-                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${barcodeType}&width=${barcodeWidth}&height=${barcodeHeight}&image_format=${imageFormat}&dpi=${dpi}¢er_text=${showText}`);
+                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${barcodeType}&width=${barcodeWidth}&height=${barcodeHeight}&image_format=${imageFormat}&dpi=${dpi}&center_text=${showText}`);
                 }
             }
             setIsLoading(false);
         };
 
         initializeBarcode();
-    }, []);
+    }, [barcodeType, barcodeText, barcodeWidth, barcodeHeight, imageFormat, dpi, showText, isLimitExceeded]); // Added dependencies
     useEffect(() => {
         debouncedUpdateBarcode(
             barcodeType,
