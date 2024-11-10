@@ -1138,35 +1138,34 @@ class RedisManager:
             raise
 
     async def sync_all_username_mappings(self, db: AsyncSession):
-        """Synchronize username mappings from database to Redis using hashes"""
+        """Synchronize all username mappings into Redis"""
         try:
-            async with db.begin():
-                result = await db.execute(select(User))
+            async with db as session:
+                result = await session.execute(select(User))
                 users = result.scalars().all()
-                current_time = datetime.now(pytz.utc)
 
-                async with self.get_pipeline() as pipe:
-                    for user in users:
-                        key = self._get_key(user.id, user.ip_address)
-                        # Create complete hash for each user
-                        mapping = {
-                            "id": str(user.id),
-                            "username": user.username,
-                            "ip_address": user.ip_address,
-                            "tier": user.tier,
-                            "requests_today": "0",
-                            "remaining_requests": str(settings.RateLimit.get_limit(user.tier)),
-                            "last_request": current_time.isoformat(),
-                            "last_reset": current_time.isoformat()
-                        }
-                        pipe.hset(key, mapping=mapping)
-                        pipe.expire(key, 86400)
+            async with self.get_pipeline() as pipe:
+                for user in users:
+                    key = f"username:{user.username or ''}"
+                    mapping = {}
 
-                    await pipe.execute()
+                    if user.id is not None:
+                        mapping["id"] = str(user.id)
+                    if user.username:
+                        mapping["username"] = user.username
+                    if user.tier:
+                        mapping["tier"] = user.tier
+                    # if user.api_key:
+                    #     mapping["api_key"] = user.api_key
 
-            logger.info("Username mappings synced successfully")
+                    if mapping:
+                        await pipe.hmset(key, mapping)
+                    else:
+                        logger.warning(f"No valid data to sync for user with ID {user.id}")
+                await pipe.execute()
+            logger.info("Username mappings synchronized successfully")
         except Exception as ex:
-            logger.error(f"Error syncing username mappings: {str(ex)}")
+            logger.error(f"Error syncing username mappings: {ex}")
             raise
 
     async def token_management(self, user_id: int, operation: str, token: Optional[str] = None, expire_time: int = 3600) -> Any:
