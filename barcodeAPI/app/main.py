@@ -36,7 +36,7 @@ class CustomServerHeaderMiddleware(BaseHTTPMiddleware):
         return response
 
 app = FastAPI(
-    title="Barcode Generator API",
+    title="the Barcode API",
     description="""
     The Barcode API allows you to generate various types of barcodes programmatically.
     Rate limits apply based on authentication status and tier level.
@@ -123,16 +123,20 @@ async def startup():
             "http://localhost:8000", # Add FastAPI development server
             "https://thebarcodeapi.com"
         ]
+        await initialize_redis_manager()
+
         await init_db()
         await FastAPILimiter.init(redis_manager.redis)
-        await initialize_redis_manager()
-        asyncio.create_task(log_pool_status())
-        gc.set_debug(gc.DEBUG_LEAK)
-        asyncio.create_task(log_memory_usage())
+        # gc.set_debug(gc.DEBUG_LEAK)
 
         # Start the redis_manager in the background
         logger.info("Starting Redis manager in the background...")
         asyncio.create_task(redis_manager.start())
+
+        logger.info("Starting background tasks...")
+        asyncio.create_task(log_memory_usage())
+        asyncio.create_task(log_pool_status())
+
 
         async for db in get_db():
             await redis_manager.sync_all_username_mappings(db)
