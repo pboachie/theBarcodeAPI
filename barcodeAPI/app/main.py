@@ -28,7 +28,11 @@ class CustomServerHeaderMiddleware(BaseHTTPMiddleware):
         response.headers["server"] = f"BarcodeAPI/{settings.API_VERSION}"
         return response
 
-app = FastAPI(title="Barcode Generator API", version=settings.API_VERSION)
+app = FastAPI(
+    title="Barcode Generator API",
+    version=settings.API_VERSION,
+    openapi_url="/openapi.json" if settings.ENVIRONMENT == "development" else None
+)
 
 # Add the custom server header middleware
 app.add_middleware(CustomServerHeaderMiddleware)
@@ -49,7 +53,7 @@ async def log_pool_status():
             logger.info(f"Redis Pool Status - Max Connections: {pool.max_connections}, In Use: {len(pool._in_use_connections)}, Available: {len(pool._available_connections)}")
         except Exception as e:
             logger.error(f"Error logging pool status: {e}")
-        await asyncio.sleep(60)  # Log every minute
+        await asyncio.sleep(60)
 
 @app.on_event("startup")
 async def startup():
@@ -68,7 +72,7 @@ async def startup():
 
         async for db in get_db():
             await redis_manager.sync_all_username_mappings(db)
-            await redis_manager.reset_daily_usage()
+            # await redis_manager.reset_daily_usage()
             break
 
     except Exception as e:
