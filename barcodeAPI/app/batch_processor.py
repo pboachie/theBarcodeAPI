@@ -169,6 +169,7 @@ class BatchProcessor:
 
             except Exception as ex:
                 logger.error(f"Error in batch processing: {str(ex)}")
+                await self._handle_batch_error(self.batch.copy())
                 await asyncio.sleep(0.01)
 
     async def migrate_to_hash_structure(redis_manager):
