@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi_limiter import FastAPILimiter
 from pydantic import ValidationError
+from fastapi.openapi.utils import get_openapi
 
 import logging
 import asyncio
@@ -30,17 +31,60 @@ class CustomServerHeaderMiddleware(BaseHTTPMiddleware):
 
 app = FastAPI(
     title="Barcode Generator API",
+    description="""
+    The Barcode API allows you to generate various types of barcodes programmatically.
+    Rate limits apply based on authentication status and tier level.
+    """,
     version=settings.API_VERSION,
-    openapi_url="/openapi.json" if settings.ENVIRONMENT == "development" else None
+    docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
+    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
+    openapi_url="/openapi.json" if settings.ENVIRONMENT == "development" else None,
+    contact={
+        "name": "API Support",
+        "url": "https://thebarcodeapi.com/support",
+        "email": "support@boachiefamily.net",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    }
 )
 
-# Add the custom server header middleware
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+
+    openapi_schema["components"]["securitySchemes"] = {
+        "bearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+        }
+    }
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
+# Custom middleware to add server header
 app.add_middleware(CustomServerHeaderMiddleware)
 
-# Set up CORS
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost",
+        "http://localhost:8000",
+        "https://thebarcodeapi.com"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -96,7 +140,7 @@ async def log_memory_usage():
     while True:
         gc.collect()
         logger.debug(f"Garbage collection: {gc.get_count()}")
-        await asyncio.sleep(60)  # Log every minute
+        await asyncio.sleep(60)
 
 # Include routers
 app.include_router(health.router)
