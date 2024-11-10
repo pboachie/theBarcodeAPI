@@ -16,8 +16,10 @@ router = APIRouter(prefix="/usage", tags=["Usage"])
 
 logger = logging.getLogger(__name__)
 
-# Specific endpoints should come before wildcard routes
-@router.get("/metrics", summary="Get batch processing metrics")
+@router.get("/metrics",
+    summary="Get batch processing metrics",
+    include_in_schema=False
+)
 async def get_metrics(
     redis_manager: RedisManager = Depends(get_redis_manager)
 ):
