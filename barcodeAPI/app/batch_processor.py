@@ -331,5 +331,10 @@ class MultiLevelBatchProcessor:
 
     async def add_to_batch(self, operation: str, item: Any, priority: BatchPriority = BatchPriority.MEDIUM) -> Any:
         """Add item to appropriate priority batch"""
-        logger.debug(f"Adding to {priority.name} priority batch: operation={operation}, item={item}")
-        return await self.processors[priority].add_to_batch(operation, item)
+        try:
+            logger.debug(f"Adding to {priority.name} priority batch: operation={operation}, item={item}")
+            return await self.processors[priority].add_to_batch(operation, item)
+        except Exception as ex:
+            logger.error(f"Error in add_to_batch: {str(ex)}", exc_info=True)
+            # Return default value instead of raising exception
+            return self.redis_manager.get_default_value(operation, item)
