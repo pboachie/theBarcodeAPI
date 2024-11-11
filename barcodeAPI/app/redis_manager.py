@@ -1101,11 +1101,16 @@ class RedisManager:
             logger.error(f"Error resetting daily usage: {str(ex)}")
 
     async def sync_to_database(self, db: AsyncSession):
-        """Synchronize Redis data to database with hash structure"""
+        """Synchronize Redis data to database with"""
         logger.debug("Starting sync_to_database process.")
         try:
             all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0)
             logger.debug(f"Retrieved {len(all_user_data)} user data records from Redis.")
+
+            # Define which fields should be integers
+            integer_fields = {"requests_today", "remaining_requests"}
+            # Define which fields should be datetimes
+            datetime_fields = {"last_request", "last_reset"}
 
             async with db.begin():
                 for index, data in enumerate(all_user_data):
@@ -1121,40 +1126,41 @@ class RedisManager:
 
                             logger.debug(f"Field: {field}, Value: {value}")
 
-                            # Convert numeric fields
-                            if field in ["requests_today", "remaining_requests", "id"]:
-                                value = int(value) or value
-                            # Convert datetime fields
-                            elif field in ["last_request", "last_reset"]:
-                                value = datetime.fromisoformat(value)
-
-                            user_data_dict[field] = value
-
-                        logger.debug(f"Parsed user data: {user_data_dict}")
+                            # Convert value based on field type
+                            if field in integer_fields:
+                                try:
+                                    user_data_dict[field] = int(value)
+                                except (ValueError, TypeError):
+                                    user_data_dict[field] = 0
+                            elif field in datetime_fields:
+                                try:
+                                    user_data_dict[field] = datetime.fromisoformat(value)
+                                except (ValueError, TypeError):
+                                    user_data_dict[field] = datetime.now(pytz.utc)
+                            else:
+                                # Keep as string for other fields
+                                user_data_dict[field] = str(value)
 
                         # Create Usage record
-                        required_fields = ["id", "user_identifier", "ip_address", "requests_today", "last_reset", "last_request", "tier"]
-                        for field in required_fields:
-                            if field not in user_data_dict:
-                                raise ValueError(f"Missing required field: {field}")
-
                         usage = Usage(
-                            user_id=user_data_dict["id"],
-                            ip_address=user_data_dict["ip_address"],
-                            requests_today=user_data_dict["requests_today"],
-                            last_reset=user_data_dict["last_reset"],
-                            last_request=user_data_dict["last_request"],
-                            tier=user_data_dict["tier"]
+                            user_id=user_data_dict.get("id"),
+                            ip_address=user_data_dict.get("ip_address"),
+                            requests_today=user_data_dict.get("requests_today", 0),
+                            last_reset=user_data_dict.get("last_reset", datetime.now(pytz.utc)),
+                            last_request=user_data_dict.get("last_request", datetime.now(pytz.utc)),
+                            tier=user_data_dict.get("tier", "unauthenticated")
                         )
 
                         db.add(usage)
                         logger.debug(f"Added Usage record for user_id={usage.user_id}")
+
                     except Exception as ex:
                         logger.error(f"Error processing user data record {index + 1}: {ex}", exc_info=True)
                         continue
 
                 await db.commit()
                 logger.info("Redis data synced to database successfully.")
+
         except Exception as ex:
             logger.error(f"Error syncing Redis data to database: {str(ex)}", exc_info=True)
             raise
