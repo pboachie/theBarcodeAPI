@@ -30,12 +30,6 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse
-from typing import Dict, Any, Optional, List
-from enum import Enum
-import pytz
-from datetime import datetime, timedelta
 
 # Enhanced schema definitions with detailed documentation
 class BatchPriority(str, Enum):
@@ -413,7 +407,7 @@ class UserCreatedResponse(BaseModel):
     tier: str
 
 class UserData(BaseModel):
-    id: int
+    id: str
     username: str
     ip_address: Optional[str] = None
     tier: str
@@ -484,5 +478,4 @@ class SecurityScheme(BaseModel):
     type: str = "http"
     scheme: str = "bearer"
     bearerFormat: str = "JWT"
-
 

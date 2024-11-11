@@ -3,16 +3,11 @@ import gc
 import logging
 import time
 import traceback
-from asyncio import Lock, Task
+from asyncio import Lock
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
-import pytz
-
-from app.config import settings
 from app.schemas import BatchPriority, UserData
 
 logger = logging.getLogger(__name__)
@@ -208,6 +203,7 @@ class BatchProcessor:
                         if old_data:
                             user_data = UserData.parse_raw(old_data)
                             pipe.hset(key, mapping={
+                                "id": str(user_data.id),
                                 "ip_address": user_data.ip_address,
                                 "requests_today": str(user_data.requests_today),
                                 "remaining_requests": str(user_data.remaining_requests),

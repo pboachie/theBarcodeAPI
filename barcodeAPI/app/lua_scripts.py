@@ -51,22 +51,7 @@ if user_exists == 1 then
     -- Return all fields
     return redis.call("HGETALL", key)
 else
-    -- Create new user hash with complete field set
-    local fields = {
-        "id", user_id ~= "-1" and user_id or "",
-        "username", "ip:" .. ip_address,
-        "ip_address", ip_address,
-        "tier", "unauthenticated",
-        "remaining_requests", tostring(rate_limit - 1),
-        "requests_today", "1",
-        "last_request", current_time
-    }
-
-    redis.call("HMSET", key, unpack(fields))
-    redis.call("EXPIRE", key, 86400)
-
-    -- Return all fields
-    return redis.call("HGETALL", key)
+    return redis.error_reply("User does not exist")
 end
 """
 

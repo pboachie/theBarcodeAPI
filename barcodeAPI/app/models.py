@@ -8,8 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 class User(Base):
     __tablename__ = "users"
-
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     tier = Column(String)
@@ -19,12 +18,12 @@ class User(Base):
     requests_today = Column(Integer, default=0)
 
     @classmethod
-    async def get_user_by_id(cls, db: AsyncSession, user_id: int):
+    async def get_user_by_id(cls, db: AsyncSession, user_id: str):
         result = await db.execute(select(cls).filter(cls.id == user_id))
         return result.scalar_one_or_none()
 
     @classmethod
-    async def update_remaining_requests(cls, db: AsyncSession, user_id: int, new_remaining_requests: int):
+    async def update_remaining_requests(cls, db: AsyncSession, user_id: str, new_remaining_requests: int):
         stmt = (
             update(cls)
             .where(cls.id == user_id)
@@ -35,7 +34,7 @@ class User(Base):
 class ActiveToken(Base):
     __tablename__ = "active_tokens"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), unique=True)
+    user_id = Column(String, ForeignKey("users.id"), unique=True)
     token = Column(String, unique=True)
     created_at = Column(DateTime)
     user = relationship("User", back_populates="active_token")
@@ -45,7 +44,7 @@ class Usage(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     tier = Column(String, nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
     ip_address = Column(String, index=True, nullable=True)
     requests_today = Column(Integer, default=0)
     last_request = Column(DateTime(timezone=True), server_default=func.now())
@@ -87,7 +86,7 @@ class Usage(Base):
         return usage
 
     @classmethod
-    async def get_usage(cls, db: AsyncSession, user_id: int = None, ip_address: str = None) -> 'Usage':
+    async def get_usage(cls, db: AsyncSession, user_id: str = None, ip_address: str = None) -> 'Usage':
         if user_id:
             stmt = select(cls).filter(cls.user_id == user_id)
         elif ip_address:

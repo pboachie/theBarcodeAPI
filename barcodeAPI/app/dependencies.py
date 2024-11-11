@@ -56,17 +56,22 @@ async def get_current_user(
             logger.debug(f"User data: {user_data}")
 
             if not user_data:
+                logger.debug("Creating default user data")
                 user_data = await redis_manager.create_default_user_data(client_ip)
 
                 # Store user data in Redis
-                await redis_manager.set_user_data(user_data.json())
+                await redis_manager.batch_processor.add_to_batch(
+                    "set_user_data",
+                    (user_data.json(),),
+                    priority=BatchPriority.URGENT
+                )
 
                 # Background task to store user data in the database
-                asyncio.create_task(redis_manager.batch_processor.add_to_batch(
-                    "store_user_data_db",
-                    (user_data.json(),),
-                    priority=BatchPriority.LOW
-                ))
+                # asyncio.create_task(redis_manager.batch_processor.add_to_batch(
+                #     "store_user_data_db",
+                #     (user_data.json(),),
+                #     priority=BatchPriority.LOW
+                # ))
         except RedisError as e:
             logger.error(f"Redis error: {e}")
             raise HTTPException(status_code=503, detail="Service Unavailable")
