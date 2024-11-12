@@ -1,5 +1,6 @@
 # app/api/admin.py
 
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,7 +10,7 @@ from app import models
 from app.dependencies import get_current_user
 from app.security import get_password_hash, validate_password_strength, verify_master_key
 from app.config import settings
-from app.schemas import UserCreate, UsersResponse, UserCreatedResponse, UserData
+from app.schemas import BatchPriority, UserCreate, UsersResponse, UserCreatedResponse, UserData
 from app.rate_limiter import rate_limit
 from app.redis import get_redis_manager
 from app.redis_manager import RedisManager
@@ -21,55 +22,112 @@ router = APIRouter()
 
 
 @router.get("/admin/users", response_model=UsersResponse, include_in_schema=False)
+@rate_limit(times=75, interval=15, period="minutes")
 async def get_users(
     db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: UserData = Depends(get_current_user),
     _: None = Depends(verify_master_key),
-    __: None = Depends(rate_limit(times=75, interval=15, period="minutes")),
     redis_manager: RedisManager = Depends(get_redis_manager)
 ):
     """
     Endpoint to retrieve a list of users.
 
-    This endpoint fetches user data from the database and enriches it with additional
-    information from Redis. If the user data is not available in Redis, a default
-    UserData object is created.
-
     Args:
-        db (AsyncSession): The database session dependency.
-        current_user (models.User): The currently authenticated user.
-        _ (None): Dependency to verify the master key.
-        __ (bool): Dependency to enforce rate limiting.
-        redis_manager (RedisManager): The Redis manager dependency.
+        db: Database session
+        current_user: Current authenticated user
+        _: Master key verification dependency
+        __: Rate limiting dependency
+        redis_manager: Redis manager for caching
 
     Returns:
-        UsersResponse: A response model containing the list of users.
+        UsersResponse: List of user data
+
+    Raises:
+        HTTPException: If there's an error retrieving users
     """
-    users = []
+    users_data = []
+    redis_batch_tasks = []
+
     try:
         async with db.begin():
             result = await db.execute(select(models.User))
             db_users = result.scalars().all()
 
         for user in db_users:
-            user_data = await redis_manager.get_user_data(user_id=user.id, ip_address=current_user.ip_address)
-            if user_data:
-                users.append(user_data.dict())
-            else:
-                # If user data is not in Redis, create a default UserData object
-                users.append(UserData(
-                    id=user.id,
-                    username=user.username,
-                    tier=user.tier,
-                    ip_address=None,
-                    remaining_requests=settings.RateLimit.get_limit(user.tier),
-                    requests_today=0,
-                    last_reset=datetime.now()
-                ).dict())
+            try:
+                # Get user data from Redis using batch processor
+                user_data = await redis_manager.batch_processor.add_to_batch(
+                    "get_user_data",
+                    {"user_id": user.id},  # Pass as dict for clearer unpacking
+                    priority=BatchPriority.HIGH
+                )
 
-        return UsersResponse(users=users)
+                current_time = datetime.now()
+
+                if user_data and isinstance(user_data, UserData):
+                    # Use existing Redis data
+                    response_item = {
+                        "id": str(user_data.id),
+                        "username": user_data.username,
+                        "tier": user_data.tier,
+                        "ip_address": user_data.ip_address,
+                        "remaining_requests": user_data.remaining_requests,
+                        "requests_today": user_data.requests_today,
+                        "last_request": user_data.last_request.isoformat() if user_data.last_request else None,
+                        "last_reset": user_data.last_reset.isoformat() if user_data.last_reset else None
+                    }
+                else:
+                    # Create default data
+                    response_item = {
+                        "id": str(user.id),
+                        "username": user.username,
+                        "tier": user.tier,
+                        "ip_address": user.ip_address,
+                        "remaining_requests": settings.RateLimit.get_limit(user.tier),
+                        "requests_today": 0,
+                        "last_request": current_time.isoformat(),
+                        "last_reset": current_time.isoformat()
+                    }
+
+                    # Create UserData for Redis
+                    default_data = UserData(
+                        id=str(user.id),
+                        username=user.username,
+                        tier=user.tier,
+                        ip_address=user.ip_address,
+                        remaining_requests=settings.RateLimit.get_limit(user.tier),
+                        requests_today=0,
+                        last_request=current_time,
+                        last_reset=current_time
+                    )
+
+                    # Queue Redis update
+                    redis_batch_tasks.append(
+                        redis_manager.batch_processor.add_to_batch(
+                            "set_user_data",
+                            {"user_data": default_data},  # Pass as dict for clearer unpacking
+                            priority=BatchPriority.MEDIUM
+                        )
+                    )
+
+                users_data.append(response_item)
+
+            except Exception as e:
+                logger.error(f"Error processing user {user.id}: {e}", exc_info=True)
+                continue
+
+        # Wait for all batch operations to complete if there are any
+        if redis_batch_tasks:
+            try:
+                await asyncio.gather(*redis_batch_tasks, return_exceptions=True)
+            except Exception as e:
+                logger.error(f"Error in batch processing: {e}", exc_info=True)
+
+        # Return response with proper structure
+        return UsersResponse(users=users_data)
+
     except Exception as e:
-        logger.error(f"Error getting users: {e}")
+        logger.error(f"Error getting users: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(e)
@@ -78,12 +136,12 @@ async def get_users(
         await db.close()
 
 @router.post("/admin/users", response_model=UserCreatedResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
+@rate_limit(times=10, interval=15, period="minutes")
 async def create_user(
     user: UserCreate,
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
     _: None = Depends(verify_master_key),
-    __: bool = Depends(rate_limit(times=10, interval=15, period="minutes")),
     redis_manager: RedisManager = Depends(get_redis_manager)
 ):
     """
@@ -154,11 +212,11 @@ async def create_user(
         )
 
 @router.post("/admin/sync-db", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
+@rate_limit(times=10, interval=5, period="minutes")
 async def sync_database(
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
     _: None = Depends(verify_master_key),
-    __: bool = Depends(rate_limit(times=10, interval=5, period="minutes")),
     redis_manager: RedisManager = Depends(get_redis_manager)
 ):
     """

@@ -110,10 +110,10 @@ def create_usage_response(user_data: UserData, user_limits: int) -> Dict[str, An
         }
     }
 )
+@rate_limit(times=RATE_LIMIT, interval=1, period="second")
 async def get_metrics(
     redis_manager: RedisManager = Depends(get_redis_manager),
-    _: None = Depends(verify_master_key),
-    __: None = Depends(rate_limit(times=RATE_LIMIT, interval=1, period="second"))
+    _: None = Depends(verify_master_key)
 ):
     """
     Retrieve detailed metrics for batch processing operations.
@@ -191,12 +191,11 @@ async def get_metrics(
         }
     }
 )
+@rate_limit(times=RATE_LIMIT, interval=1, period="second")
 async def get_usage(
     request: Request,
     redis_manager: RedisManager = Depends(get_redis_manager),
-    user_data: UserData = Depends(get_current_user),
-    _: None = Depends(rate_limit(times=RATE_LIMIT, interval=1, period="second"))
-):
+    user_data: UserData = Depends(get_current_user)):
     """
     Get detailed usage statistics for the current user.
 
@@ -231,12 +230,13 @@ async def get_usage(
             user_data.last_reset = current_time_pst
             await redis_manager.set_user_data(user_data)
 
-        logger.debug( # Log usage stats
+        logger.debug(
             "Usage stats",
             extra={
                 "requests_today": user_data.requests_today,
                 "remaining_requests": user_data.remaining_requests,
-                "user_tier": user_data.tier
+                "user_tier": user_data.tier,
+                "last_reset": user_data.last_reset.isoformat()
             }
         )
 

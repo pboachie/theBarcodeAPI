@@ -4,8 +4,9 @@ import random
 from time import time
 
 BASE_URL = "http://localhost:8000/api/generate"
-REQUESTS_PER_SECOND = 100 # A worker can handle about 42 requests per second on average
-TOTAL_DURATION = 1  # seconds
+REQUESTS_PER_SECOND = 10  # Increased from 3 to 10 to test batching with batch_size=3
+# A worker can handle about 42 requests per second on average
+TOTAL_DURATION = 5  # Increased from 1 to 5 seconds to allow multiple batches
 
 async def send_request(session, semaphore):
     async with semaphore:

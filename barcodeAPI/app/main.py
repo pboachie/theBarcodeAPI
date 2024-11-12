@@ -2,7 +2,8 @@
 
 import asyncio
 import gc
-import io
+import signal
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -11,6 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi_limiter import FastAPILimiter
 from pydantic import ValidationError
 from fastapi.openapi.utils import get_openapi
+from contextlib import asynccontextmanager
 
 import logging
 import asyncio
@@ -35,6 +37,113 @@ class CustomServerHeaderMiddleware(BaseHTTPMiddleware):
         response.headers["server"] = f"BarcodeAPI/{settings.API_VERSION}"
         return response
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if os.getenv("RUN_MAIN") != "true":
+        # Skip startup in reloader process
+        yield
+        return
+    """Lifespan context manager for handling startup/shutdown and signals"""
+    # Create shutdown event
+    shutdown_event = asyncio.Event()
+
+    def signal_handler():
+        """Handle shutdown signals"""
+        logger.info("Received shutdown signal...")
+        shutdown_event.set()
+
+    # Register signal handlers
+    loop = asyncio.get_running_loop()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        loop.add_signal_handler(sig, signal_handler)
+
+    try:
+        # Startup
+        logger.info("Starting up...")
+        try:
+            if settings.ENVIRONMENT == "development":
+                gc.set_debug(gc.DEBUG_LEAK)
+
+            await initialize_redis_manager()
+            await init_db()
+            await FastAPILimiter.init(redis_manager.redis)
+
+            # Start services
+            logger.info("Starting services...")
+            await redis_manager.start()
+
+            # Start batch processors
+            logger.info("Starting batch processors...")
+            for priority, processor in redis_manager.batch_processor.processors.items():
+                logger.info(f"Starting {priority.name} priority batch processor...")
+                await processor.start()
+
+            # Start background tasks
+            logger.info("Starting background tasks...")
+            app.state.background_tasks = [
+                asyncio.create_task(log_memory_usage()),
+                asyncio.create_task(log_pool_status())
+            ]
+
+            # Initialize database data
+            async for db in get_db():
+                await redis_manager.sync_all_username_mappings(db)
+                break
+
+            logger.info("Startup complete")
+            yield
+
+            # Wait for shutdown signal
+            await shutdown_event.wait()
+
+        except Exception as e:
+            logger.error(f"Error during startup: {e}", exc_info=True)
+            raise
+
+        finally:
+            # Shutdown
+            logger.info("Starting shutdown process...")
+            try:
+                # Cancel background tasks
+                logger.info("Canceling background tasks...")
+                for task in app.state.background_tasks:
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+
+                # Stop batch processors
+                logger.info("Stopping batch processors...")
+                for priority, processor in redis_manager.batch_processor.processors.items():
+                    logger.info(f"Stopping {priority.name} priority batch processor...")
+                    await processor.stop()
+
+                # Sync data to database
+                logger.info("Syncing data to database...")
+                async for db in get_db():
+                    await redis_manager.sync_to_database(db)
+                    break
+
+                # Stop services
+                logger.info("Stopping services...")
+                await redis_manager.stop()
+                await close_redis_connection()
+                await close_db_connection()
+
+            except Exception as e:
+                logger.error(f"Error during shutdown: {e}", exc_info=True)
+                raise
+            finally:
+                # Final cleanup
+                gc.collect()
+                logger.info("Shutdown complete")
+
+    finally:
+        # Remove signal handlers
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            loop.remove_signal_handler(sig)
+
 app = FastAPI(
     title="the Barcode API",
     description="""
@@ -45,6 +154,7 @@ app = FastAPI(
     docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
     redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
     openapi_url="/openapi.json" if settings.ENVIRONMENT == "development" else None,
+    lifespan=lifespan,
     contact={
         "name": "API Support",
         "url": "https://thebarcodeapi.com/support",
@@ -83,15 +193,18 @@ app.openapi = custom_openapi
 # Custom middleware to add server header
 app.add_middleware(CustomServerHeaderMiddleware)
 
+# Initialize CORS origins before adding middleware
+app.state.cors_origins = [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "https://thebarcodeapi.com"
+]
+
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost",
-        "http://localhost:3000",  # Add React development server
-        "http://localhost:8000", # Add FastAPI development server
-        "https://thebarcodeapi.com"
-    ],
+    allow_origins=app.state.cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -112,55 +225,38 @@ async def log_pool_status():
             logger.error(f"Error logging pool status: {e}")
         await asyncio.sleep(60)
 
-@app.on_event("startup")
-async def startup():
-    logger.info("Starting up...")
-    try:
-        if settings.ENVIRONMENT == "development":
-            gc.set_debug(gc.DEBUG_LEAK)
+# Remove or comment out the startup and shutdown event handlers to prevent duplicate initialization
+# @app.on_event("startup")
+# async def startup():
+#     logger.info("Starting up...")
+#     try:
+#         if settings.ENVIRONMENT == "development":
+#             gc.set_debug(gc.DEBUG_LEAK)
+#         await initialize_redis_manager()
+#         await init_db()
+#         await FastAPILimiter.init(redis_manager.redis)
+#         await redis_manager.start()
+#         # ...other startup tasks...
+#     except Exception as e:
+#         logger.error(f"Error during startup: {e}", exc_info=True)
+#         raise
 
-        # Add CORS origins to app state
-        app.state.cors_origins = [
-            "http://localhost",
-            "http://localhost:3000", # Add React development server
-            "http://localhost:8000", # Add FastAPI development server
-            "https://thebarcodeapi.com"
-        ]
-
-        await initialize_redis_manager()
-        await init_db()
-        await FastAPILimiter.init(redis_manager.redis)
-
-        # Start the redis_manager in the background
-        logger.info("Starting Redis manager in the background...")
-        asyncio.create_task(redis_manager.start())
-
-        logger.info("Starting background tasks...")
-        asyncio.create_task(log_memory_usage())
-        asyncio.create_task(log_pool_status())
-
-
-        async for db in get_db():
-            await redis_manager.sync_all_username_mappings(db)
-            # await redis_manager.reset_daily_usage()
-            break
-
-    except Exception as e:
-        logger.error(f"Error during startup: {e}", exc_info=True)
-        raise
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    # Sync data to db before shutting down
-    async for db in get_db():
-        await redis_manager.sync_to_database(db)
-        break
-
-    await redis_manager.stop()
-    await close_redis_connection()
-    await close_db_connection()
-    gc.collect()
-    logger.info("Shutdown complete")
+# @app.on_event("shutdown")
+# async def shutdown_event():
+#     logger.info("Starting shutdown process...")
+#     try:
+#         for priority, processor in redis_manager.batch_processor.processors.items():
+#             logger.info(f"Stopping {priority.name} priority batch processor...")
+#             await processor.stop()
+#         await redis_manager.sync_to_database(db)
+#         await redis_manager.stop()
+#         await close_redis_connection()
+#         await close_db_connection()
+#         gc.collect()
+#         logger.info("Shutdown complete")
+#     except Exception as e:
+#         logger.error(f"Error during shutdown: {e}", exc_info=True)
+#         raise
 
 async def log_memory_usage():
     while True:

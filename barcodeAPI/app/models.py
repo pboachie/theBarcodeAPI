@@ -77,12 +77,13 @@ class Usage(Base):
             .where(cls.id == usage.id)
             .values(
                 requests_today=cls.requests_today + 1,
-                last_request=datetime.now(pytz.utc),
-                remaining_requests=cls.remaining_requests - 1
+                remaining_requests=cls.remaining_requests - 1,
+                last_request=datetime.now(pytz.utc)
             )
         )
         await db.execute(stmt)
         await db.refresh(usage)
+        logger.debug(f"Incremented usage for user_id={usage.user_id}: requests_today={usage.requests_today}, remaining_requests={usage.remaining_requests}")
         return usage
 
     @classmethod

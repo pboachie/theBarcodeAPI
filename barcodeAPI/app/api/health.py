@@ -1,6 +1,6 @@
 # app/api/health.py
 
-from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.schemas import HealthResponse, DetailedHealthResponse
@@ -146,11 +146,12 @@ async def detailed_health_check(redis_manager: RedisManager) -> None:
     Rate limited to 3 requests per 30 seconds.
     """
 )
+@rate_limit(times=3, interval=30, period="second")
 async def health_check(
+    request: Request,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     redis_manager: RedisManager = Depends(get_redis_manager),
-    _: None = Depends(rate_limit(times=3, interval=30, period="second"))
 ) -> HealthResponse:
     global last_check_time, cached_health_response
 
@@ -214,10 +215,10 @@ async def health_check(
         }
     }
 )
+@rate_limit(times=3, interval=30, period="second")
 async def get_detailed_health(
     redis_manager: RedisManager = Depends(get_redis_manager),
-    _: None = Depends(verify_master_key),
-    __: None = Depends(rate_limit(times=3, interval=30, period="second"))
+    _: None = Depends(verify_master_key)
 ) -> DetailedHealthResponse:
     try:
         detailed_health = await redis_manager.redis.get("detailed_health_check")

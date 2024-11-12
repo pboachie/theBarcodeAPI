@@ -393,9 +393,14 @@ class UserCreate(BaseModel):
     tier: TierEnum = Field(..., description="User tier: basic, standard, or premium")
 
 class UserResponse(BaseModel):
-    id: int
+    id: str
     username: str
     tier: str
+    ip_address: Optional[str] = None
+    remaining_requests: int
+    requests_today: int
+    last_request: Optional[str] = None
+    last_reset: Optional[str] = None
 
 class UsersResponse(BaseModel):
     users: List[UserResponse]

@@ -50,15 +50,9 @@ class BatchProcessor:
                 future = asyncio.Future()
                 self.pending_results[batch_item_id] = future
                 self.batch.append((operation, item, batch_item_id))
+                logger.debug(f"Added operation '{operation}' to batch. Current batch size: {len(self.batch)}")
 
-                should_process = (
-                    len(self.batch) >= self.batch_size or
-                    (self.interval <= 0.05 and len(self.batch) > 0)
-                )
-
-            if should_process and not self.processing:
-                async with self._processing_lock:
-                    await self._process_current_batch()
+            # No immediate processing here; rely on process_batches
 
             timeout = min(self.interval * 2, 0.1) if self.interval <= 0.05 else self.interval * 2
             result = await asyncio.wait_for(future, timeout=timeout)
@@ -89,6 +83,7 @@ class BatchProcessor:
 
             # Group operations
             operation_groups = self._group_operations(current_batch)
+            logger.debug(f"Grouped operations: { {op: len(items) for op, items in operation_groups.items()} }")  # Added logging
 
             # Use a single pipeline for the entire batch
             async with self.get_pipeline() as pipe:
@@ -101,7 +96,7 @@ class BatchProcessor:
 
         except Exception as ex:
             logger.error(f"Error processing batch: {str(ex)}\n{traceback.format_exc()}")
-            self._handle_batch_error(current_batch)
+            await self._handle_batch_error(current_batch)
         finally:
             self.processing = False
             self.last_process_time = time.time()
@@ -158,9 +153,24 @@ class BatchProcessor:
                     continue
 
                 current_time = time.time()
-                if current_time - self.last_process_time >= self.interval:
+                time_since_last = current_time - self.last_process_time
+                current_batch_size = len(self.batch)
+
+                should_process = (
+                    current_batch_size >= self.batch_size or
+                    time_since_last >= self.interval
+                )
+
+                if should_process:
                     async with self._processing_lock:
                         await self._process_current_batch()
+
+                logger.debug(
+                    f"Batch processing check:"
+                    f" current_batch_size={current_batch_size},"
+                    f" time_since_last={time_since_last:.3f}s,"
+                    f" should_process={should_process}"
+                )
 
             except Exception as ex:
                 logger.error(f"Error in batch processing: {str(ex)}")
@@ -296,7 +306,7 @@ class MultiLevelBatchProcessor:
         if not hasattr(self, 'initialized'):
             self.redis_manager = redis_manager
             self.processors = {
-                BatchPriority.URGENT: BatchProcessor(25, 50, redis_manager),
+                BatchPriority.URGENT: BatchProcessor(5, 50, redis_manager),  # Increased batch_size to 5 and decreased interval_ms to 50
                 BatchPriority.HIGH: BatchProcessor(50, 500, redis_manager),
                 BatchPriority.MEDIUM: BatchProcessor(100, 1000, redis_manager),
                 BatchPriority.LOW: BatchProcessor(200, 2000, redis_manager)
@@ -307,7 +317,7 @@ class MultiLevelBatchProcessor:
 
     async def start(self):
         """Start all priority-based processors"""
-        logger.info("Starting MultiLevelBatchProcessor...")
+        logger.info("Starting MultiLevelBatchProcessor with adjusted URGENT batch size for testing")
         for priority, processor in self.processors.items():
             task = asyncio.create_task(processor.process_batches())  # Changed from _process_batches to process_batches
             self.tasks.append(task)
