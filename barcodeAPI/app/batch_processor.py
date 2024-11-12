@@ -197,7 +197,7 @@ class BatchProcessor:
 class MultiLevelBatchProcessor:
     def __init__(self, redis_manager):
         self.processors = {
-            "URGENT": BatchProcessor(redis_manager, batch_size=50, max_wait_time=0.1),
+            "URGENT": BatchProcessor(redis_manager, batch_size=25, max_wait_time=0.1),
             "HIGH": BatchProcessor(redis_manager, batch_size=100, max_wait_time=0.5),
             "MEDIUM": BatchProcessor(redis_manager, batch_size=200, max_wait_time=1.0),
             "LOW": BatchProcessor(redis_manager, batch_size=500, max_wait_time=2.0)

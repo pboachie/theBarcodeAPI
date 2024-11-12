@@ -42,10 +42,10 @@ class BatchPriority(str, Enum):
         MEDIUM: Standard priority with 1s target processing time
         LOW: Low priority with 2s target processing time
     """
-    URGENT = "urgent"
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
+    URGENT = "URGENT"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
 
 class BarcodeFormatEnum(str, Enum):
     """

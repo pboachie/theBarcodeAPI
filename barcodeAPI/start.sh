@@ -94,10 +94,10 @@ print_colored "36" "Optimal Workers:  $WORKERS"
 print_colored "36" "Supported RPS:    $SUPPORTED_WORKERS Requests/Second"
 
 # Variable holding the number of workers to use
-WORKERS_DISPLAY=1
+WORKERS_DISPLAY=$WORKERS
 
 # Start the application
 print_header "Starting Application"
 print_colored "32" "Starting application with $WORKERS_DISPLAY workers..."
-# exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS_DISPLAY
-exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS_DISPLAY
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS_DISPLAY
+# exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS_DISPLAY

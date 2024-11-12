@@ -26,9 +26,12 @@ logger = logging.getLogger(__name__)
 class RedisManager:
     def __init__(self, redis: Redis):
         self.redis = redis
-        self.batch_processor = MultiLevelBatchProcessor(self)
         self.increment_usage_sha = None
         self.ip_cache = {}
+        # Initialize batch processor
+        self.batch_processor = MultiLevelBatchProcessor(self)
+        logger.info("Redis manager initialized")
+
 
     @asynccontextmanager
     async def get_connection(self):
@@ -61,10 +64,17 @@ class RedisManager:
     async def start(self):
         """Initialize and start the Redis manager"""
         logger.info("Starting Redis manager...")
-        await self.cleanup_redis_keys()
-        await self.load_lua_scripts()
-        await self.batch_processor.start()
-        logger.info("Redis manager started successfully")
+        try:
+            await self.cleanup_redis_keys()
+            await self.load_lua_scripts()
+            # Make sure batch processor is started
+            if self.batch_processor:
+                await self.batch_processor.start()
+                logger.info("Batch processor started successfully")
+            logger.info("Redis manager started successfully")
+        except Exception as e:
+            logger.error(f"Error starting Redis manager: {e}")
+            raise
 
     async def stop(self):
         """Gracefully shutdown the Redis manager"""
@@ -82,6 +92,9 @@ class RedisManager:
     async def process_batch_operation(self, operation: str, items: List[Tuple[Any, str]], pipe, pending_results):
         """Handle all Redis operations for batch processing"""
         try:
+
+            logger.debug(f"Opearation starting for {operation} with {len(items)} items")
+
             # Map operations to their handlers
             operation_handlers = {
                 "get_user_data": self._process_get_user_data,
@@ -1529,32 +1542,37 @@ class RedisManager:
                 logger.warning(f"No data found for username: {username}")
                 return None
 
+            try:
+                # If response is already a UserData object
+                if isinstance(batch_response, UserData):
+                    return batch_response
 
-            # If response is already a UserData object
-            if isinstance(batch_response, UserData):
-                return batch_response
+                # Convert Redis hash to UserData object
+                if isinstance(batch_response, dict):
+                    required_fields = ["id", "username", "ip_address", "tier", "requests_today", "remaining_requests", "last_request", "last_reset"]
+                    for field in required_fields:
+                        if field not in batch_response:
+                            raise ValueError(f"Missing required field: {field}")
 
-            # Convert Redis hash to UserData object
-            if isinstance(batch_response, dict):
-                required_fields = ["id", "username", "ip_address", "tier", "requests_today", "remaining_requests", "last_request", "last_reset"]
-                for field in required_fields:
-                    if field not in batch_response:
-                        raise ValueError(f"Missing required field: {field}")
+                    user_data_dict = {
+                        "id": str(batch_response["id"]),
+                        "username": batch_response["username"],
+                        "ip_address": batch_response["ip_address"],
+                        "tier": batch_response["tier"],
+                        "requests_today": int(batch_response["requests_today"]),
+                        "remaining_requests": int(batch_response["remaining_requests"]),
+                        "last_request": datetime.fromisoformat(batch_response["last_request"]),
+                        "last_reset": datetime.fromisoformat(batch_response["last_reset"])
+                    }
+                    return UserData(**user_data_dict)
 
-                user_data_dict = {
-                    "id": str(batch_response["id"]),
-                    "username": batch_response["username"],
-                    "ip_address": batch_response["ip_address"],
-                    "tier": batch_response["tier"],
-                    "requests_today": int(batch_response["requests_today"]),
-                    "remaining_requests": int(batch_response["remaining_requests"]),
-                    "last_request": datetime.fromisoformat(batch_response["last_request"]),
-                    "last_reset": datetime.fromisoformat(batch_response["last_reset"])
-                }
-                return UserData(**user_data_dict)
-
-            logger.error(f"Unexpected response type for username {username}: {type(batch_response)}")
-            return None
+                logger.error(f"Unexpected response type for username {username}: {type(batch_response)}")
+                return None
+            except Exception as ex:
+                logger.error(f"Error retrieving user data for username {username}: {str(ex)}")
+                return None
         except Exception as ex:
-            logger.error(f"Error retrieving user data for username {username}: {str(ex)}")
+            logger.error(f"Error getting user data by username: {str(ex)}")
             return None
+        finally:
+            self.batch_processor._cleanup_pending_results()

@@ -24,10 +24,18 @@ from app.database import close_db_connection, init_db, get_db, engine
 from app.redis import redis_manager, close_redis_connection, initialize_redis_manager
 from app.schemas import SecurityScheme
 
+log_directory = settings.LOG_DIRECTORY
+os.makedirs(log_directory, exist_ok=True)
+
 if settings.ENVIRONMENT == "production":
     logging.basicConfig(level=logging.INFO)
 else:
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.DEBUG,
+                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                        handlers=[
+                            logging.FileHandler(os.path.join(log_directory, "app.log"), mode="a"),
+                            logging.StreamHandler()
+                        ])
 
 logger = logging.getLogger(__name__)
 
@@ -39,11 +47,11 @@ class CustomServerHeaderMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if os.getenv("RUN_MAIN") != "true":
-        # Skip startup in reloader process
-        yield
-        return
     """Lifespan context manager for handling startup/shutdown and signals"""
+
+    current_process = os.getpid()
+    logger.info(f"Lifespan starting in process {current_process}")
+
     # Create shutdown event
     shutdown_event = asyncio.Event()
 
@@ -59,38 +67,46 @@ async def lifespan(app: FastAPI):
 
     try:
         # Startup
-        logger.info("Starting up...")
+        logger.info(f"Initializing in process {current_process}")
         try:
-            if settings.ENVIRONMENT == "development":
-                gc.set_debug(gc.DEBUG_LEAK)
+            # if settings.ENVIRONMENT == "development":
+            #     gc.set_debug(gc.DEBUG_LEAK)
 
             await initialize_redis_manager()
+
+            # Store batch processor reference in app state
+            app.state.batch_processor = redis_manager.batch_processor
+            # Verify Redis manager state
+            logger.info("Verifying Redis manager state...")
+            if not redis_manager.batch_processor:
+                raise RuntimeError("Batch processor not initialized")
+
+            for priority, processor in redis_manager.batch_processor.processors.items():
+                if not processor.running:
+                    logger.error(f"{priority} processor not running")
+                    raise RuntimeError(f"{priority} processor failed to start")
+                logger.info(f"{priority} processor running")
+
+            # Initialize other services
+            logger.info("Initializing database...")
             await init_db()
+
+            logger.info("Initializing rate limiter...")
             await FastAPILimiter.init(redis_manager.redis)
 
-            # Start services
-            logger.info("Starting services...")
-            await redis_manager.start()
+            # Initialize database data
+            logger.info("Syncing username mappings...")
+            async for db in get_db():
+                await redis_manager.sync_all_username_mappings(db)
+                break
 
-            # Start batch processors
-            logger.info("Starting batch processors...")
-            for priority, processor in redis_manager.batch_processor.processors.items():
-                logger.info(f"Starting {priority.name} priority batch processor...")
-                await processor.start()
-
-            # Start background tasks
             logger.info("Starting background tasks...")
             app.state.background_tasks = [
                 asyncio.create_task(log_memory_usage()),
                 asyncio.create_task(log_pool_status())
             ]
 
-            # Initialize database data
-            async for db in get_db():
-                await redis_manager.sync_all_username_mappings(db)
-                break
-
-            logger.info("Startup complete")
+            logger.info("Startup complete!")
             yield
 
             # Wait for shutdown signal
@@ -104,6 +120,10 @@ async def lifespan(app: FastAPI):
             # Shutdown
             logger.info("Starting shutdown process...")
             try:
+                # Remove signal handlers
+                for sig in (signal.SIGTERM, signal.SIGINT):
+                    loop.remove_signal_handler(sig)
+
                 # Cancel background tasks
                 logger.info("Canceling background tasks...")
                 for task in app.state.background_tasks:
