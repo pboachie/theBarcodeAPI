@@ -105,8 +105,8 @@ jobs:
         npm run lint
         npm run build
 
-        - name: Deploy and Health Check
-        run: |
+    - name: Deploy and Health Check
+      run: |
           # Store current commit hash
           git rev-parse HEAD > .git-commit
 
