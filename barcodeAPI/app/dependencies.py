@@ -52,7 +52,6 @@ async def get_current_user(
 
             # Store user data (this will also set up IP mapping)
             await redis_manager.set_user_data(user_data)
-
             return user_data
 
         except RedisError as e:
