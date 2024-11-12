@@ -1,338 +1,222 @@
 import asyncio
-import gc
-import logging
-import time
-import traceback
-from asyncio import Lock, Task
-from collections import defaultdict
-from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
-
-import pytz
-
-from app.config import settings
-from app.schemas import BatchPriority, UserData
+import logging
+from typing import Any, Dict, List, Optional
+import time
+from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
 
+@dataclass
+class BatchOperation:
+    operation: str
+    item: Any
+    priority: str
+    created_at: float
+    future: asyncio.Future
+
 class BatchProcessor:
-    def __init__(self, batch_size: int, interval_ms: int, redis_manager):
-        self.batch_size = batch_size
-        self.interval = interval_ms / 1000.0
+    def __init__(self, redis_manager, batch_size=100, max_wait_time=0.5):
         self.redis_manager = redis_manager
-        self.batch = []
-        self.pending_results = {}
-        self.current_batch_id = 0
-        self.last_process_time = time.time()
+        self.batch_size = batch_size
+        self.max_wait_time = max_wait_time
+        self.operations: List[BatchOperation] = []
         self.processing = False
-        self._stopping = False
-        self._processing_lock = Lock()
-        self._batch_lock = Lock()
-        logger.info(f"Initialized BatchProcessor with size={batch_size}, interval={interval_ms}ms")
-
-    @asynccontextmanager
-    async def get_pipeline(self):
-        """Context manager for Redis pipeline operations"""
-        pipe = self.redis_manager.redis.pipeline()
-        try:
-            yield pipe
-            await pipe.execute()
-        except Exception as ex:
-            logger.error(f"Pipeline error: {str(ex)}")
-            raise
-        finally:
-            await pipe.reset()
-
-    async def add_to_batch(self, operation: str, item: Any) -> Any:
-        """Add an item to the batch for processing"""
-        batch_item_id = f"{self.current_batch_id}_{len(self.batch)}"
-        start_time = time.time()
-
-        try:
-            async with self._batch_lock:
-                future = asyncio.Future()
-                self.pending_results[batch_item_id] = future
-                self.batch.append((operation, item, batch_item_id))
-
-                should_process = (
-                    len(self.batch) >= self.batch_size or
-                    (self.interval <= 0.05 and len(self.batch) > 0)
-                )
-
-            if should_process and not self.processing:
-                async with self._processing_lock:
-                    await self._process_current_batch()
-
-            timeout = min(self.interval * 2, 0.1) if self.interval <= 0.05 else self.interval * 2
-            result = await asyncio.wait_for(future, timeout=timeout)
-            process_time = (time.time() - start_time) * 1000
-            logger.debug(f"Request processed in {process_time:.2f}ms")
-            return result
-
-        except (asyncio.TimeoutError, Exception) as ex:
-            logger.error(f"Error in add_to_batch: {str(ex)}")
-            return self.redis_manager.get_default_value(operation, item)
-        finally:
-            self._cleanup_future(batch_item_id)
-
-    async def _process_current_batch(self):
-        """Process the current batch of operations"""
-        if not self.batch:
-            return
-
-        self.processing = True
-        current_batch = []
-        start_time = time.time()
-
-        try:
-            async with self._batch_lock:
-                current_batch = self.batch.copy()
-                self.batch = []
-                self.current_batch_id += 1
-
-            # Group operations
-            operation_groups = self._group_operations(current_batch)
-
-            # Use a single pipeline for the entire batch
-            async with self.get_pipeline() as pipe:
-                for operation, items in operation_groups.items():
-                    logger.debug(f"Processing operation group: {operation} with {len(items)} items")
-                    await self.redis_manager.process_batch_operation(operation, items, pipe, self.pending_results)
-
-            process_time = (time.time() - start_time) * 1000
-            logger.debug(f"Batch processed in {process_time:.2f}ms")
-
-        except Exception as ex:
-            logger.error(f"Error processing batch: {str(ex)}\n{traceback.format_exc()}")
-            self._handle_batch_error(current_batch)
-        finally:
-            self.processing = False
-            self.last_process_time = time.time()
-
-    def _get_default_value(self, operation: str, item: Any = None) -> Any:
-        """Get default value based on operation type"""
-        return self.redis_manager.get_default_value(operation, item)
-
-    def _handle_batch_error(self, batch: List[Tuple[str, Any, str]]):
-        """Handle batch operation errors"""
-        for operation, item, batch_id in batch:
-            try:
-                default_value = self.redis_manager.get_default_value(operation, item)
-                self._cleanup_future(batch_id, default_value)
-            except Exception as ex:
-                logger.error(f"Error handling batch error: {str(ex)}")
-                self._cleanup_future(batch_id, None)
-
-    def _cleanup_future(self, batch_id: str, default_value: Any = None):
-        """Safely cleanup a future with logging"""
-        future = self.pending_results.get(batch_id)
-        if future:
-            try:
-                if not future.done():
-                    logger.debug(f"Setting result for batch_id {batch_id}: {default_value}")
-                    future.set_result(default_value)
-            except Exception as ex:
-                logger.error(f"Error setting future result: {ex}")
-                future.cancel()
-            finally:
-                self.pending_results.pop(batch_id, None)
-
-    def _create_default_user_data(self, item: Any) -> UserData:
-        """Create default user data based on item type"""
-        ip_address = self.redis_manager._extract_ip_address(item)
-        return self.redis_manager.create_default_user_data(ip_address)
-
-    def _group_operations(self, batch: List[Tuple[str, Any, str]]) -> Dict[str, List[Tuple[Any, str]]]:
-        """Group batch operations by type"""
-        operation_groups = defaultdict(list)
-        for operation, item, batch_id in batch:
-            operation_groups[operation].append((item, batch_id))
-        return operation_groups
-
-    async def process_batches(self):
-        """Main batch processing loop"""
-        logger.info(f"Starting batch processor with interval {self.interval:.3f}s")
-        while not self._stopping:
-            try:
-                sleep_time = min(self.interval / 4, 0.05) if self.interval > 0.05 else 0.01
-                await asyncio.sleep(sleep_time)
-
-                if not self.batch or self.processing:
-                    continue
-
-                current_time = time.time()
-                if current_time - self.last_process_time >= self.interval:
-                    async with self._processing_lock:
-                        await self._process_current_batch()
-
-            except Exception as ex:
-                logger.error(f"Error in batch processing: {str(ex)}")
-                await asyncio.sleep(0.01)
-
-    async def migrate_to_hash_structure(redis_manager):
-        """Migrate existing Redis data to hash structure"""
-        try:
-            # Get all keys
-            user_keys = await redis_manager.redis.keys("user_data:*")
-            ip_keys = await redis_manager.redis.keys("ip:*")
-
-            async with redis_manager.redis.pipeline() as pipe:
-                # Migrate user data
-                for key in user_keys:
-                    try:
-                        # Get existing data
-                        old_data = await redis_manager.redis.get(key)
-                        if old_data:
-                            user_data = UserData.parse_raw(old_data)
-                            # Convert to hash
-                            pipe.hset(key, mapping={
-                                "id": str(user_data.id),
-                                "username": user_data.username,
-                                "ip_address": user_data.ip_address,
-                                "tier": user_data.tier,
-                                "requests_today": str(user_data.requests_today),
-                                "remaining_requests": str(user_data.remaining_requests),
-                                "last_request": user_data.last_request.isoformat() if user_data.last_request else ""
-                            })
-                            pipe.expire(key, 86400)
-                    except Exception as ex:
-                        logger.error(f"Error migrating key {key}: {ex}")
-
-                # Migrate IP data
-                for key in ip_keys:
-                    try:
-                        old_data = await redis_manager.redis.get(key)
-                        if old_data:
-                            user_data = UserData.parse_raw(old_data)
-                            pipe.hset(key, mapping={
-                                "ip_address": user_data.ip_address,
-                                "requests_today": str(user_data.requests_today),
-                                "remaining_requests": str(user_data.remaining_requests),
-                                "last_request": user_data.last_request.isoformat() if user_data.last_request else ""
-                            })
-                            pipe.expire(key, 86400)
-                    except Exception as ex:
-                        logger.error(f"Error migrating key {key}: {ex}")
-
-                await pipe.execute()
-
-            logger.info(f"Successfully migrated {len(user_keys) + len(ip_keys)} keys to hash structure")
-        except Exception as ex:
-            logger.error(f"Error during migration: {ex}")
-            raise
+        self.running = False
+        self.last_process_time = time.time()
+        self._lock = asyncio.Lock()
+        self._process_event = asyncio.Event()
+        self._task: Optional[asyncio.Task] = None
 
     async def start(self):
-        """Start batch processing"""
-        self._stopping = False
-        while not self._stopping:
-            try:
-                sleep_time = min(self.interval / 4, 0.05) if self.interval > 0.05 else 0.01
-                await asyncio.sleep(sleep_time)
+        """Start the batch processor"""
+        logger.info(f"Starting batch processor with batch size {self.batch_size}")
+        if self.running:
+            logger.warning("Batch processor already running")
+            return
 
-                if not self.batch or self.processing:
+        self.running = True
+        self._task = asyncio.create_task(self._process_loop())
+        logger.info("Batch processor started and processing loop initialized")
+
+        self.running = True
+        self._task = asyncio.create_task(self._process_loop())
+        logger.info("Batch processor started")
+
+    async def stop(self):
+        """Stop the batch processor"""
+        if not self.running:
+            return
+
+        self.running = False
+        self._process_event.set()  # Wake up the process loop
+        if self._task:
+            try:
+                await asyncio.wait_for(self._task, timeout=self.max_wait_time)
+            except asyncio.TimeoutError:
+                self._task.cancel()
+                try:
+                    await self._task
+                except asyncio.CancelledError:
+                    pass
+        logger.info("Batch processor stopped")
+
+    async def add_operation(self, operation: str, item: Any, priority: str) -> Any:
+        """Add an operation to the batch with timeout handling"""
+        if not self.running:
+            raise RuntimeError("Batch processor is not running")
+
+        future = asyncio.get_running_loop().create_future()
+        batch_op = BatchOperation(
+            operation=operation,
+            item=item,
+            priority=priority,
+            created_at=time.time(),
+            future=future
+        )
+
+        async with self._lock:
+            self.operations.append(batch_op)
+            if len(self.operations) >= self.batch_size:
+                self._process_event.set()
+
+        try:
+            # Wait for result with timeout
+            return await asyncio.wait_for(future, timeout=self.max_wait_time)
+        except asyncio.TimeoutError:
+            # Handle timeout by processing directly
+            logger.warning(f"Operation {operation} timed out, processing directly")
+            try:
+                return await self._process_single_operation(batch_op)
+            except Exception as e:
+                logger.error(f"Direct processing failed: {e}", exc_info=True)
+                return await self.redis_manager.get_default_value(operation, item)
+        finally:
+            # Clean up if operation wasn't processed
+            async with self._lock:
+                if batch_op in self.operations:
+                    self.operations.remove(batch_op)
+                    if not batch_op.future.done():
+                        batch_op.future.cancel()
+
+    async def _process_single_operation(self, operation: BatchOperation) -> Any:
+        """Process a single operation directly"""
+        async with self.redis_manager.get_pipeline() as pipe:
+            results = {}
+            await self.redis_manager.process_batch_operation(
+                operation.operation,
+                [(operation.item, id(operation))],
+                pipe,
+                {id(operation): operation.future}
+            )
+            if not operation.future.done():
+                return await self.redis_manager.get_default_value(operation.operation, operation.item)
+            return await operation.future
+
+    async def _process_loop(self):
+        """Main processing loop"""
+        while self.running:
+            try:
+                if not self.operations:
+                    # Wait for new operations or shutdown
+                    try:
+                        await asyncio.wait_for(self._process_event.wait(), timeout=0.1)
+                    except asyncio.TimeoutError:
+                        continue
+                    self._process_event.clear()
                     continue
 
                 current_time = time.time()
-                if current_time - self.last_process_time >= self.interval:
-                    async with self._processing_lock:
-                        await self._process_current_batch()
+                if (len(self.operations) >= self.batch_size or
+                    current_time - self.last_process_time >= self.max_wait_time):
+                    await self._process_batch()
 
-            except Exception as ex:
-                logger.error(f"Error in batch processing: {str(ex)}")
-                await asyncio.sleep(0.01)
+            except Exception as e:
+                logger.error(f"Error in process loop: {e}", exc_info=True)
+                await asyncio.sleep(0.1)
 
-    async def stop(self):
-        """Stop batch processing and cleanup"""
-        try:
-            self._stopping = True
+    async def _process_batch(self):
+        """Process a batch of operations"""
+        async with self._lock:
+            if not self.operations:
+                return
 
-            # Cancel pending futures
-            for batch_id, future in list(self.pending_results.items()):
-                if not future.done():
-                    future.cancel()
-                self.pending_results.pop(batch_id, None)
+            # Sort by priority and creation time
+            self.operations.sort(
+                key=lambda x: (x.priority, x.created_at)
+            )
 
-            # Clear batch
-            self.batch.clear()
+            current_batch = self.operations[:self.batch_size]
+            self.operations = self.operations[self.batch_size:]
 
-            # Force cleanup
-            gc.disable()  # Temporarily disable automatic collection
+        if not current_batch:
+            return
+
+        # Group operations by type
+        operation_groups: Dict[str, List[BatchOperation]] = {}
+        for op in current_batch:
+            operation_groups.setdefault(op.operation, []).append(op)
+
+        # Process each operation group
+        async with self.redis_manager.get_pipeline() as pipe:
+            start_time = time.time()
             try:
-                # Collect all generations
-                gc.collect()
-                gc.collect(1)
-                gc.collect(2)
-            finally:
-                gc.enable()
+                for operation, ops in operation_groups.items():
+                    await self.redis_manager.process_batch_operation(
+                        operation,
+                        [(op.item, id(op)) for op in ops],
+                        pipe,
+                        {id(op): op.future for op in ops}
+                    )
 
-        except Exception as ex:
-            logger.error(f"Error stopping batch processor: {ex}")
-            # Ensure cleanup even on error
-            self.pending_results.clear()
-            self.batch.clear()
+                self.last_process_time = time.time()
+                process_time = (time.time() - start_time) * 1000
+                logger.debug(f"Batch processed in {process_time:.2f}ms")
+
+            except Exception as e:
+                logger.error(f"Error processing batch: {e}", exc_info=True)
+                # Set default values for all operations in the batch
+                for op in current_batch:
+                    if not op.future.done():
+                        try:
+                            default_value = await self.redis_manager.get_default_value(op.operation, op.item)
+                            op.future.set_result(default_value)
+                        except Exception as ex:
+                            logger.error(f"Error setting default value: {ex}")
+                            op.future.cancel()
 
     def __del__(self):
-        """Ensure cleanup on deletion"""
-        try:
-            # Cancel any remaining futures
-            for future in self.pending_results.values():
-                if not future.done():
-                    future.cancel()
-            self.pending_results.clear()
-            self.batch.clear()
-        except Exception:
-            pass
+        """Cleanup on deletion"""
+        for op in self.operations:
+            if not op.future.done():
+                op.future.cancel()
+        self.operations.clear()
 
 
 class MultiLevelBatchProcessor:
-    _instance = None
-    _lock = Lock()
-
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(MultiLevelBatchProcessor, cls).__new__(cls)
-        return cls._instance
-
     def __init__(self, redis_manager):
-        if not hasattr(self, 'initialized'):
-            self.redis_manager = redis_manager
-            self.processors = {
-                BatchPriority.URGENT: BatchProcessor(25, 50, redis_manager),
-                BatchPriority.HIGH: BatchProcessor(50, 500, redis_manager),
-                BatchPriority.MEDIUM: BatchProcessor(100, 1000, redis_manager),
-                BatchPriority.LOW: BatchProcessor(200, 2000, redis_manager)
-            }
-            self.tasks = []
-            self.initialized = True
-            logger.info("Initialized MultiLevelBatchProcessor with priority-based intervals")
+        self.processors = {
+            "URGENT": BatchProcessor(redis_manager, batch_size=25, max_wait_time=0.1),
+            "HIGH": BatchProcessor(redis_manager, batch_size=100, max_wait_time=0.5),
+            "MEDIUM": BatchProcessor(redis_manager, batch_size=200, max_wait_time=1.0),
+            "LOW": BatchProcessor(redis_manager, batch_size=500, max_wait_time=2.0)
+        }
 
     async def start(self):
-        """Start all priority-based processors"""
-        logger.info("Starting MultiLevelBatchProcessor...")
-        for priority, processor in self.processors.items():
-            task = asyncio.create_task(processor.process_batches())  # Changed from _process_batches to process_batches
-            self.tasks.append(task)
-            logger.debug(f"Started {priority.name} priority processor with {int(processor.interval * 1000)}ms interval")
-        logger.info("MultiLevelBatchProcessor started successfully")
+        """Start all processors"""
+        for processor in self.processors.values():
+            await processor.start()
 
     async def stop(self):
-        """Stop all processors and cleanup"""
-        logger.info("Stopping MultiLevelBatchProcessor...")
-        try:
-            for task in self.tasks:
-                task.cancel()
-            await asyncio.gather(*self.tasks, return_exceptions=True)
-            self.tasks.clear()
-            for processor in self.processors.values():
-                await processor.stop()
-            gc.collect()
-            logger.info("MultiLevelBatchProcessor stopped successfully")
-        except Exception as ex:
-            logger.error(f"Error stopping MultiLevelBatchProcessor: {str(ex)}")
+        """Stop all processors"""
+        for processor in self.processors.values():
+            await processor.stop()
 
-    async def add_to_batch(self, operation: str, item: Any, priority: BatchPriority = BatchPriority.MEDIUM) -> Any:
-        """Add item to appropriate priority batch"""
-        logger.debug(f"Adding to {priority.name} priority batch: operation={operation}, item={item}")
-        return await self.processors[priority].add_to_batch(operation, item)
+    async def add_to_batch(self, operation: str, item: Any, priority: str = "MEDIUM") -> Any:
+        """Add operation to appropriate processor based on priority"""
+        processor = self.processors.get(priority)
+        if not processor:
+            raise ValueError(f"Invalid priority: {priority}")
+
+        return await processor.add_operation(operation, item, priority)

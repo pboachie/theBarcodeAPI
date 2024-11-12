@@ -1,149 +1,102 @@
 # app/api/health.py
 
-from fastapi import APIRouter, Depends, BackgroundTasks
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
-from redis.asyncio import Redis
 from app.schemas import HealthResponse, DetailedHealthResponse
 from app.config import settings
 from app.database import get_db, AsyncSessionLocal
 from app.redis import get_redis_manager
 from app.redis_manager import RedisManager
+from app.rate_limiter import rate_limit
 from app.security import verify_master_key
 import logging
 import psutil
-import os
 from datetime import datetime, timedelta
+from typing import Dict, Any, Optional
+import json
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/health", tags=["Barcode Generator API System Health"])
+router = APIRouter(
+    prefix="/health",
+    tags=["System Health"],
+    responses={
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "description": "Internal server error",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Internal server error occurred"}
+                }
+            }
+        },
+        status.HTTP_429_TOO_MANY_REQUESTS: {
+            "description": "Rate limit exceeded",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Rate limit exceeded. Try again in 30 seconds."}
+                }
+            }
+        }
+    }
+)
 
+# Cache configuration
+CACHE_DURATION = timedelta(seconds=10)
 last_check_time = datetime.min
-cached_health_response = None
-
-async def get_rate_limit():
-    """Simple rate limit check that doesn't require request parameters"""
-    return True
-
-@router.get("", response_model=HealthResponse, summary="Check system health")
-async def health_check(
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    redis_manager: RedisManager = Depends(get_redis_manager),
-    _: bool = Depends(get_rate_limit)
-):
-    """
-    Perform a basic health check on the system.
-
-    This endpoint checks the status of critical system components:
-    - Database connection
-    - Redis connection
-
-    It returns:
-    - Overall system status
-    - API version
-    - Individual status of database and Redis
-
-    The overall status is "ok" if all components are functioning properly,
-    and "error" if any component is not working as expected.
-
-    Rate limited to 3 requests per 30 seconds.
-    """
-    global last_check_time, cached_health_response
-
-    # Use cached response if it's less than 10 seconds old
-    if datetime.now() - last_check_time < timedelta(seconds=10) and cached_health_response:
-        return cached_health_response
-
-    try:
-        db_status = await check_database(db)
-        redis_status = await redis_manager.check_redis()
-
-        overall_status = "ok" if db_status == "ok" and redis_status == "ok" else "error"
-
-        cached_health_response = HealthResponse(
-            status=overall_status,
-            version=settings.API_VERSION,
-            database_status=db_status,
-            redis_status=redis_status
-        )
-        last_check_time = datetime.now()
-
-        # Trigger detailed health check in the background
-        background_tasks.add_task(detailed_health_check, redis_manager)
-
-        return cached_health_response
-    except Exception as e:
-        logger.error(f"Error in health check: {str(e)}")
-        return HealthResponse(
-            status="error",
-            version=settings.API_VERSION,
-            database_status="error",
-            redis_status="error"
-        )
-
-@router.get("/detailed", response_model=DetailedHealthResponse, summary="Detailed system health check")
-async def get_detailed_health(
-    redis_manager: RedisManager = Depends(get_redis_manager),
-    _: None = Depends(verify_master_key),
-    __: bool = Depends(get_rate_limit)
-):
-    """
-    Retrieve the results of the latest detailed health check.
-
-    This endpoint returns more comprehensive health information about the system,
-    including CPU usage, memory usage, and disk space.
-
-    Rate limited to 3 requests per 30 seconds.
-    """
-    try:
-        detailed_health = await redis_manager.redis.get("detailed_health_check")
-        if detailed_health:
-            return DetailedHealthResponse(**eval(detailed_health))
-        else:
-            return DetailedHealthResponse(
-                status="unavailable",
-                message="Detailed health check data not available. Please try again later."
-            )
-    except Exception as e:
-        logger.error(f"Error in detailed health check: {str(e)}")
-        return DetailedHealthResponse(
-            status="error",
-            message=f"Error retrieving health check data: {str(e)}"
-        )
+cached_health_response: Optional[HealthResponse] = None
 
 async def check_database(db: AsyncSession) -> str:
-    """Check the database connection."""
+    """
+    Check the database connection.
+
+    Args:
+        db: AsyncSession database connection
+
+    Returns:
+        str: "ok" if database is healthy, "error" otherwise
+    """
     try:
         await db.execute(text("SELECT 1"))
         logger.debug("Database health check successful")
         return "ok"
     except Exception as e:
-        logger.error(f"Database health check failed: {e}")
+        logger.error(f"Database health check failed: {str(e)}", exc_info=True)
         return "error"
 
-async def detailed_health_check(redis_manager: RedisManager):
-    """Perform a detailed health check and store results in Redis."""
+async def get_system_metrics() -> Dict[str, Any]:
+    """
+    Collect system metrics using psutil.
+
+    Returns:
+        Dict containing CPU, memory, and disk metrics
+    """
+    return {
+        "cpu_usage": psutil.cpu_percent(interval=1),
+        "memory_usage": psutil.virtual_memory().percent,
+        "memory_total": psutil.virtual_memory().total // (1024 ** 3),  # GB
+        "disk_usage": psutil.disk_usage('/').percent
+    }
+
+async def detailed_health_check(redis_manager: RedisManager) -> None:
+    """
+    Perform a detailed health check and store results in Redis.
+
+    Args:
+        redis_manager: Redis connection manager
+    """
     async with AsyncSessionLocal() as db:
         try:
-            cpu_usage = psutil.cpu_percent(interval=1)
-            memory_usage = psutil.virtual_memory().percent
-            memory_total = psutil.virtual_memory().total // (1024 ** 3)  # Convert to GB
-            disk_usage = psutil.disk_usage('/').percent
-
+            # Collect all metrics concurrently
+            system_metrics = await get_system_metrics()
             db_status = await check_database(db)
             redis_status = await redis_manager.check_redis()
             redis_details = await redis_manager.get_connection_stats()
 
             detailed_health = {
-                "status": "ok" if db_status == "ok" and redis_status == "ok" else "error",
+                "status": "ok" if all([db_status == "ok", redis_status == "ok"]) else "error",
                 "timestamp": datetime.now().isoformat(),
-                "cpu_usage": cpu_usage,
-                "memory_usage": f"{memory_usage}",
-                "memory_total": memory_total,
-                "disk_usage": disk_usage,
+                **system_metrics,
                 "database_status": db_status,
                 "redis_status": redis_status,
                 "redis_details": {
@@ -153,16 +106,140 @@ async def detailed_health_check(redis_manager: RedisManager):
                 }
             }
 
-            if db_status != "ok" or redis_status != "ok":
+            if detailed_health["status"] != "ok":
                 detailed_health["message"] = "One or more system components are not functioning properly"
 
-            await redis_manager.redis.set("detailed_health_check", str(detailed_health), ex=300)  # Expire after 5 minutes
+            # Store in Redis with 5-minute expiration
+            await redis_manager.redis.set(
+                "detailed_health_check",
+                json.dumps(detailed_health),
+                ex=300
+            )
             logger.debug("Detailed health check completed and stored in Redis")
+
         except Exception as e:
-            logger.error(f"Error during detailed health check: {e}")
+            logger.error("Error during detailed health check", exc_info=e)
             error_health = {
                 "status": "error",
                 "message": f"Error occurred during detailed health check: {str(e)}",
                 "timestamp": datetime.now().isoformat()
             }
-            await redis_manager.redis.set("detailed_health_check", str(error_health), ex=300)
+            await redis_manager.redis.set(
+                "detailed_health_check",
+                json.dumps(error_health),
+                ex=300
+            )
+
+@router.get(
+    "",
+    response_model=HealthResponse,
+    summary="Check Server Status",
+    include_in_schema=False,
+    description="""
+    Perform a basic health check on the system.
+
+    Checks the status of critical system components:
+    - Database connection
+    - Redis connection
+
+    Returns overall system status, API version, and component status.
+    Rate limited to 3 requests per 30 seconds.
+    """
+)
+@rate_limit(times=3, interval=30, period="second")
+async def health_check(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    redis_manager: RedisManager = Depends(get_redis_manager),
+) -> HealthResponse:
+    global last_check_time, cached_health_response
+
+    # Return cached response if valid
+    if (datetime.now() - last_check_time < CACHE_DURATION and
+        cached_health_response is not None):
+        return cached_health_response
+
+    try:
+        # Check critical components
+        db_status = await check_database(db)
+        redis_status = await redis_manager.check_redis()
+
+        overall_status = "ok" if all([db_status == "ok", redis_status == "ok"]) else "error"
+
+        # Update cache
+        cached_health_response = HealthResponse(
+            status=overall_status,
+            version=settings.API_VERSION,
+            database_status=db_status,
+            redis_status=redis_status
+        )
+        last_check_time = datetime.now()
+
+        # Schedule detailed check
+        background_tasks.add_task(detailed_health_check, redis_manager)
+
+        return cached_health_response
+
+    except Exception as e:
+        logger.error("Health check failed", exc_info=e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Health check failed due to internal error"
+        )
+
+@router.get(
+    "/detailed",
+    response_model=DetailedHealthResponse,
+    include_in_schema=False,
+    summary="Detailed System Health Check",
+    description="""
+    Retrieve comprehensive system health information including:
+    - CPU usage
+    - Memory utilization
+    - Disk space
+    - Database status
+    - Redis metrics
+
+    Requires master key authentication.
+    Rate limited to 3 requests per 30 seconds.
+    """,
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {
+            "description": "Invalid master key",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "Invalid master key"}
+                }
+            }
+        }
+    }
+)
+@rate_limit(times=3, interval=30, period="second")
+async def get_detailed_health(
+    redis_manager: RedisManager = Depends(get_redis_manager),
+    _: None = Depends(verify_master_key)
+) -> DetailedHealthResponse:
+    try:
+        detailed_health = await redis_manager.redis.get("detailed_health_check")
+        if detailed_health:
+            return DetailedHealthResponse(**json.loads(detailed_health))
+
+        return DetailedHealthResponse(
+            status="unavailable",
+            message="Detailed health check data not available. Please try again later."
+        )
+
+    except json.JSONDecodeError as e:
+        logger.error("Failed to parse detailed health check data", exc_info=e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invalid health check data format"
+        )
+
+    except Exception as e:
+        logger.error("Failed to retrieve detailed health check", exc_info=e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error retrieving health check data: {str(e)}"
+        )

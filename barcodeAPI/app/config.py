@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     REDIS_URL: str = os.getenv("REDIS_URL")
     API_VERSION: str = os.getenv("API_VERSION")
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    LOG_DIRECTORY: str = os.getenv("LOG_DIRECTORY", "logs")
 
     @property
     def SYNC_DATABASE_URL(self) -> str:

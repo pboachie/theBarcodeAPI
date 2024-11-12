@@ -4,7 +4,7 @@ import React from 'react';
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { BarcodeType, barcodeTypes, ImageFormat, imageFormats, maxChars } from './types';
+import { BarcodeType, barcodeTypes, ImageFormat, imageFormats, maxChars } from '@/components/types/barcode';
 import { FormatSelector } from './FormatSelector';
 import { getBarcodeText } from './barcodeConfig';
 

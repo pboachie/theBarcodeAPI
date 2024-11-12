@@ -1,7 +1,8 @@
+import traceback
 from redis.asyncio import Redis
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import logging
@@ -9,11 +10,12 @@ import pytz
 import asyncio
 import ipaddress
 import gc
-from enum import Enum
-from collections import defaultdict
 import time
+from json import JSONDecodeError
+import json
 
 from app.config import settings
+from app.utils import IDGenerator
 from app.schemas import BatchPriority, UserData, RedisConnectionStats
 from app.models import User, Usage
 from app.batch_processor import MultiLevelBatchProcessor
@@ -24,9 +26,12 @@ logger = logging.getLogger(__name__)
 class RedisManager:
     def __init__(self, redis: Redis):
         self.redis = redis
-        self.batch_processor = MultiLevelBatchProcessor(self)
         self.increment_usage_sha = None
         self.ip_cache = {}
+        # Initialize batch processor
+        self.batch_processor = MultiLevelBatchProcessor(self)
+        logger.info("Redis manager initialized")
+
 
     @asynccontextmanager
     async def get_connection(self):
@@ -59,9 +64,17 @@ class RedisManager:
     async def start(self):
         """Initialize and start the Redis manager"""
         logger.info("Starting Redis manager...")
-        await self.load_lua_scripts()
-        await self.batch_processor.start()
-        logger.info("Redis manager started successfully")
+        try:
+            await self.cleanup_redis_keys()
+            await self.load_lua_scripts()
+            # Make sure batch processor is started
+            if self.batch_processor:
+                await self.batch_processor.start()
+                logger.info("Batch processor started successfully")
+            logger.info("Redis manager started successfully")
+        except Exception as e:
+            logger.error(f"Error starting Redis manager: {e}")
+            raise
 
     async def stop(self):
         """Gracefully shutdown the Redis manager"""
@@ -79,6 +92,9 @@ class RedisManager:
     async def process_batch_operation(self, operation: str, items: List[Tuple[Any, str]], pipe, pending_results):
         """Handle all Redis operations for batch processing"""
         try:
+
+            logger.debug(f"Opearation starting for {operation} with {len(items)} items")
+
             # Map operations to their handlers
             operation_handlers = {
                 "get_user_data": self._process_get_user_data,
@@ -111,80 +127,98 @@ class RedisManager:
                         future.set_result(self.get_default_value(operation))
 
     async def _process_set_user_data(self, items: List[Tuple[Any, str]], pipe, pending_results):
-        """Process batch of set user data operations"""
+        """Process batch of set_user_data operations"""
         try:
-            for (user_data,), batch_id in items:
-                key = self._get_key(user_data.id, user_data.ip_address)
-                current_time = datetime.now(pytz.utc)
+            for (item,), batch_id in items:
+                user_data = item['user_data'] if isinstance(item, dict) else item
+                if not isinstance(user_data, UserData):
+                    continue
 
+                key = f"user_data:{user_data.id}"
                 mapping = {
                     "id": str(user_data.id),
-                    "ip_address": str(user_data.ip_address),
                     "username": str(user_data.username),
+                    "ip_address": str(user_data.ip_address) if user_data.ip_address else "",
                     "tier": str(user_data.tier),
                     "requests_today": str(user_data.requests_today),
                     "remaining_requests": str(user_data.remaining_requests),
-                    "last_request": user_data.last_request.isoformat() if user_data.last_request else current_time.isoformat(),
-                    "last_reset": user_data.last_reset.isoformat() if user_data.last_reset else current_time.isoformat()
+                    "last_request": user_data.last_request.isoformat() if user_data.last_request else datetime.now(pytz.utc).isoformat(),
+                    "last_reset": user_data.last_reset.isoformat() if user_data.last_reset else datetime.now(pytz.utc).isoformat()
                 }
 
                 pipe.hset(key, mapping=mapping)
                 pipe.expire(key, 86400)
 
             results = await pipe.execute()
+
             for i, (_, batch_id) in enumerate(items):
                 future = pending_results.get(batch_id)
                 if future and not future.done():
-                    future.set_result(bool(results[i * 2]))  # Use hset result
+                    future.set_result(bool(results[i * 2]))
 
         except Exception as ex:
-            logger.error(f"Error in _process_set_user_data: {ex}")
+            logger.error(f"Error in _process_set_user_data: {ex}", exc_info=True)
             for _, batch_id in items:
-                if batch_id in pending_results:
-                    future = pending_results[batch_id]
-                    if not future.done():
-                        future.set_result(False)
+                self._cleanup_future(batch_id, False)
 
     async def _process_get_user_data(self, items: List[Tuple[Any, str]], pipe, pending_results):
         """Process batch of get_user_data operations"""
         try:
-            for (ip_address,), batch_id in items:
-                key = self._get_key(None, ip_address)
+            # Prepare all Redis commands
+            for (item,), batch_id in items:
+                user_id = item['user_id'] if isinstance(item, dict) else item
+                key = f"user_data:{user_id}"
                 pipe.hgetall(key)
 
+            # Execute all commands
             results = await pipe.execute()
 
-            for i, ((ip_address,), batch_id) in enumerate(items):
+            # Process results
+            for i, ((item,), batch_id) in enumerate(items):
                 future = pending_results.get(batch_id)
-                if future and not future.done():
-                    if results[i]:
-                        try:
-                            current_time = datetime.now(pytz.utc)
-                            defaults = {
-                                "id": -1,
-                                "ip_address": ip_address,
-                                "username": f"ip:{ip_address}",
-                                "tier": "unauthenticated",
-                                "requests_today": 0,
-                                "remaining_requests": settings.RateLimit.get_limit("unauthenticated"),
-                                "last_request": current_time,
-                                "last_reset": current_time
-                            }
+                if not future or future.done():
+                    continue
 
-                            user_data_dict = self._decode_redis_hash(results[i], defaults)
-                            future.set_result(UserData(**user_data_dict))
-                        except Exception as ex:
-                            logger.error(f"Error parsing user data hash: {ex}")
-                            future.set_result(self.create_default_user_data(ip_address))
+                try:
+                    if results[i]:
+                        # Convert Redis result to UserData
+                        user_data_dict = {}
+                        for k, v in results[i].items():
+                            key_str = k.decode() if isinstance(k, bytes) else str(k)
+                            val_str = v.decode() if isinstance(v, bytes) else str(v)
+                            user_data_dict[key_str] = val_str
+
+                        # Convert numeric fields
+                        for field in ['requests_today', 'remaining_requests']:
+                            if field in user_data_dict:
+                                user_data_dict[field] = int(user_data_dict[field])
+
+                        # Convert datetime fields
+                        current_time = datetime.now(pytz.utc)
+                        for field in ['last_request', 'last_reset']:
+                            if field in user_data_dict and user_data_dict[field]:
+                                try:
+                                    user_data_dict[field] = datetime.fromisoformat(user_data_dict[field])
+                                except ValueError:
+                                    user_data_dict[field] = current_time
+
+                        # Ensure required fields
+                        user_data_dict.setdefault('id', str(item['user_id'] if isinstance(item, dict) else item))
+                        user_data_dict.setdefault('username', f"user_{user_data_dict['id']}")
+                        user_data_dict.setdefault('tier', 'unauthenticated')
+
+                        user_data = UserData(**user_data_dict)
+                        future.set_result(user_data)
                     else:
-                        future.set_result(self.create_default_user_data(ip_address))
+                        future.set_result(None)
+                except Exception as ex:
+                    logger.error(f"Error processing user data: {ex}", exc_info=True)
+                    future.set_result(None)
+
         except Exception as ex:
-            logger.error(f"Error in get_user_data batch: {str(ex)}")
-            for (ip_address,), batch_id in items:
-                if batch_id in pending_results:
-                    future = pending_results[batch_id]
-                    if not future.done():
-                        future.set_result(self.create_default_user_data(ip_address))
+            logger.error(f"Error in _process_get_user_data: {ex}", exc_info=True)
+            for _, batch_id in items:
+                self._cleanup_future(batch_id, None)
 
     async def _process_increment_usage(self, items: List[Tuple[Any, str]], pipe, pending_results):
         """Process batch of increment usage operations"""
@@ -221,16 +255,21 @@ class RedisManager:
                                 v = lua_result[j+1].decode() if isinstance(lua_result[j+1], bytes) else str(lua_result[j+1])
                                 result_dict[k] = v
 
-                            # Create user data from result
+                            # Create user data from result (Throw exception if missing fields)
+                            required_fields = ["id", "ip_address", "username", "tier", "requests_today", "remaining_requests", "last_request", "last_reset"]
+                            for field in required_fields:
+                                if field not in result_dict or result_dict[field] is None:
+                                    raise ValueError(f"Missing required field: {field}")
+
                             user_data_dict = {
-                                "id": int(result_dict.get("id")) if result_dict.get("id") else -1,
-                                "ip_address": result_dict.get("ip_address", ip_address),
-                                "username": result_dict.get("username", f"ip:{ip_address}"),
-                                "tier": result_dict.get("tier", "unauthenticated"),
-                                "requests_today": int(result_dict.get("requests_today", "0")),
-                                "remaining_requests": int(result_dict.get("remaining_requests", str(settings.RateLimit.get_limit("unauthenticated")))),
-                                "last_request": datetime.fromisoformat(result_dict.get("last_request", current_time)),
-                                "last_reset": datetime.fromisoformat(result_dict.get("last_request", current_time))  # Use same time for both
+                                "id": str(result_dict.get("id")),
+                                "ip_address": result_dict.get("ip_address"),
+                                "username": result_dict.get("username"),
+                                "tier": result_dict.get("tier"),
+                                "requests_today": int(result_dict.get("requests_today")),
+                                "remaining_requests": int(result_dict.get("remaining_requests")),
+                                "last_request": datetime.fromisoformat(result_dict.get("last_request")),
+                                "last_reset": datetime.fromisoformat(result_dict.get("last_reset"))
                             }
 
                             user_data = UserData(**user_data_dict)
@@ -387,7 +426,7 @@ class RedisManager:
         """Process batch of get user data by IP operations"""
         try:
             for (ip_address,), batch_id in items:
-                key = self._get_key(None, ip_address)
+                key = f"ip:{ip_address}"
                 pipe.hgetall(key)
 
             results = await pipe.execute()
@@ -397,31 +436,21 @@ class RedisManager:
                 if future and not future.done():
                     if results[i]:
                         try:
-                            current_time = datetime.now(pytz.utc)
-                            defaults = {
-                                "id": -1,
-                                "ip_address": ip_address,
-                                "username": f"ip:{ip_address}",
-                                "tier": "unauthenticated",
-                                "requests_today": 0,
-                                "remaining_requests": settings.RateLimit.get_limit("unauthenticated"),
-                                "last_request": current_time,
-                                "last_reset": current_time
-                            }
+                            defaults = self.create_default_user_data(ip_address)
                             user_data_dict = self._parse_redis_hash(results[i], defaults)
                             future.set_result(UserData(**user_data_dict))
-                        except Exception:
-                            future.set_result(self.create_default_user_data(ip_address))
+                        except Exception as ex:
+                            logger.error(f"Error processing user data: {ex}")
+                            future.set_result(await self.create_default_user_data(ip_address))
                     else:
-                        future.set_result(self.create_default_user_data(ip_address))
+                        future.set_result(await self.create_default_user_data(ip_address))
 
         except Exception as ex:
             logger.error(f"Error in _process_get_user_data_by_ip: {ex}")
             for (ip_address,), batch_id in items:
-                if batch_id in pending_results:
-                    future = pending_results[batch_id]
-                    if not future.done():
-                        future.set_result(self.create_default_user_data(ip_address))
+                future = pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(await self.create_default_user_data(ip_address))
 
     def get_default_value(self, operation: str, item: Any = None) -> Any:
         """Get default values for operations"""
@@ -439,68 +468,93 @@ class RedisManager:
         return defaults.get(operation, None)
 
     async def _batch_get_user_data(self, items: List[Tuple[Any, str]], pipe):
-        """Process batch of get_user_data operations using hashes"""
+        """Process batch of get_user_data operations"""
         try:
-            for (ip_address,), batch_id in items:
-                key = self.redis_manager._get_key(None, ip_address)
+            for (user_id,), batch_id in items:
+                key = f"user_data:{user_id}"
                 pipe.hgetall(key)
 
             results = await pipe.execute()
 
-            for i, ((ip_address,), batch_id) in enumerate(items):
+            for i, ((user_id,), batch_id) in enumerate(items):
                 future = self.pending_results.get(batch_id)
                 if future and not future.done():
-                    if results[i]:
-                        try:
-                            current_time = datetime.now(pytz.utc)
+                    try:
+                        if results[i]:
+                            # Convert Redis hash to UserData
                             data = results[i]
+                            user_data_dict = {}
 
-                            # Handle fields more safely, with proper type conversion
-                            user_data_dict = {
-                                "id": int(data[b"id"].decode()) if b"id" in data else -1,
-                                "ip_address": data[b"ip_address"].decode() if b"ip_address" in data else ip_address,
-                                "username": data[b"username"].decode() if b"username" in data else f"ip:{ip_address}",
-                                "tier": data[b"tier"].decode() if b"tier" in data else "unauthenticated",
-                                "requests_today": int(data[b"requests_today"].decode()) if b"requests_today" in data else 0,
-                                "remaining_requests": int(data[b"remaining_requests"].decode()) if b"remaining_requests" in data else settings.RateLimit.get_limit("unauthenticated"),
-                                "last_request": datetime.fromisoformat(data[b"last_request"].decode()) if b"last_request" in data else current_time,
-                                "last_reset": datetime.fromisoformat(data[b"last_reset"].decode()) if b"last_reset" in data else current_time
-                            }
+                            for k, v in data.items():
+                                key_str = k.decode() if isinstance(k, bytes) else str(k)
+                                val_str = v.decode() if isinstance(v, bytes) else str(v)
+                                user_data_dict[key_str] = val_str
+
+                            # Convert types as needed
+                            for field in ['requests_today', 'remaining_requests']:
+                                if field in user_data_dict:
+                                    user_data_dict[field] = int(user_data_dict[field])
+
+                            for field in ['last_request', 'last_reset']:
+                                if field in user_data_dict:
+                                    try:
+                                        user_data_dict[field] = datetime.fromisoformat(user_data_dict[field])
+                                    except (ValueError, TypeError):
+                                        user_data_dict[field] = datetime.now(pytz.utc)
+
+                            # Ensure all required fields
+                            if 'id' not in user_data_dict:
+                                user_data_dict['id'] = str(user_id)
+                            if 'tier' not in user_data_dict:
+                                user_data_dict['tier'] = 'unauthenticated'
+
                             user_data = UserData(**user_data_dict)
                             future.set_result(user_data)
-                        except Exception as ex:
-                            logger.error(f"Error parsing user data hash: {ex}")
-                            future.set_result(self.redis_manager.create_default_user_data(ip_address))
-                    else:
-                        future.set_result(self.redis_manager.create_default_user_data(ip_address))
-        except Exception as ex:
-            logger.error(f"Error in get_user_data batch: {str(ex)}")
-            for (ip_address,), batch_id in items:
-                self._cleanup_future(batch_id, self.redis_manager.create_default_user_data(ip_address))
+                        else:
+                            future.set_result(None)
+                    except Exception as ex:
+                        logger.error(f"Error processing user data result: {ex}", exc_info=True)
+                        future.set_result(None)
 
-    async def _batch_set_user_data(self, items: List[Tuple[Any, str]], pipe):
-        """Process batch of set user data operations using hashes"""
+        except Exception as ex:
+            logger.error(f"Error in batch get_user_data: {str(ex)}", exc_info=True)
+            for _, batch_id in items:
+                if batch_id in self.pending_results:
+                    future = self.pending_results[batch_id]
+                    if not future.done():
+                        future.set_result(None)
+
+    async def _batch_set_user_data(self, items: List[Tuple[UserData, str]], pipe):
+        """Process batch of set user data operations"""
         try:
             for (user_data,), batch_id in items:
-                key = self.redis_manager._get_key(user_data.id, user_data.ip_address)
-                # Convert UserData to hash fields
+                key = f"user_data:{user_data.id}"
+                current_time = datetime.now(pytz.utc)
+
                 mapping = {
-                    "ip_address": user_data.ip_address,
-                    "requests_today": str(user_data.requests_today),
-                    "remaining_requests": str(user_data.remaining_requests),
-                    "last_request": user_data.last_request.isoformat() if user_data.last_request else datetime.now(pytz.utc).isoformat()
+                    "id": str(user_data.id),
+                    "username": str(user_data.username or f"ip:{user_data.ip_address}"),
+                    "ip_address": str(user_data.ip_address),
+                    "tier": str(user_data.tier or "unauthenticated"),
+                    "requests_today": str(user_data.requests_today or 0),
+                    "remaining_requests": str(user_data.remaining_requests or
+                        settings.RateLimit.get_limit("unauthenticated")),
+                    "last_request": user_data.last_request.isoformat() if user_data.last_request
+                        else current_time.isoformat(),
+                    "last_reset": user_data.last_reset.isoformat() if user_data.last_reset
+                        else current_time.isoformat()
                 }
-                pipe.hset(key, mapping=mapping)
-                pipe.expire(key, 86400)  # Set expiration
+
+                await pipe.hset(key, mapping=mapping)
+                await pipe.expire(key, 86400)  # 24 hour expiry
 
             results = await pipe.execute()
 
-            # Process results in pairs (hset and expire commands)
             for i, (_, batch_id) in enumerate(items):
-                self._cleanup_future(batch_id, bool(results[i * 2]))  # Use hset result
+                self._cleanup_future(batch_id, bool(results[i * 2]))
 
         except Exception as ex:
-            logger.error(f"Error in set_user_data batch: {str(ex)}")
+            logger.error(f"Error in batch set_user_data: {ex}", exc_info=True)
             for _, batch_id in items:
                 self._cleanup_future(batch_id, False)
 
@@ -531,16 +585,23 @@ class RedisManager:
                         if results[i]:
                             # Convert hash results to dict for easier processing
                             data = dict(zip(results[i][::2], results[i][1::2]))
+
+                            required_fields = ["id", "ip_address", "username", "tier", "requests_today", "remaining_requests", "last_request", "last_reset"]
+                            for field in required_fields:
+                                if field.encode() not in data:
+                                    raise ValueError(f"Missing required field: {field}")
+
                             user_data_dict = {
-                                "id": int(data[b"id"].decode()) if b"id" in data else -1,
-                                "ip_address": data[b"ip_address"].decode() if b"ip_address" in data else ip_address,
-                                "username": data[b"username"].decode() if b"username" in data else f"ip:{ip_address}",
-                                "tier": data[b"tier"].decode() if b"tier" in data else "unauthenticated",
-                                "requests_today": int(data[b"requests_today"].decode()) if b"requests_today" in data else 0,
-                                "remaining_requests": int(data[b"remaining_requests"].decode()) if b"remaining_requests" in data else settings.RateLimit.get_limit("unauthenticated"),
-                                "last_request": datetime.fromisoformat(data[b"last_request"].decode()) if b"last_request" in data else datetime.now(pytz.utc),
-                                "last_reset": datetime.fromisoformat(data[b"last_reset"].decode()) if b"last_reset" in data else datetime.now(pytz.utc)
+                                "id": str(data[b"id"].decode()),
+                                "ip_address": data[b"ip_address"].decode(),
+                                "username": data[b"username"].decode(),
+                                "tier": data[b"tier"].decode(),
+                                "requests_today": int(data[b"requests_today"].decode()),
+                                "remaining_requests": int(data[b"remaining_requests"].decode()),
+                                "last_request": datetime.fromisoformat(data[b"last_request"].decode()),
+                                "last_reset": datetime.fromisoformat(data[b"last_reset"].decode())
                             }
+
                             user_data = UserData(**user_data_dict)
                             future.set_result(user_data)
                         else:
@@ -685,12 +746,18 @@ class RedisManager:
                 if results[i]:
                     try:
                         # Convert hash results to UserData
+                        required_fields = ["ip_address", "requests_today", "remaining_requests", "last_request"]
+                        for field in required_fields:
+                            if field.encode() not in results[i]:
+                                raise ValueError(f"Missing required field: {field}")
+
                         user_data_dict = {
                             "ip_address": ip_address,
-                            "requests_today": int(results[i].get(b"requests_today", 0)),
-                            "remaining_requests": int(results[i].get(b"remaining_requests", settings.RateLimit.get_limit("unauthenticated"))),
-                            "last_request": results[i].get(b"last_request", datetime.now(pytz.utc).isoformat()).decode()
+                            "requests_today": int(results[i][b"requests_today"].decode()),
+                            "remaining_requests": int(results[i][b"remaining_requests"].decode()),
+                            "last_request": datetime.fromisoformat(results[i][b"last_request"].decode())
                         }
+
                         user_data = UserData(**user_data_dict)
                         future = self.pending_results.get(batch_id)
                         if future and not future.done():
@@ -738,26 +805,6 @@ class RedisManager:
             for _, batch_id in items:
                 self._cleanup_future(batch_id, self._get_default_value(operation))
 
-    async def _batch_batches(self):
-        """Main batch processing loop"""
-        logger.info(f"Starting batch processor with interval {self.interval:.3f}s")
-        while not self._stopping:
-            try:
-                sleep_time = min(self.interval / 4, 0.05) if self.interval > 0.05 else 0.01
-                await asyncio.sleep(sleep_time)
-
-                if not self.batch or self.processing:
-                    continue
-
-                current_time = time.time()
-                if current_time - self.last_batch_time >= self.interval:
-                    async with self._processing_lock:
-                        await self._batch_current_batch()
-
-            except Exception as ex:
-                logger.error(f"Error in _batch_batches: {str(ex)}")
-                await asyncio.sleep(0.01)
-
     async def _batch_current_batch(self):
         """Process the current batch of operations with error handling"""
         if not self.batch:
@@ -786,7 +833,7 @@ class RedisManager:
 
         except Exception as ex:
             logger.error(f"Error processing batch: {str(ex)}\n{traceback.format_exc()}")
-            self._handle_batch_error(current_batch)
+            self.batch_processor._handle_batch_error(current_batch)
         finally:
             self.processing = False
             self.last_batch_time = time.time()
@@ -816,7 +863,7 @@ class RedisManager:
             for _, batch_id in items:
                 self._cleanup_future(batch_id, self._get_default_value(operation))
 
-    def _get_key(self, user_id: Optional[int] = None, ip_address: Optional[str] = None) -> str:
+    def _get_key(self, user_id: Optional[str] = None, ip_address: Optional[str] = None) -> str:
         """Generate normalized Redis key for user data"""
         if user_id is None or user_id == -1:
             ip_str = self.ip_cache.get(ip_address)
@@ -840,33 +887,48 @@ class RedisManager:
         return str(item)
 
     async def set_user_data(self, user_data: UserData) -> bool:
-        """Set user data directly using hash fields"""
+        """Set user data in Redis using consistent hash storage"""
         try:
-            key = self._get_key(user_data.id, user_data.ip_address)
-            current_time = datetime.now(pytz.utc)
+            # Create user data key and IP key
+            user_key = f"user_data:{user_data.id}"
+            ip_key = f"ip:{user_data.ip_address}"
 
+            # Prepare mapping data
             mapping = {
                 "id": str(user_data.id),
-                "ip_address": str(user_data.ip_address),
                 "username": str(user_data.username),
+                "ip_address": str(user_data.ip_address),
                 "tier": str(user_data.tier),
                 "requests_today": str(user_data.requests_today),
                 "remaining_requests": str(user_data.remaining_requests),
-                "last_request": user_data.last_request.isoformat() if user_data.last_request else current_time.isoformat(),
-                "last_reset": user_data.last_reset.isoformat() if user_data.last_reset else current_time.isoformat()
+                "last_request": user_data.last_request.isoformat(),
+                "last_reset": user_data.last_reset.isoformat()
             }
 
-            async with self.get_pipeline() as pipe:
-                pipe.hset(key, mapping=mapping)
-                pipe.expire(key, 86400)  # Set expiration for 24 hours
-                results = await pipe.execute()
-                return bool(results[0])
+            # Store both user data and IP mapping as hashes
+            async with self.redis.pipeline() as pipe:
+                # Store main user data
+                await pipe.hset(user_key, mapping=mapping)
+                await pipe.expire(user_key, 86400)  # 24 hour expiry
 
-        except Exception as ex:
-            logger.error(f"Error in set_user_data: {str(ex)}")
+                # Store IP mapping as a hash with minimal data
+                ip_mapping = {
+                    "id": str(user_data.id),
+                    "ip_address": str(user_data.ip_address)
+                }
+                await pipe.hset(ip_key, mapping=ip_mapping)
+                await pipe.expire(ip_key, 86400)  # 24 hour expiry
+
+                await pipe.execute()
+
+            logger.debug(f"Successfully set user data for {user_key}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error in set_user_data: {str(e)}", exc_info=True)
             return False
 
-    async def get_user_data(self, user_id: Optional[int], ip_address: str) -> UserData:
+    async def get_user_data(self, user_id: Optional[str], ip_address: str) -> UserData:
         """Get user data from Redis with fallback to default"""
         try:
             key = self._get_key(user_id, ip_address)
@@ -874,17 +936,7 @@ class RedisManager:
                 data = await self.redis.hgetall(key)
                 if data:
                     try:
-                        current_time = datetime.now(pytz.utc)
-                        defaults = {
-                            "id": -1,
-                            "ip_address": ip_address,
-                            "username": f"ip:{ip_address}",
-                            "tier": "unauthenticated",
-                            "requests_today": 0,
-                            "remaining_requests": settings.RateLimit.get_limit("unauthenticated"),
-                            "last_request": current_time,
-                            "last_reset": current_time
-                        }
+                        defaults = self.create_default_user_data(ip_address)
 
                         user_data_dict = {}
                         for key, default in defaults.items():
@@ -966,43 +1018,89 @@ class RedisManager:
                 for k, v in data.items()
             }
 
-            logger.debug(f"Decoded Redis data: {str_data}")
+            # Use provided defaults for all fields
+            result = defaults.copy()
 
-            # Convert values based on default types
-            for key, default in defaults.items():
-                if key in str_data:
-                    value = str_data[key].strip()
+            # Update with actual values from Redis
+            for key, value in str_data.items():
+                if key in result:
                     try:
-                        if isinstance(default, int):
-                            result[key] = int(value) if value else default
-                        elif isinstance(default, datetime):
-                            result[key] = datetime.fromisoformat(value) if value else default
+                        if isinstance(result[key], int):
+                            result[key] = int(value)
+                        elif isinstance(result[key], datetime):
+                            result[key] = datetime.fromisoformat(value)
                         else:
-                            result[key] = value if value else default
+                            result[key] = value
                     except (ValueError, TypeError) as ex:
                         logger.error(f"Error converting {key}={value}: {ex}")
-                        result[key] = default
-                else:
-                    result[key] = default
 
             return result
         except Exception as ex:
             logger.error(f"Error parsing Redis hash: {ex}")
             return defaults
 
-    async def get_user_data_by_ip(self, ip_address: str) -> UserData:
-        """Get user data by IP with batch processing"""
+    async def get_user_data_by_ip(self, ip_address: str) -> Optional[UserData]:
+        """Get user data by IP address, using consistent hash storage"""
         try:
-            return await self.batch_processor.add_to_batch(
-                "get_user_data_by_ip",
-                (ip_address,),
-                priority=BatchPriority.HIGH
-            )
-        except Exception as ex:
-            logger.error(f"Error fetching user data by IP: {str(ex)}")
-            return self.create_default_user_data(ip_address)
+            # Always use hash storage for IP keys
+            ip_key = f"ip:{ip_address}"
+            ip_data = await self.redis.hgetall(ip_key)
 
-    async def increment_usage(self, user_id: Optional[int], ip_address: str) -> UserData:
+            if ip_data:
+                # If we have IP data, check for user_id mapping
+                user_id = None
+                if b'id' in ip_data:
+                    user_id = ip_data[b'id'].decode()
+                elif 'id' in ip_data:
+                    user_id = ip_data['id']
+
+                if user_id:
+                    # Get full user data if we have an ID
+                    user_key = f"user_data:{user_id}"
+                    data = await self.redis.hgetall(user_key)
+                    if not data:  # If no user data found, fall back to IP data
+                        data = ip_data
+                else:
+                    data = ip_data
+            else:
+                return None
+
+            if data:
+                try:
+                    # Convert all values to strings if they're bytes
+                    user_data_dict = {}
+                    for k, v in data.items():
+                        key_str = k.decode() if isinstance(k, bytes) else str(k)
+                        value_str = v.decode() if isinstance(v, bytes) else str(v)
+                        user_data_dict[key_str] = value_str
+
+                    # Ensure all required fields are present with defaults
+                    now = datetime.now(pytz.utc)
+                    default_values = {
+                        'id': user_data_dict.get('id') or IDGenerator.generate_id(),
+                        'username': user_data_dict.get('username') or f'ip:{ip_address}',
+                        'ip_address': ip_address,
+                        'tier': user_data_dict.get('tier') or 'unauthenticated',
+                        'requests_today': int(user_data_dict.get('requests_today', 0)),
+                        'remaining_requests': int(user_data_dict.get('remaining_requests',
+                            settings.RateLimit.get_limit("unauthenticated"))),
+                        'last_request': datetime.fromisoformat(user_data_dict.get('last_request',
+                            now.isoformat())),
+                        'last_reset': datetime.fromisoformat(user_data_dict.get('last_reset',
+                            now.isoformat()))
+                    }
+
+                    return UserData(**default_values)
+
+                except Exception as ex:
+                    logger.error(f"Error parsing user data: {ex}", exc_info=True)
+                    return None
+            return None
+        except Exception as ex:
+            logger.error(f"Error fetching user data by IP: {str(ex)}", exc_info=True)
+            return None
+
+    async def increment_usage(self, user_id: Optional[str], ip_address: str) -> UserData:
         """Increment usage count with batch processing"""
         try:
             key = self._get_key(user_id, ip_address)
@@ -1016,14 +1114,14 @@ class RedisManager:
 
             if not isinstance(result, UserData):
                 logger.error(f"Invalid result type from increment: {type(result)}")
-                return self.create_default_user_data(ip_address)
+                return await self.create_default_user_data(ip_address)
 
             logger.debug(f"Increment completed for {key}: requests={result.requests_today}, remaining={result.remaining_requests}")
             return result
 
         except Exception as ex:
             logger.error(f"Error in increment_usage: {ex}")
-            return self.create_default_user_data(ip_address)
+            return await self.create_default_user_data(ip_address)
 
     async def check_rate_limit(self, key: str) -> bool:
         """Check rate limit with batch processing"""
@@ -1066,80 +1164,177 @@ class RedisManager:
             logger.error(f"Error resetting daily usage: {str(ex)}")
 
     async def sync_to_database(self, db: AsyncSession):
-        """Synchronize Redis data to database with hash structure"""
+        """
+        Synchronize Redis data to database with proper type handling.
+
+        Args:
+            db (AsyncSession): Database session for storing data
+
+        Raises:
+            Exception: If synchronization fails
+        """
+        logger.debug("Starting sync_to_database process.")
+
+        # Field type definitions
+        TYPE_MAPPINGS = {
+            'integer_fields': {
+                'requests_today',
+                'remaining_requests'
+            },
+            'datetime_fields': {
+                'last_request',
+                'last_reset'
+            },
+            'required_fields': {
+                'id',
+                'ip_address',
+                'requests_today',
+                'last_reset',
+                'last_request',
+                'tier'
+            }
+        }
+
+        def convert_value(field: str, value: Any) -> Any:
+            """Convert value to appropriate type based on field name"""
+            try:
+                if field in TYPE_MAPPINGS['integer_fields']:
+                    return int(value) if value is not None else 0
+                elif field in TYPE_MAPPINGS['datetime_fields']:
+                    return datetime.fromisoformat(value) if value else datetime.now(pytz.utc)
+                else:
+                    return str(value) if value is not None else ""
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Error converting {field}={value}: {e}")
+                if field in TYPE_MAPPINGS['integer_fields']:
+                    return 0
+                elif field in TYPE_MAPPINGS['datetime_fields']:
+                    return datetime.now(pytz.utc)
+                return ""
+
+        def create_usage_record(data: dict) -> Usage:
+            """Create Usage record with proper defaults"""
+            current_time = datetime.now(pytz.utc)
+            return Usage(
+                user_id=data.get("id"),
+                ip_address=data.get("ip_address"),
+                requests_today=data.get("requests_today", 0),
+                last_reset=data.get("last_reset", current_time),
+                last_request=data.get("last_request", current_time),
+                tier=data.get("tier", "unauthenticated")
+            )
+
         try:
-            all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, [], [])
+            # Get all user data from Redis
+            all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0)
+            logger.debug(f"Retrieved {len(all_user_data)} user data records from Redis.")
 
+            # Process records in batches for better performance
+            BATCH_SIZE = 100
             async with db.begin():
-                for data in all_user_data:
+                for batch_start in range(0, len(all_user_data), BATCH_SIZE):
+                    batch = all_user_data[batch_start:batch_start + BATCH_SIZE]
+
+                    for index, data in enumerate(batch, start=batch_start):
+                        try:
+                            key_type, key_id = data[0], data[1]
+                            logger.debug(f"Processing record {index + 1}: key_type={key_type}, key_id={key_id}")
+
+                            # Process field-value pairs
+                            user_data_dict = {}
+                            for field_data in data[2:]:
+                                field, value = field_data
+                                logger.debug(f"Field: {field}, Value: {value}")
+                                user_data_dict[field] = convert_value(field, value)
+
+                            # Validate required fields
+                            missing_fields = TYPE_MAPPINGS['required_fields'] - user_data_dict.keys()
+                            if missing_fields:
+                                logger.warning(f"Missing required fields for record {index + 1}: {missing_fields}")
+                                continue
+
+                            # Create and add Usage record
+                            usage = create_usage_record(user_data_dict)
+                            db.add(usage)
+                            logger.debug(f"Added Usage record for user_id={usage.user_id}")
+
+                        except Exception as ex:
+                            logger.error(f"Error processing record {index + 1}: {ex}", exc_info=True)
+                            continue
+
+                    # Commit each batch
                     try:
-                        key_type, key_id = data[0].decode(), data[1].decode()
-                        user_data_dict = {}
-
-                        # Convert field-value pairs to dict
-                        for field_data in data[2:]:
-                            field = field_data[0].decode()
-                            value = field_data[1].decode()
-
-                            # Convert numeric fields
-                            if field in ["requests_today", "remaining_requests", "id"]:
-                                value = int(value)
-                            # Convert datetime fields
-                            elif field in ["last_request", "last_reset"]:
-                                value = datetime.fromisoformat(value)
-
-                            user_data_dict[field] = value
-
-                        # Create Usage record
-                        usage = Usage(
-                            user_id=user_data_dict.get("id", -1),
-                            ip_address=user_data_dict.get("ip_address"),
-                            requests_today=user_data_dict.get("requests_today", 0),
-                            last_reset=user_data_dict.get("last_reset"),
-                            last_request=user_data_dict.get("last_request"),
-                            tier=user_data_dict.get("tier", "unauthenticated")
-                        )
-                        db.add(usage)
+                        await db.commit()
+                        logger.debug(f"Committed batch {batch_start//BATCH_SIZE + 1}")
                     except Exception as ex:
-                        logger.error(f"Error processing user data record: {ex}")
+                        logger.error(f"Error committing batch: {ex}", exc_info=True)
+                        await db.rollback()
                         continue
 
-                await db.commit()
             logger.info("Redis data synced to database successfully")
+
         except Exception as ex:
-            logger.error(f"Error syncing Redis data to database: {str(ex)}")
+            logger.error(f"Error syncing Redis data to database: {str(ex)}", exc_info=True)
             raise
 
+
     async def sync_all_username_mappings(self, db: AsyncSession):
-        """Synchronize username mappings from database to Redis using hashes"""
+        """Synchronize all username mappings into Redis"""
         try:
-            async with db.begin():
-                result = await db.execute(select(User))
+            async with db as session:
+                result = await session.execute(select(User))
                 users = result.scalars().all()
-                current_time = datetime.now(pytz.utc)
 
-                async with self.get_pipeline() as pipe:
-                    for user in users:
-                        key = self._get_key(user.id, user.ip_address)
-                        # Create complete hash for each user
-                        mapping = {
-                            "id": str(user.id),
-                            "username": user.username,
-                            "ip_address": user.ip_address,
-                            "tier": user.tier,
-                            "requests_today": "0",
-                            "remaining_requests": str(settings.RateLimit.get_limit(user.tier)),
-                            "last_request": current_time.isoformat(),
-                            "last_reset": current_time.isoformat()
-                        }
-                        pipe.hset(key, mapping=mapping)
-                        pipe.expire(key, 86400)
+            async with self.get_pipeline() as pipe:
+                for user in users:
+                    key = f"username:{user.username or ''}"
+                    mapping = {}
 
-                    await pipe.execute()
+                    if user.id is not None:
+                        mapping["id"] = str(user.id)
+                    if user.username:
+                        mapping["username"] = user.username
+                    if user.tier:
+                        mapping["tier"] = user.tier
+                    # if user.api_key:
+                    #     mapping["api_key"] = user.api_key
 
-            logger.info("Username mappings synced successfully")
+                    if mapping:
+                        await pipe.hmset(key, mapping)
+                    else:
+                        logger.warning(f"No valid data to sync for user with ID {user.id}")
+                await pipe.execute()
+            logger.info("Username mappings synchronized successfully")
         except Exception as ex:
-            logger.error(f"Error syncing username mappings: {str(ex)}")
+            logger.error(f"Error syncing username mappings: {ex}")
+            raise
+
+    async def sync_db_to_redis(self, db: AsyncSession):
+        """Synchronize database data to Redis with hash structure"""
+        logger.debug("Starting sync_db_to_redis process.")
+        try:
+            async with db as session:
+                result = await session.execute(select(Usage))
+                usages = result.scalars().all()
+
+            async with self.get_pipeline() as pipe:
+                for usage in usages:
+                    key = self._get_key(usage.user_id, usage.ip_address)
+                    mapping = {
+                        "id": str(usage.user_id),
+                        "user_identifier": usage.user_identifier,
+                        "ip_address": usage.ip_address,
+                        "requests_today": str(usage.requests_today),
+                        "remaining_requests": str(usage.remaining_requests),
+                        "last_request": usage.last_request.isoformat(),
+                        "last_reset": usage.last_reset.isoformat(),
+                        "tier": usage.tier
+                    }
+                    await pipe.hmset(key, mapping)
+                await pipe.execute()
+            logger.info("Database data synced to Redis successfully.")
+        except Exception as ex:
+            logger.error(f"Error syncing database data to Redis: {str(ex)}", exc_info=True)
             raise
 
     async def token_management(self, user_id: int, operation: str, token: Optional[str] = None, expire_time: int = 3600) -> Any:
@@ -1216,19 +1411,64 @@ class RedisManager:
                 tracking_clients=0
             )
 
-    def create_default_user_data(self, ip_address: str = "unknown") -> UserData:
-        """Create default user data object with all required fields"""
-        current_time = datetime.now(pytz.utc)
-        return UserData(
-            id=-1,
-            username=f"ip:{ip_address}",
-            ip_address=ip_address,
-            tier="unauthenticated",
-            remaining_requests=settings.RateLimit.get_limit("unauthenticated"),
-            requests_today=0,
-            last_request=current_time,
-            last_reset=current_time
-        )
+    async def create_default_user_data(self, ip_address: str) -> UserData:
+        """Create default user data"""
+        try:
+            # First check if we already have data for this IP
+            existing_data = await self.get_user_data_by_ip(ip_address)
+            if existing_data:
+                return existing_data
+
+            # If no existing data, create new
+            current_time = datetime.now(pytz.utc)
+            user_data = UserData(
+                id=IDGenerator.generate_id(),
+                username=f"ip:{ip_address}",
+                ip_address=ip_address,
+                tier="unauthenticated",
+                remaining_requests=settings.RateLimit.get_limit("unauthenticated"),
+                requests_today=0,
+                last_request=current_time,
+                last_reset=current_time
+            )
+
+            # Store user data
+            if await self.set_user_data(user_data):
+                return user_data
+            else:
+                raise Exception("Failed to store user data")
+
+        except Exception as ex:
+            logger.error(f"Error creating default user data: {ex}", exc_info=True)
+            raise
+
+    async def cleanup_redis_keys(self):
+        """Clean up any inconsistent Redis keys"""
+        try:
+            # Get all IP and user data keys
+            ip_keys = await self.redis.keys("ip:*")
+            user_keys = await self.redis.keys("user_data:*")
+
+            async with self.redis.pipeline() as pipe:
+                # Check each IP key
+                for key in ip_keys:
+                    key_type = await self.redis.type(key)
+                    if key_type != b'hash':
+                        # If not a hash, delete it
+                        await pipe.delete(key)
+
+                # Check each user data key
+                for key in user_keys:
+                    key_type = await self.redis.type(key)
+                    if key_type != b'hash':
+                        # If not a hash, delete it
+                        await pipe.delete(key)
+
+                await pipe.execute()
+
+            logger.info("Completed Redis key cleanup")
+        except Exception as ex:
+            logger.error(f"Error during Redis cleanup: {str(ex)}", exc_info=True)
 
     async def _gather_with_cleanup(self, tasks: List[asyncio.Task]) -> List[Any]:
         """Gather tasks with proper cleanup"""
@@ -1287,3 +1527,52 @@ class RedisManager:
                 "connection_pool": {},
                 "batch_processors": {}
             }
+
+    async def get_user_data_by_username(self, username: str) -> Optional[UserData]:
+        """Retrieve user data by username using batch processor"""
+        try:
+            # Add request to batch processor with high priority
+            batch_response = await self.batch_processor.add_to_batch(
+                "get_user_data",
+                username,
+                priority=BatchPriority.HIGH
+            )
+
+            if not batch_response:
+                logger.warning(f"No data found for username: {username}")
+                return None
+
+            try:
+                # If response is already a UserData object
+                if isinstance(batch_response, UserData):
+                    return batch_response
+
+                # Convert Redis hash to UserData object
+                if isinstance(batch_response, dict):
+                    required_fields = ["id", "username", "ip_address", "tier", "requests_today", "remaining_requests", "last_request", "last_reset"]
+                    for field in required_fields:
+                        if field not in batch_response:
+                            raise ValueError(f"Missing required field: {field}")
+
+                    user_data_dict = {
+                        "id": str(batch_response["id"]),
+                        "username": batch_response["username"],
+                        "ip_address": batch_response["ip_address"],
+                        "tier": batch_response["tier"],
+                        "requests_today": int(batch_response["requests_today"]),
+                        "remaining_requests": int(batch_response["remaining_requests"]),
+                        "last_request": datetime.fromisoformat(batch_response["last_request"]),
+                        "last_reset": datetime.fromisoformat(batch_response["last_reset"])
+                    }
+                    return UserData(**user_data_dict)
+
+                logger.error(f"Unexpected response type for username {username}: {type(batch_response)}")
+                return None
+            except Exception as ex:
+                logger.error(f"Error retrieving user data for username {username}: {str(ex)}")
+                return None
+        except Exception as ex:
+            logger.error(f"Error getting user data by username: {str(ex)}")
+            return None
+        finally:
+            self.batch_processor._cleanup_pending_results()
