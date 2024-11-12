@@ -160,8 +160,15 @@ jobs:
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./public "$NEW_RELEASE/"
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./package*.json ./.git-commit "$NEW_RELEASE/"
 
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
+
             cd "$NEW_RELEASE"
             npm ci --omit=dev
+
+            # Set final permissions for production
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
 
             # Store current as previous before switching
             if [ -L "$CURRENT_DIR" ]; then
