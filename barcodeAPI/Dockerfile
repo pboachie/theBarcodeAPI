@@ -27,9 +27,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/*
 
-# Create github-runner user and group
-RUN groupadd -g 1000 github-runner || true && \
-    useradd -u 1000 -g github-runner -m github-runner || true
+# Create github-runner user and group (with retry logic)
+RUN (groupadd -g 1000 github-runner || true) && \
+    (useradd -u 1000 -g github-runner -m github-runner || true)
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
