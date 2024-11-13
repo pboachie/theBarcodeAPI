@@ -113,9 +113,9 @@ jobs:
           # Function for health check
           check_health() {
             local url="http://localhost:3000"
-            local max_workers=2  # To be made dynamic
+            local max_workers=2
             local seconds_per_worker=30
-            local max_attempts=$((seconds_per_worker * max_workers / 5))  # 5 seconds per attempt
+            local max_attempts=$((seconds_per_worker * max_workers / 5))
 
             echo "Starting health check... Will try $max_attempts times (${seconds_per_worker}s per worker)"
 
@@ -126,7 +126,6 @@ jobs:
               fi
               echo "Health check attempt $i/$max_attempts..."
 
-              # Show PM2 status every 5 attempts
               if [ $((i % 5)) -eq 0 ]; then
                 echo "Current PM2 status:"
                 PM2_HOME="/home/github-runner/.pm2" pm2 list
@@ -144,65 +143,65 @@ jobs:
             return 1
           }
 
-          # Ensure base directories exist
+          # Ensure base directories exist with proper permissions
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/{releases,current}
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
 
           if [ "${{ steps.check_frontend_changes.outputs.changes }}" == "true" ]; then
-            # Full deployment
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
             NEW_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/release-${TIMESTAMP}"
             CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
             PREVIOUS_RELEASE_LINK="/opt/thebarcodeapi/${ENVIRONMENT}/previous"
 
+            # Create and setup new release directory
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "$NEW_RELEASE"
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./.next "$NEW_RELEASE/"
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./public "$NEW_RELEASE/"
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./package*.json ./.git-commit "$NEW_RELEASE/"
-
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "$NEW_RELEASE"
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
 
+            # Install dependencies
             cd "$NEW_RELEASE"
             npm ci --omit=dev
-
-            # Set final permissions for production
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data "$NEW_RELEASE"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
+            if [ $? -ne 0 ]; then
+              echo "npm install failed"
+              exit 1
+            fi
 
             # Store current as previous before switching
-            if [ -L "$CURRENT_DIR" ]; then
+            if [ -L "$CURRENT_DIR" ] && [ -e "$CURRENT_DIR" ]; then
               CURRENT_RELEASE=$(readlink -f "$CURRENT_DIR")
               echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$CURRENT_RELEASE" "$PREVIOUS_RELEASE_LINK"
             fi
 
+            # Update symlinks and set final permissions
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$NEW_RELEASE" "$CURRENT_DIR.new"
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv -Tf "$CURRENT_DIR.new" "$CURRENT_DIR"
 
-            # Set proper permissions
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data "$CURRENT_DIR"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$CURRENT_DIR"
-
             # Cleanup old releases (keep last 3)
             cd "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S ls -1dt */ | tail -n +4 | xargs -r sudo rm -rf
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S ls -1dt */ | tail -n +4 | xargs -r sudo -S rm -rf
           fi
 
-          # Check if PM2 process exists, start if not
-          PM2_HOME="/home/github-runner/.pm2" pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}" || {
+          # PM2 process management
+          if ! PM2_HOME="/home/github-runner/.pm2" pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
             echo "PM2 process not found, starting new instance..."
             cd "/opt/thebarcodeapi/${ENVIRONMENT}/current"
             PM2_HOME="/home/github-runner/.pm2" pm2 start "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js"
-          }
+          fi
 
           echo "Restarting PM2 process..."
           PM2_HOME="/home/github-runner/.pm2" pm2 reload "thebarcodeapi-frontend-${ENVIRONMENT}" --update-env
           PM2_HOME="/home/github-runner/.pm2" pm2 save --force
 
+          # Health check and rollback if needed
           echo "Starting health checks..."
           if ! check_health; then
             echo "Health check failed, attempting rollback..."
-            if [ -L "$PREVIOUS_RELEASE_LINK" ]; then
+            if [ -L "$PREVIOUS_RELEASE_LINK" ] && [ -e "$PREVIOUS_RELEASE_LINK" ]; then
               echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
 
               echo "Restarting PM2 for rollback..."
@@ -211,7 +210,6 @@ jobs:
 
               if ! check_health; then
                 echo "CRITICAL: Rollback failed! Site is down!"
-                echo "Final PM2 status:"
                 PM2_HOME="/home/github-runner/.pm2" pm2 list
                 PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 100 --nostream
                 exit 1
@@ -267,7 +265,7 @@ jobs:
             # Verify the commit exists in git history
             if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
               echo "Comparing changes with deployed commit ${DEPLOYED_COMMIT}"
-              CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- \
+                CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- \
                 'api/' \
                 'alembic/' \
                 'requirements.txt' \
@@ -276,8 +274,9 @@ jobs:
                 '*.ini' \
                 'scripts/' \
                 '*.sh' \
+                '.github/workflows/' \
                 || true)
-            else
+              else
               echo "Deployed commit ${DEPLOYED_COMMIT} not found in history, forcing update"
               CHANGES="force_update"
             fi
