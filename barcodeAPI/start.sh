@@ -31,6 +31,14 @@ check_db_connection() {
     return 1
 }
 
+if [ ! -d "/app/data" ]; then
+    mkdir -p /app/data
+fi
+
+if [ ! -d "/app/logs" ]; then
+    mkdir -p /app/logs
+fi
+
 # Wait for the database to be ready
 print_header "Database Check"
 if check_db_connection; then
@@ -75,7 +83,7 @@ def calculate_optimal_workers():
     # Cap at 5 workers
     workers = min(workers, 5)
 
-    # 1 worker can support 42 requests a second. Return total supported requests (11-7-24)
+    # 1 worker can support 42 requests a second. Return total supported requests
     supported_workers = workers * 42
 
     return cpu_cores, total_ram, available_ram, workers, supported_workers
@@ -93,11 +101,13 @@ print_colored "36" "Available RAM:    ${AVAILABLE_RAM} GB"
 print_colored "36" "Optimal Workers:  $WORKERS"
 print_colored "36" "Supported RPS:    $SUPPORTED_WORKERS Requests/Second"
 
-# Variable holding the number of workers to use
-WORKERS_DISPLAY=$WORKERS
-
 # Start the application
 print_header "Starting Application"
-print_colored "32" "Starting application with $WORKERS_DISPLAY workers..."
-exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS_DISPLAY
-# exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS_DISPLAY
+print_colored "32" "Starting application with $WORKERS workers..."
+
+# Use exec to replace the shell with the application
+if [ "$PYTHON_ENV" = "development" ]; then
+    exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS
+else
+    exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS
+fi
