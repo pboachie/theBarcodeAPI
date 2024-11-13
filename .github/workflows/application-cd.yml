@@ -144,8 +144,8 @@ jobs:
           }
 
           # Ensure base directories exist with proper permissions
-          sudo mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/{releases,current}
-          sudo chown -R github-runner:github-runner /opt/thebarcodeapi
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/{releases,current}
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
 
           if [ "${{ steps.check_frontend_changes.outputs.changes }}" == "true" ]; then
             TIMESTAMP=$(date +%Y%m%d%H%M%S)
@@ -154,12 +154,12 @@ jobs:
             PREVIOUS_RELEASE_LINK="/opt/thebarcodeapi/${ENVIRONMENT}/previous"
 
             # Create and setup new release directory
-            sudo mkdir -p "$NEW_RELEASE"
-            sudo cp -R ./.next "$NEW_RELEASE/"
-            sudo cp -R ./public "$NEW_RELEASE/"
-            sudo cp ./package*.json ./.git-commit "$NEW_RELEASE/"
-            sudo chown -R github-runner:github-runner "$NEW_RELEASE"
-            sudo chmod -R 755 "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./.next "$NEW_RELEASE/"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./public "$NEW_RELEASE/"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./package*.json ./.git-commit "$NEW_RELEASE/"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
 
             # Install dependencies
             cd "$NEW_RELEASE"
@@ -175,26 +175,26 @@ jobs:
               # Move the content to a new release directory if it exists
               if [ -d "$CURRENT_DIR/.next" ] || [ -d "$CURRENT_DIR/public" ]; then
                 INITIAL_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/initial-release"
-                sudo mv "$CURRENT_DIR" "$INITIAL_RELEASE"
-                sudo ln -sfn "$INITIAL_RELEASE" "$PREVIOUS_RELEASE_LINK"
+                echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv "$CURRENT_DIR" "$INITIAL_RELEASE"
+                echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$INITIAL_RELEASE" "$PREVIOUS_RELEASE_LINK"
               else
                 # If it's empty or not a proper release, just remove it
-                sudo rm -rf "$CURRENT_DIR"
+                echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf "$CURRENT_DIR"
               fi
             elif [ -L "$CURRENT_DIR" ] && [ -e "$CURRENT_DIR" ]; then
               # Store current as previous before switching
               CURRENT_RELEASE=$(readlink -f "$CURRENT_DIR")
-              sudo ln -sfn "$CURRENT_RELEASE" "$PREVIOUS_RELEASE_LINK"
+              echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$CURRENT_RELEASE" "$PREVIOUS_RELEASE_LINK"
             fi
 
             # Update symlinks and set final permissions
-            sudo chown -R www-data:www-data "$NEW_RELEASE"
-            sudo chmod -R 755 "$NEW_RELEASE"
-            sudo ln -sfn "$NEW_RELEASE" "$CURRENT_DIR"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$NEW_RELEASE" "$CURRENT_DIR"
 
             # Cleanup old releases (keep last 3)
             cd "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
-            sudo ls -1dt */ | tail -n +4 | xargs -r sudo rm -rf
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'ls -1dt */ | tail -n +4 | xargs -r rm -rf'
           fi
 
           # PM2 process management
@@ -213,7 +213,7 @@ jobs:
           if ! check_health; then
             echo "Health check failed, attempting rollback..."
             if [ -L "$PREVIOUS_RELEASE_LINK" ] && [ -e "$PREVIOUS_RELEASE_LINK" ]; then
-              sudo ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
+              echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
 
               echo "Restarting PM2 for rollback..."
               PM2_HOME="/home/github-runner/.pm2" pm2 reload "thebarcodeapi-frontend-${ENVIRONMENT}" --update-env
@@ -233,7 +233,6 @@ jobs:
           fi
 
           echo "Deployment successful!"
-
 
   backend-deployment:
     runs-on: self-hosted
