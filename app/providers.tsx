@@ -15,8 +15,8 @@ export function Providers({ children }: { children: ReactNode }) {
           {children}
         </div>
         <Toaster />
+        <Footer />
       </div>
-      <Footer />
     </NextUIProvider>
   );
 }

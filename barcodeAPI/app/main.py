@@ -27,15 +27,15 @@ from app.schemas import SecurityScheme
 log_directory = settings.LOG_DIRECTORY
 os.makedirs(log_directory, exist_ok=True)
 
-if settings.ENVIRONMENT == "production":
-    logging.basicConfig(level=logging.INFO)
-else:
-    logging.basicConfig(level=logging.DEBUG,
-                        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                        handlers=[
-                            logging.FileHandler(os.path.join(log_directory, "app.log"), mode="a"),
-                            logging.StreamHandler()
-                        ])
+log_level = logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG
+logging.basicConfig(
+    level=log_level,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(log_directory, "app.log"), mode="a"),
+        logging.StreamHandler()
+    ]
+)
 
 logger = logging.getLogger(__name__)
 
