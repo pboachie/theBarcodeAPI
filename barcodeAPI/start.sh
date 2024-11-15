@@ -107,7 +107,7 @@ print_colored "32" "Starting application with $WORKERS workers..."
 
 # Use exec to replace the shell with the application
 if [ "$PYTHON_ENV" = "development" ]; then
-    exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS
+    exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header --workers 1
 else
     exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS
 fi
