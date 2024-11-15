@@ -193,8 +193,8 @@ app = FastAPI(
     Rate limits apply based on authentication status and tier level.
     """,
     version=settings.API_VERSION,
-    docs_url="/docs",
-    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
+    docs_url="/redoc" if settings.ENVIRONMENT == "development" else None,
+    redoc_url="/docs",
     openapi_url="/openapi.json",
     lifespan=lifespan,
     contact={
