@@ -65,6 +65,7 @@ export const Footer: React.FC = () => {
                 rel="noopener noreferrer"
               >
                 {renderSocialIcon(platform)}
+                <span className="sr-only">{label}</span>
               </a>
             ))}
           </div>

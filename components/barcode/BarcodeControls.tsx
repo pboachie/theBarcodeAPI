@@ -69,9 +69,9 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
     }
   };
 
-  const handleCustomTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setCustomText(e.target.value);
-  };
+  // const handleCustomTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   setCustomText(e.target.value);
+  // };
 
   const handleTypeChange = (newType: BarcodeType) => {
     setBarcodeType(newType);
