@@ -164,28 +164,6 @@ async def lifespan(app: FastAPI):
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.remove_signal_handler(sig)
 
-app = FastAPI(
-    title="the Barcode API",
-    description="""
-    The Barcode API allows you to generate various types of barcodes programmatically.
-    Rate limits apply based on authentication status and tier level.
-    """,
-    version=settings.API_VERSION,
-    docs_url="/docs" if settings.ENVIRONMENT == "development" else None,
-    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
-    openapi_url="/openapi.json" if settings.ENVIRONMENT == "development" else None,
-    lifespan=lifespan,
-    contact={
-        "name": "API Support",
-        "url": "https://thebarcodeapi.com/support",
-        "email": "support@boachiefamily.net",
-    },
-    license_info={
-        "name": "MIT",
-        "url": "https://opensource.org/licenses/MIT",
-    }
-)
-
 def custom_openapi():
     if app.openapi_schema:
         return app.openapi_schema
@@ -207,6 +185,28 @@ def custom_openapi():
 
     app.openapi_schema = openapi_schema
     return app.openapi_schema
+
+app = FastAPI(
+    title="the Barcode API",
+    description="""
+    The Barcode API allows you to generate various types of barcodes programmatically.
+    Rate limits apply based on authentication status and tier level.
+    """,
+    version=settings.API_VERSION,
+    docs_url="/docs",
+    redoc_url="/redoc" if settings.ENVIRONMENT == "development" else None,
+    openapi_url="/openapi.json",
+    lifespan=lifespan,
+    contact={
+        "name": "Barcode API Support",
+        "url": "https://thebarcodeapi.com/support",
+        "email": "support@boachiefamily.net",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    }
+)
 
 app.openapi = custom_openapi
 
