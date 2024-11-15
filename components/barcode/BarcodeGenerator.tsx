@@ -8,7 +8,6 @@ import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { BarcodeControls } from './BarcodeControls';
 import { BarcodeDisplay } from './BarcodeDisplay';
 import { useToast } from '@/components/ui/use-toast';
-import packageJson from '../../package.json';
 import { BarcodeType, ImageFormat } from '@/components/types/barcode';
 import { cleanupBarcodeUrl, generateBarcode } from './barcodeService';
 import { ApiCallDisplay } from './ApiCallDisplay';
@@ -17,8 +16,6 @@ import { getBarcodeText } from './barcodeConfig';
 
 const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN ||
   (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com');
-
-const apiVersion = packageJson.version || 'x.x.x';
 
 const BarcodeGenerator: React.FC = () => {
     const [barcodeType, setBarcodeType] = useState<BarcodeType>('code128');
@@ -195,9 +192,9 @@ const BarcodeGenerator: React.FC = () => {
                 <Card className="max-w-full">
                     <CardHeader>
                         <CardTitle className="text-2xl font-bold text-center">
-                            The Barcode API {process.env.NODE_ENV === 'development' ?
-                                <span className="text-red-500">DEV v{apiVersion}*</span> :
-                                <span className="text-green-500">v{apiVersion}</span>
+                            The Barcode API {process.env.NODE_ENV == 'development' ?
+                                <span className="text-red-500">DEV*</span> :
+                                <span className="text-green-500">*</span>
                             }
                         </CardTitle>
                     </CardHeader>
