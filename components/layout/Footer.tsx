@@ -31,7 +31,7 @@ export const Footer: React.FC = () => {
 
   return (
     <footer
-      className="footer bg-background md:py-8 py-4 md:pb-8 pb-0 md:fixed md:bottom-0 md:left-0 md:w-full"
+      className="footer bg-background md:py-8 py-4 md:pb-8 pb-0 w-full"
       role="contentinfo"
       aria-label="Site footer"
     >
@@ -57,7 +57,7 @@ export const Footer: React.FC = () => {
               <a
                 key={href}
                 href={href}
-                aria-label={label}
+                aria-label={`Follow us on ${platform}`}
                 className="inline-flex items-center justify-center transition-opacity hover:opacity-80"
                 target="_blank"
                 rel="noopener noreferrer"
