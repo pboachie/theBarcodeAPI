@@ -44,7 +44,7 @@ export const BarcodeDisplay: React.FC<BarcodeDisplayProps> = ({
           <motion.img
             key="barcode"
             src={barcodeUrl}
-            alt="Generated Barcode"
+            alt={`Generated barcode`}
             className="max-w-full max-h-full object-contain"
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
