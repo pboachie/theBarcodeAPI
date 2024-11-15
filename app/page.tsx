@@ -4,14 +4,19 @@ import React from 'react';
 import dynamic from 'next/dynamic';
 import { Metadata } from 'next';
 
-const BarcodeGenerator = dynamic(() => import('@/components/barcode/BarcodeGenerator'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <p>Loading...</p>
-    </div>
-  )
-});
+const BarcodeGenerator = dynamic(
+  () => import('@/components/barcode/BarcodeGenerator'),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="container mx-auto p-4">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <p>Loading...</p>
+        </div>
+      </div>
+    ),
+  }
+);
 
 export const metadata: Metadata = {
   title: 'Barcode Generator',
@@ -23,11 +28,5 @@ export const metadata: Metadata = {
 };
 
 export default function BarcodePage() {
-  return (
-    <div className="min-h-screen bg-background">
-      <main className="container mx-auto">
-        <BarcodeGenerator />
-      </main>
-    </div>
-  );
+  return <BarcodeGenerator />;
 }

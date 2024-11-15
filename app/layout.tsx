@@ -236,7 +236,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
         />
       </head>
-      <body className="antialiased bg-cream">
+      <body className="antialiased bg-background">
         <Providers>{children}</Providers>
       </body>
     </html>

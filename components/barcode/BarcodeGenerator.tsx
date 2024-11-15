@@ -169,9 +169,9 @@ const BarcodeGenerator: React.FC = () => {
     }, [barcodeUrl]);
 
     return (
-        <div className='container mx-auto'>
+        <main className="container mx-auto">
             <div className="barcode-generator-container p-4 md:p-8">
-                <Card className="max-w-full mx-auto">
+                <Card className="max-w-full">
                     <CardHeader>
                         <CardTitle className="text-2xl font-bold text-center">
                             The Barcode API {process.env.NODE_ENV === 'development' ?
@@ -229,7 +229,7 @@ const BarcodeGenerator: React.FC = () => {
                     </CardContent>
                 </Card>
             </div>
-        </div>
+        </main>
     );
 };
 

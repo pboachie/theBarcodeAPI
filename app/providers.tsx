@@ -10,12 +10,12 @@ import { Footer } from '@/components/layout/Footer';
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <NextUIProvider>
-      <div className="flex flex-col min-h-screen">
-        <div className="flex-grow">
+      <div className="flex min-h-screen flex-col">
+        <div className="flex-1">
           {children}
         </div>
-        <Toaster />
         <Footer />
+        <Toaster />
       </div>
     </NextUIProvider>
   );
