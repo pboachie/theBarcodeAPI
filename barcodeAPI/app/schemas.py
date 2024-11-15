@@ -1,27 +1,12 @@
 # app/schemas.py
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, List, Dict, Any
+from typing import List, Optional, Dict, Any
 from enum import Enum
 from datetime import datetime
 import logging
 import json
 
 logger = logging.getLogger(__name__)
-
-class BatchPriority(str, Enum):
-    """
-    Priority levels for batch processing operations.
-
-    Attributes:
-        URGENT: Highest priority with 50ms target processing time
-        HIGH: High priority with 500ms target processing time
-        MEDIUM: Standard priority with 1s target processing time
-        LOW: Low priority with 2s target processing time
-    """
-    URGENT = "urgent"
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
 
 class Token(BaseModel):
     access_token: str
@@ -31,7 +16,6 @@ class TokenData(BaseModel):
     username: Optional[str] = None
 
 
-# Enhanced schema definitions with detailed documentation
 class BatchPriority(str, Enum):
     """
     Priority levels for batch processing operations.
@@ -222,18 +206,19 @@ class BarcodeRequest(BaseModel):
         height: Barcode height in pixels (50-600)
         module_width: Width of a single barcode module in mm
         quiet_zone: Margin space around the barcode in mm
+        text: Text to display under the barcode (will be empty if show_text is False)
     """
     data: str = Field(
         ...,
         description="Content to encode in the barcode",
         example="123456789012",
         min_length=1
-    )
+    )  # Remove trailing comma
     format: BarcodeFormatEnum = Field(
         ...,
         description="Barcode format type",
         example="ean13"
-    )
+    )  # Remove trailing comma
     width: int = Field(
         default=200,
         ge=50,
@@ -245,62 +230,104 @@ class BarcodeRequest(BaseModel):
         ge=50,
         le=600,
         description="Height of the barcode image in pixels"
-    ),
+    )
+    show_text: bool = Field(
+        default=True,
+        description="Whether to display text under the barcode"
+    )
+    text_content: Optional[str] = Field(
+        None,
+        description="Custom text to display under the barcode. If not provided, uses the encoded data"
+    )
     module_width: Optional[float] = Field(
         None,
         description="Width of a single barcode module in mm"
-    ),
+    )
     module_height: Optional[float] = Field(
         None,
         description="Height of the barcode modules in mm"
-    ),
+    )
     quiet_zone: Optional[float] = Field(
         None,
         description="Margin space around the barcode in mm"
-    ),
+    )
     font_size: Optional[int] = Field(
         None,
         description="Font size of the text under the barcode in pt"
-    ),
+    )
     text_distance: Optional[float] = Field(
         None,
         description="Distance between the barcode and the text under it in mm"
-    ),
+    )
     background: Optional[str] = Field(
         None,
         description="Background color of the barcode image"
-    ),
+    )
     foreground: Optional[str] = Field(
         None,
         description="Foreground and text color of the barcode image"
-    ),
-    center_text: Optional[bool] = Field(
+    )
+    center_text: bool = Field(
         default=True,
         description="Center the text under the barcode"
-    ),
+    )
     image_format: BarcodeImageFormatEnum = Field(
         default=BarcodeImageFormatEnum.PNG,
         description="Image file format for the barcode image"
-    ),
-
-    dpi: Optional[int] = Field(
+    )
+    dpi: int = Field(
         default=200,
         ge=130,
         le=600,
         description="DPI for the barcode image"
-    ),
+    )
     add_checksum: Optional[bool] = Field(
         None,
         description="Add the checksum to the barcode data"
-    ),
+    )
     no_checksum: Optional[bool] = Field(
         None,
         description="Do not add checksum to the barcode data"
-    ),
+    )
     guardbar: Optional[bool] = Field(
         None,
         description="Add guardbar to the barcode image"
     )
+
+    def get_writer_options(self) -> Dict[str, any]:
+        """Get options for the barcode writer"""
+        # Start with basic options
+        options = {
+            'module_width': self.module_width,
+            'module_height': self.module_height,
+            'quiet_zone': self.quiet_zone,
+            'background': self.background,
+            'foreground': self.foreground,
+            'center_text': self.center_text,
+            'dpi': self.dpi,
+            'image_format': self.image_format.value if self.image_format else 'PNG'
+        }
+
+        # Handle text display options
+        if not self.show_text:
+            options['font_size'] = 0
+            options['text_distance'] = 0
+            options['text'] = ""
+        else:
+            options['font_size'] = self.font_size or 10
+            options['text_distance'] = self.text_distance or 5
+            options['text'] = self.text_content or self.data
+
+        # Add barcode-specific options
+        if self.add_checksum is not None:
+            options['add_checksum'] = self.add_checksum
+        if self.no_checksum is not None:
+            options['no_checksum'] = self.no_checksum
+        if self.guardbar is not None:
+            options['guardbar'] = self.guardbar
+
+        # Remove None values
+        return {k: v for k, v in options.items() if v is not None}
 
     class Config:
         json_schema_extra = {
@@ -309,6 +336,7 @@ class BarcodeRequest(BaseModel):
                 "format": "ean13",
                 "width": 200,
                 "height": 100,
+                "show_text": True,
                 "module_width": 0.2,
                 "quiet_zone": 6.5
             }
@@ -342,13 +370,6 @@ class BarcodeRequest(BaseModel):
         else:
             logger.warning("Data or barcode format is None. Skipping length validation.")
         return self
-
-    def get_writer_options(self) -> Dict[str, any]:
-        options = {}
-        for field in self.model_fields:
-            if field not in ['data', 'format', 'width', 'height'] and getattr(self, field) is not None:
-                options[field] = getattr(self, field)
-        return options
 
     @property
     def max_length(self) -> Optional[str]:
