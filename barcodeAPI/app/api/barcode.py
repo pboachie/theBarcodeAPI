@@ -2,6 +2,7 @@
 
 from app.barcode_generator import BarcodeGenerationError, generate_barcode_image
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, Response
+from fastapi.param_functions import Form
 from pydantic import ValidationError
 from app.redis_manager import RedisManager
 from app.redis import get_redis_manager
@@ -27,43 +28,39 @@ async def generate_barcode(
     format: BarcodeFormatEnum = Query(..., description="Barcode format"),
     width: int = Query(default=200, ge=50, le=600),
     height: int = Query(default=100, ge=50, le=600),
-    module_width: Optional[float] = Query(None, description="The width of one barcode module in mm"),
-    module_height: Optional[float] = Query(None, description="The height of the barcode modules in mm"),
-    quiet_zone: Optional[float] = Query(None, description="Distance on the left and right from the border to the first/last barcode module in mm"),
+    show_text: bool = Query(True, description="Whether to display text under the barcode"),
+    text_content: Optional[str] = Query(None, description="Custom text to display under the barcode. If not provided and show_text is True, uses the encoded data"),
+    module_width: Optional[float] = Query(None, description="Width of one barcode module in mm"),
+    module_height: Optional[float] = Query(None, description="Height of the barcode modules in mm"),
+    quiet_zone: Optional[float] = Query(None, description="Margin space around the barcode in mm"),
     font_size: Optional[int] = Query(None, description="Font size of the text under the barcode in pt"),
     text_distance: Optional[float] = Query(None, description="Distance between the barcode and the text under it in mm"),
-    background: Optional[str] = Query(None, description="The background color of the created barcode"),
-    foreground: Optional[str] = Query(None, description="The foreground and text color of the created barcode"),
-    center_text: Optional[bool] = Query(True, description="If true, the text is centered under the barcode; else left aligned"),
-    image_format: BarcodeImageFormatEnum = Query(default=BarcodeImageFormatEnum.PNG, description="The image file format"),
-    dpi: Optional[int] = Query(default=200, ge=130, le=600, description="DPI to calculate the image size in pixels"),
-    add_checksum: Optional[bool] = Query(None, description="Add the checksum to code or not (for Code 39)"),
-    no_checksum: Optional[bool] = Query(None, description="Do not add checksum (for EAN-13)"),
-    guardbar: Optional[bool] = Query(None, description="Add guardbar (for EAN-13)"),
+    background: Optional[str] = Query(None, description="Background color of the barcode image"),
+    foreground: Optional[str] = Query(None, description="Foreground and text color of the created barcode"),
+    center_text: bool = Query(True, description="Center the text under the barcode"),
+    image_format: BarcodeImageFormatEnum = Query(default=BarcodeImageFormatEnum.PNG),
+    dpi: Optional[int] = Query(default=200, ge=130, le=600),
+    add_checksum: Optional[bool] = Query(None),
+    no_checksum: Optional[bool] = Query(None),
+    guardbar: Optional[bool] = Query(None),
     redis_manager: RedisManager = Depends(get_redis_manager),
     current_user: UserData = Depends(get_current_user)
 ):
-    """Generate a barcode image based on the provided parameters.
-
-    This endpoint creates a barcode image and returns it as a PNG.
-    Usage is tracked and limited based on the user's authentication status and tier.
-
-    - Authenticated users: Limits are based on their account tier.
-    - Unauthenticated users: A default limit is applied based on their IP, etc.
-
-    Rate limited to 1000 requests per second.
-    """
+    """Generate a barcode image based on the provided parameters."""
     try:
+
         barcode_request = BarcodeRequest(
             data=data,
             format=format,
             width=width,
             height=height,
+            show_text=show_text,
+            text_content=text_content if show_text else "",
             module_width=module_width,
             module_height=module_height,
             quiet_zone=quiet_zone,
-            font_size=font_size,
-            text_distance=text_distance,
+            font_size=font_size if show_text else 0,
+            text_distance=text_distance if show_text else 0,
             background=background,
             foreground=foreground,
             center_text=center_text,
@@ -73,6 +70,28 @@ async def generate_barcode(
             no_checksum=no_checksum,
             guardbar=guardbar
         )
+
+
+        # Create options dictionary
+        writer_options = {
+            'module_width': module_width,
+            'module_height': module_height,
+            'quiet_zone': quiet_zone,
+            'font_size': font_size if show_text else 0,
+            'text_distance': text_distance if show_text else 0,
+            'background': background,
+            'foreground': foreground,
+            'center_text': center_text,
+            'image_format': image_format.value if image_format else 'PNG',
+            'dpi': dpi
+        }
+
+        # Add text content to writer options if needed
+        if show_text and text_content:
+            writer_options['text_content'] = text_content
+
+        # Filter out None values
+        writer_options = {k: v for k, v in writer_options.items() if v is not None}
 
         # Get client IP
         ip_address = await get_client_ip(request)
@@ -84,8 +103,6 @@ async def generate_barcode(
                 detail="Rate limit exceeded. Please try again later."
             )
 
-        # Get writer options and generate barcode
-        writer_options = barcode_request.get_writer_options()
         try:
             barcode_image = await generate_barcode_image(barcode_request, writer_options)
         except BarcodeGenerationError as e:
@@ -98,16 +115,12 @@ async def generate_barcode(
             logger.error("Error updating usage in Redis")
             raise HTTPException(
                 status_code=500,
-                detail="There was an error with your API Key. Please try again or contact support."
+                detail="There was an error processing your request. Please try again."
             )
 
         # Parse image format and set media type
         image_format_str = barcode_request.image_format.value
         media_type = f"image/{image_format_str.lower()}"
-
-        # Ensure last_reset has timezone info
-        if updated_user_data.last_reset.tzinfo is None:
-            updated_user_data.last_reset = updated_user_data.last_reset.replace(tzinfo=pytz.utc)
 
         # Set response headers
         add_headers = {
@@ -137,8 +150,8 @@ async def generate_barcode(
             detail={"message": e.message, "error_type": e.error_type}
         )
     except Exception as e:
-        logger.error(f"Unexpected error generating barcode: {str(e)}")
+        logger.error(f"Unexpected error: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail="An unexpected error occurred while generating the barcode"
+            detail="An unexpected error occurred"
         )
