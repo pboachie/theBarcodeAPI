@@ -3,8 +3,8 @@
   "version": "0.1.6",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "NEXT_PUBLIC_APP_VERSION=$(jq -r .version package.json) next dev",
+    "build": "NEXT_PUBLIC_APP_VERSION=$(jq -r .version package.json) next build",
     "start": "next start",
     "lint": "next lint",
     "postbuild": "next-sitemap"
