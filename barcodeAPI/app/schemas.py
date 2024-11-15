@@ -1,18 +1,12 @@
 # app/schemas.py
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, List, Dict
+from typing import List, Optional, Dict, Any
 from enum import Enum
 from datetime import datetime
 import logging
 import json
 
 logger = logging.getLogger(__name__)
-
-class BatchPriority(Enum):
-    URGENT = "urgent" # 50ms
-    HIGH = "high" # 500ms
-    MEDIUM = "medium" # 1s
-    LOW = "low" # 2s
 
 class Token(BaseModel):
     access_token: str
@@ -21,8 +15,32 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
+
+class BatchPriority(str, Enum):
+    """
+    Priority levels for batch processing operations.
+
+    Attributes:
+        URGENT: Highest priority with 50ms target processing time
+        HIGH: High priority with 500ms target processing time
+        MEDIUM: Standard priority with 1s target processing time
+        LOW: Low priority with 2s target processing time
+    """
+    URGENT = "URGENT"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
+
 class BarcodeFormatEnum(str, Enum):
-    code128 = "code128" # Default
+    """
+    Supported barcode format types.
+
+    Each format has specific requirements and use cases:
+    - code128: General-purpose format supporting all 128 ASCII characters
+    - ean13: European Article Number (13 digits)
+    - code39: Alphanumeric format widely used in logistics
+    """
+    code128 = "code128"
     code39 = "code39"
     ean = "ean"
     ean13 = "ean13"
@@ -178,23 +196,151 @@ class BarcodeFormats(BaseModel):
     }
 
 class BarcodeRequest(BaseModel):
-    data: str = Field(..., description="The data to encode in the barcode")
-    format: BarcodeFormatEnum = Field(..., description="Barcode format")
-    width: int = Field(default=200, ge=50, le=600)
-    height: int = Field(default=100, ge=50, le=600)
-    module_width: Optional[float] = Field(None, description="The width of one barcode module in mm")
-    module_height: Optional[float] = Field(None, description="The height of the barcode modules in mm")
-    quiet_zone: Optional[float] = Field(None, description="Distance on the left and right from the border to the first/last barcode module in mm")
-    font_size: Optional[int] = Field(None, description="Font size of the text under the barcode in pt")
-    text_distance: Optional[float] = Field(None, description="Distance between the barcode and the text under it in mm")
-    background: Optional[str] = Field(None, description="The background color of the created barcode")
-    foreground: Optional[str] = Field(None, description="The foreground and text color of the created barcode")
-    center_text: Optional[bool] = Field(default=True, description="If true, the text is centered under the barcode; else left aligned")
-    image_format: BarcodeImageFormatEnum = Field(default=BarcodeImageFormatEnum.PNG, description="The image file format (e.g., PNG, JPEG, BMP)")
-    dpi: Optional[int] = Field(default=300, ge=130, le=600, description="DPI to calculate the image size in pixels")
-    add_checksum: Optional[bool] = Field(None, description="Add the checksum to code or not (for Code 39)")
-    no_checksum: Optional[bool] = Field(None, description="Do not add checksum (for EAN-13)")
-    guardbar: Optional[bool] = Field(None, description="Add guardbar (for EAN-13)")
+    """
+    Request model for barcode generation.
+
+    Attributes:
+        data: The content to be encoded in the barcode
+        format: The barcode format type (see BarcodeFormatEnum)
+        width: Barcode width in pixels (50-600)
+        height: Barcode height in pixels (50-600)
+        module_width: Width of a single barcode module in mm
+        quiet_zone: Margin space around the barcode in mm
+        text: Text to display under the barcode (will be empty if show_text is False)
+    """
+    data: str = Field(
+        ...,
+        description="Content to encode in the barcode",
+        example="123456789012",
+        min_length=1
+    )  # Remove trailing comma
+    format: BarcodeFormatEnum = Field(
+        ...,
+        description="Barcode format type",
+        example="ean13"
+    )  # Remove trailing comma
+    width: int = Field(
+        default=200,
+        ge=50,
+        le=600,
+        description="Width of the barcode image in pixels"
+    )
+    height: int = Field(
+        default=100,
+        ge=50,
+        le=600,
+        description="Height of the barcode image in pixels"
+    )
+    show_text: bool = Field(
+        default=True,
+        description="Whether to display text under the barcode"
+    )
+    text_content: Optional[str] = Field(
+        None,
+        description="Custom text to display under the barcode. If not provided, uses the encoded data"
+    )
+    module_width: Optional[float] = Field(
+        None,
+        description="Width of a single barcode module in mm"
+    )
+    module_height: Optional[float] = Field(
+        None,
+        description="Height of the barcode modules in mm"
+    )
+    quiet_zone: Optional[float] = Field(
+        None,
+        description="Margin space around the barcode in mm"
+    )
+    font_size: Optional[int] = Field(
+        None,
+        description="Font size of the text under the barcode in pt"
+    )
+    text_distance: Optional[float] = Field(
+        None,
+        description="Distance between the barcode and the text under it in mm"
+    )
+    background: Optional[str] = Field(
+        None,
+        description="Background color of the barcode image"
+    )
+    foreground: Optional[str] = Field(
+        None,
+        description="Foreground and text color of the barcode image"
+    )
+    center_text: bool = Field(
+        default=True,
+        description="Center the text under the barcode"
+    )
+    image_format: BarcodeImageFormatEnum = Field(
+        default=BarcodeImageFormatEnum.PNG,
+        description="Image file format for the barcode image"
+    )
+    dpi: int = Field(
+        default=200,
+        ge=130,
+        le=600,
+        description="DPI for the barcode image"
+    )
+    add_checksum: Optional[bool] = Field(
+        None,
+        description="Add the checksum to the barcode data"
+    )
+    no_checksum: Optional[bool] = Field(
+        None,
+        description="Do not add checksum to the barcode data"
+    )
+    guardbar: Optional[bool] = Field(
+        None,
+        description="Add guardbar to the barcode image"
+    )
+
+    def get_writer_options(self) -> Dict[str, any]:
+        """Get options for the barcode writer"""
+        # Start with basic options
+        options = {
+            'module_width': self.module_width,
+            'module_height': self.module_height,
+            'quiet_zone': self.quiet_zone,
+            'background': self.background,
+            'foreground': self.foreground,
+            'center_text': self.center_text,
+            'dpi': self.dpi,
+            'image_format': self.image_format.value if self.image_format else 'PNG'
+        }
+
+        # Handle text display options
+        if not self.show_text:
+            options['font_size'] = 0
+            options['text_distance'] = 0
+            options['text'] = ""
+        else:
+            options['font_size'] = self.font_size or 10
+            options['text_distance'] = self.text_distance or 5
+            options['text'] = self.text_content or self.data
+
+        # Add barcode-specific options
+        if self.add_checksum is not None:
+            options['add_checksum'] = self.add_checksum
+        if self.no_checksum is not None:
+            options['no_checksum'] = self.no_checksum
+        if self.guardbar is not None:
+            options['guardbar'] = self.guardbar
+
+        # Remove None values
+        return {k: v for k, v in options.items() if v is not None}
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "data": "123456789012",
+                "format": "ean13",
+                "width": 200,
+                "height": 100,
+                "show_text": True,
+                "module_width": 0.2,
+                "quiet_zone": 6.5
+            }
+        }
 
     @model_validator(mode='before')
     @classmethod
@@ -225,13 +371,6 @@ class BarcodeRequest(BaseModel):
             logger.warning("Data or barcode format is None. Skipping length validation.")
         return self
 
-    def get_writer_options(self) -> Dict[str, any]:
-        options = {}
-        for field in self.model_fields:
-            if field not in ['data', 'format', 'width', 'height'] and getattr(self, field) is not None:
-                options[field] = getattr(self, field)
-        return options
-
     @property
     def max_length(self) -> Optional[str]:
         return BarcodeFormats().formats[self.format].max_length
@@ -258,6 +397,7 @@ class UsageResponse(BaseModel):
     requests_today: int
     requests_limit: int
     remaining_requests: int
+    reset_time: datetime
 
 class UsageRequest(BaseModel):
     user_id: int
@@ -274,9 +414,14 @@ class UserCreate(BaseModel):
     tier: TierEnum = Field(..., description="User tier: basic, standard, or premium")
 
 class UserResponse(BaseModel):
-    id: int
+    id: str
     username: str
     tier: str
+    ip_address: Optional[str] = None
+    remaining_requests: int
+    requests_today: int
+    last_request: Optional[str] = None
+    last_reset: Optional[str] = None
 
 class UsersResponse(BaseModel):
     users: List[UserResponse]
@@ -288,7 +433,7 @@ class UserCreatedResponse(BaseModel):
     tier: str
 
 class UserData(BaseModel):
-    id: int
+    id: str
     username: str
     ip_address: Optional[str] = None
     tier: str
@@ -321,7 +466,6 @@ class UserData(BaseModel):
     def from_json(cls, json_str):
         return cls.parse_obj(json.loads(json_str))
 
-
 class HealthResponse(BaseModel):
     status: str
     version: str
@@ -344,4 +488,20 @@ class DetailedHealthResponse(BaseModel):
     database_status: Optional[str] = None
     redis_status: Optional[str] = None
     redis_details: Optional[RedisConnectionStats] = None
+
+class BatchProcessorResponse(BaseModel):
+    """Model for batch processor responses"""
+    result: Optional[Any] = None
+    error: Optional[str] = None
+
+class BarcodeGenerationError(Exception):
+    def __init__(self, message, error_type):
+        self.message = message
+        self.error_type = error_type
+        super().__init__(self.message)
+
+class SecurityScheme(BaseModel):
+    type: str = "http"
+    scheme: str = "bearer"
+    bearerFormat: str = "JWT"
 

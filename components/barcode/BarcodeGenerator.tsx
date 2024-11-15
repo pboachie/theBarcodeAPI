@@ -8,8 +8,7 @@ import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { BarcodeControls } from './BarcodeControls';
 import { BarcodeDisplay } from './BarcodeDisplay';
 import { useToast } from '@/components/ui/use-toast';
-import packageJson from '../../package.json';
-import { BarcodeType, ImageFormat } from './types';
+import { BarcodeType, ImageFormat } from '@/components/types/barcode';
 import { cleanupBarcodeUrl, generateBarcode } from './barcodeService';
 import { ApiCallDisplay } from './ApiCallDisplay';
 import { ActionButtons } from './ActionButtons';
@@ -18,21 +17,21 @@ import { getBarcodeText } from './barcodeConfig';
 const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN ||
   (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com');
 
-const apiVersion = packageJson.version || 'x.x.x';
-
 const BarcodeGenerator: React.FC = () => {
     const [barcodeType, setBarcodeType] = useState<BarcodeType>('code128');
     const [barcodeText, setBarcodeText] = useState('Change Me!');
     const [barcodeWidth, setBarcodeWidth] = useState(200);
     const [barcodeHeight, setBarcodeHeight] = useState(100);
     const [imageFormat, setImageFormat] = useState<ImageFormat>('PNG');
-    const [showText, setShowText] = useState(true);
     const [isLoading, setIsLoading] = useState(false);
     const [barcodeUrl, setBarcodeUrl] = useState('');
     const [apiCallUrl, setApiCallUrl] = useState('');
     const [dpi, setDpi] = useState(200);
     const [error, setError] = useState<string | null>(null);
     const [isLimitExceeded, setIsLimitExceeded] = useState(false);
+    const [showText, setShowText] = useState(true);
+    const [customText, setCustomText] = useState('');
+    const [centerText, setCenterText] = useState(true);
 
     const { toast } = useToast();
     const timeoutRef = useRef<NodeJS.Timeout>();
@@ -80,8 +79,10 @@ const BarcodeGenerator: React.FC = () => {
         height: number,
         format: string,
         dpi: number,
-        showText: boolean
-    ) => {
+        showText: boolean,
+        customText: string,
+        centerText: boolean
+        ) => {
         if (timeoutRef.current) {
             clearTimeout(timeoutRef.current);
         }
@@ -100,11 +101,28 @@ const BarcodeGenerator: React.FC = () => {
                     showText,
                     setIsLoading,
                     setError,
-                    setIsLimitExceeded
+                    setIsLimitExceeded,
+                    customText,
+                    centerText
                 );
                 if (url) {
                     setBarcodeUrl(url);
-                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`);
+                    const params = new URLSearchParams({
+                      data: encodeURIComponent(displayText),
+                      format: type,
+                      width: width.toString(),
+                      height: height.toString(),
+                      image_format: format,
+                      dpi: dpi.toString(),
+                      show_text: showText.toString(),
+                      center_text: centerText.toString()
+                    });
+
+                    if (showText && customText) {
+                        params.append('text_content', encodeURIComponent(customText));
+                      }
+
+                      setApiCallUrl(`/api/generate?${params.toString()}`);
                 }
             }
         }, 420);
@@ -135,14 +153,14 @@ const BarcodeGenerator: React.FC = () => {
                 );
                 if (url) {
                     setBarcodeUrl(url);
-                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${barcodeType}&width=${barcodeWidth}&height=${barcodeHeight}&image_format=${imageFormat}&dpi=${dpi}¢er_text=${showText}`);
+                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${barcodeType}&width=${barcodeWidth}&height=${barcodeHeight}&image_format=${imageFormat}&dpi=${dpi}&center_text=${showText}`);
                 }
             }
             setIsLoading(false);
         };
 
         initializeBarcode();
-    }, []);
+    }, [barcodeType, barcodeText, barcodeWidth, barcodeHeight, imageFormat, dpi, showText, isLimitExceeded]); // Added dependencies
     useEffect(() => {
         debouncedUpdateBarcode(
             barcodeType,
@@ -151,9 +169,11 @@ const BarcodeGenerator: React.FC = () => {
             barcodeHeight,
             imageFormat,
             dpi,
-            showText
+            showText,
+            customText,
+            centerText
         );
-    }, [barcodeType, barcodeText, barcodeWidth, barcodeHeight, imageFormat, dpi, showText, debouncedUpdateBarcode]);
+    }, [barcodeType, barcodeText, barcodeWidth, barcodeHeight, imageFormat, dpi, showText, customText, centerText, debouncedUpdateBarcode]);
 
     useEffect(() => {
         return () => {
@@ -167,14 +187,14 @@ const BarcodeGenerator: React.FC = () => {
     }, [barcodeUrl]);
 
     return (
-        <div className='container mx-auto'>
+        <main className="container mx-auto">
             <div className="barcode-generator-container p-4 md:p-8">
-                <Card className="max-w-full mx-auto">
+                <Card className="max-w-full">
                     <CardHeader>
                         <CardTitle className="text-2xl font-bold text-center">
-                            The Barcode API {process.env.NODE_ENV === 'development' ?
-                                <span className="text-red-500">DEV v{apiVersion}*</span> :
-                                <span className="text-green-500">v{apiVersion}</span>
+                            The Barcode API {process.env.NODE_ENV == 'development' ?
+                                <span className="text-red-500">DEV*</span> :
+                                <span className="text-green-500">*</span>
                             }
                         </CardTitle>
                     </CardHeader>
@@ -204,6 +224,10 @@ const BarcodeGenerator: React.FC = () => {
                                 setDpi={setDpi}
                                 showText={showText}
                                 setShowText={setShowText}
+                                customText={customText}
+                                setCustomText={setCustomText}
+                                centerText={centerText}
+                                setCenterText={setCenterText}
                                 isLimitExceeded={isLimitExceeded}
                                 className="order-2 lg:order-1"
                             />
@@ -227,7 +251,7 @@ const BarcodeGenerator: React.FC = () => {
                     </CardContent>
                 </Card>
             </div>
-        </div>
+        </main>
     );
 };
 

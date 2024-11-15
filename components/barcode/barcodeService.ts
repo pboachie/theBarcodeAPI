@@ -12,12 +12,29 @@ export const generateBarcode = async (
   showText: boolean,
   setIsLoading: (isLoading: boolean) => void,
   setError: (error: string | null) => void,
-  setIsLimitExceeded: (isExceeded: boolean) => void
+  setIsLimitExceeded: (isExceeded: boolean) => void,
+  customText?: string,
+  centerText?: boolean
 ): Promise<string | null> => {
   setIsLoading(true);
   setError(null);
 
-  const url = `${apiDomain}/api/generate?data=${encodeURIComponent(text.toString())}&format=${type}&width=${width}&height=${height}&image_format=${format}&dpi=${dpi}&center_text=${showText}`;
+  const queryParams = new URLSearchParams({
+    data: text.toString(),
+    format: type.toLowerCase(),
+    width: width.toString(),
+    height: height.toString(),
+    image_format: format.toUpperCase(),
+    dpi: dpi.toString(),
+    show_text: showText.toString(),
+    center_text: (centerText ?? true).toString()
+  });
+
+  if (showText && customText) {
+    queryParams.append('text_content', customText);
+  }
+
+  const url = `${apiDomain}/api/generate?${queryParams}`;
 
   try {
     const response = await fetch(url);
