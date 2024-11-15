@@ -11,8 +11,6 @@ on:
       branch:
         description: 'Branch to deploy'
         required: false
-        default: 'main'
-
 
 env:
   DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
@@ -32,71 +30,48 @@ jobs:
       id: get_branch
       run: |
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          echo "branch=${{ github.ref }}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.event.inputs.branch || github.ref_name }}" >> $GITHUB_OUTPUT
         else
-          echo "branch=main" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
         fi
 
     - uses: actions/checkout@v3
       with:
-        fetch-depth: 0  # Get all commits
-        ref: ${{ steps.get_branch.outputs.branch }} # Checkout the specified branch
+        fetch-depth: 0
+        ref: ${{ steps.get_branch.outputs.branch }}
 
     - name: Check for frontend changes
       id: check_frontend_changes
       run: |
-        # Debug information
-        echo "Current directory: $(pwd)"
-        echo "Event type: ${{ github.event_name }}"
-
-        # Check if this is a first deployment
         if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/current" ]; then
           echo "First deployment detected"
           echo "changes=true" >> $GITHUB_OUTPUT
           exit 0
         fi
 
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          # For manual triggers, we'll check the current deployment
-          CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
-
-          if [ -f "${CURRENT_DIR}/.git-commit" ]; then
-            DEPLOYED_COMMIT=$(cat "${CURRENT_DIR}/.git-commit")
-            echo "Found deployed commit: ${DEPLOYED_COMMIT}"
-
-            # Verify the commit exists in git history
-            if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
-              echo "Comparing changes with deployed commit ${DEPLOYED_COMMIT}"
-              CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- 'src/' 'public/' 'package.json' 'package-lock.json' 'next.config.js' 'tailwind.config.js' || true)
-            else
-              echo "Deployed commit ${DEPLOYED_COMMIT} not found in history, forcing update"
-              CHANGES="force_update"
-            fi
+        CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
+        if [ -f "${CURRENT_DIR}/.git-commit" ]; then
+          DEPLOYED_COMMIT=$(cat "${CURRENT_DIR}/.git-commit")
+          if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
+            CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- 'src/' 'public/' 'package.json' 'package-lock.json' 'next.config.js' 'tailwind.config.js' || true)
           else
-            echo "No .git-commit file found in current deployment, forcing update"
             CHANGES="force_update"
           fi
         else
-          # For automated triggers, compare with previous commit
-          echo "Comparing with previous commit"
-          CHANGES=$(git diff --name-only HEAD^ HEAD -- 'src/' 'public/' 'package.json' 'package-lock.json' 'next.config.js' 'tailwind.config.js' || true)
+          CHANGES="force_update"
         fi
 
         if [ ! -z "$CHANGES" ]; then
-          echo "Frontend changes detected:"
+          echo "Changes detected in:"
           echo "$CHANGES"
           echo "changes=true" >> $GITHUB_OUTPUT
         else
-          echo "No frontend changes detected"
+          echo "No changes detected"
           echo "changes=false" >> $GITHUB_OUTPUT
         fi
 
-    - name: Store Git commit hash
-      if: steps.check_frontend_changes.outputs.changes == 'true'
-      run:  |
-        git rev-parse HEAD > .git-commit
-
     - name: Validate Environment Variables
+      if: steps.check_frontend_changes.outputs.changes == 'true'
       run: |
         for var in ENVIRONMENT DB_PASSWORD POSTGRES_PASSWORD API_SECRET_KEY API_MASTER_KEY; do
           if [ -z "${!var}" ]; then
@@ -104,14 +79,6 @@ jobs:
             exit 1
           fi
         done
-
-    - name: Verify Working Directory
-      run: |
-        cd /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI
-        if [ ! -f "package.json" ]; then
-          echo "Error: package.json not found!"
-          exit 1
-        fi
 
     - name: Use Node.js
       if: steps.check_frontend_changes.outputs.changes == 'true'
@@ -126,313 +93,146 @@ jobs:
       with:
         path: |
           .next/cache
+          node_modules
         key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
         restore-keys: |
           ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
-          ${{ runner.os }}-nextjs-
 
-    - name: Install dependencies
+    - name: Install dependencies and build
       if: steps.check_frontend_changes.outputs.changes == 'true'
-      run: npm ci
-
-    - name: Run linter
-      if: steps.check_frontend_changes.outputs.changes == 'true'
-      run: npm run lint
-
-    - name: Build
-      if: steps.check_frontend_changes.outputs.changes == 'true'
-      run: npm run build
-
-    - name: Deploy Frontend
       run: |
-        # Create env vars file
-        cat > .env_vars << EOF
-        ENVIRONMENT=${{ env.ENVIRONMENT }}
-        NODE_ENV=production
-        SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
-        CHANGES=${{ steps.check_frontend_changes.outputs.changes }}
-        EOF
+        npm ci
+        npm run lint
+        npm run build
 
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 .env_vars
-
-        # Create deployment script
-        cat > deploy_frontend.sh << 'EOF'
-        #!/bin/bash
-        set -e
-
-        if [ ! -f ".env_vars" ]; then
-            echo "Error: .env_vars not found"
-            exit 1
-        fi
-
-        source .env_vars
-
-        echo "Starting frontend deployment..."
-
-        if [ "$CHANGES" == "false" ]; then
-          echo "No changes detected in frontend files. Restarting PM2 process only..."
-
-          # Restart PM2 with zero downtime
-          pm2 list | grep "thebarcodeapi-frontend-${ENVIRONMENT}" | awk '{print $2}' | while read process; do
-              echo "Reloading process: $process"
-              PM2_HOME="/home/github-runner/.pm2" pm2 reload "$process" --update-env
-          done
-
-          exit 0
-        fi
-
-
-        # Create base directories first
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}"
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
-
-        # Set initial permissions
-        echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
-
-        # Create new release directory with timestamp
-        TIMESTAMP=$(date +%Y%m%d%H%M%S)
-        NEW_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/release-${TIMESTAMP}"
-        CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
-        PREVIOUS_RELEASE_LINK="/opt/thebarcodeapi/${ENVIRONMENT}/previous"
-
-        echo "Creating new release directory: $NEW_RELEASE"
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$NEW_RELEASE"
-        echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner "$NEW_RELEASE"
-
-        # Copy build files to new release
-        echo "Copying build files to new release directory"
-        echo "$SUDO_PASSWORD" | sudo -S cp -R ./.next "$NEW_RELEASE/"
-        echo "$SUDO_PASSWORD" | sudo -S cp -R ./public "$NEW_RELEASE/"
-        echo "$SUDO_PASSWORD" | sudo -S cp ./package.json "$NEW_RELEASE/"
-        echo "$SUDO_PASSWORD" | sudo -S cp ./package-lock.json "$NEW_RELEASE/"
-
-        # Install dependencies in new release
-        cd "$NEW_RELEASE"
-        npm ci --omit=dev
-
-        # Keep track of current release before switching
-        if [ -L "$CURRENT_DIR" ]; then
-            CURRENT_RELEASE=$(readlink -f "$CURRENT_DIR")
-            echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$CURRENT_RELEASE" "$PREVIOUS_RELEASE_LINK"
-        fi
-
-        # Atomic symlink swap
-        echo "Creating symlink to new release"
-        echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$NEW_RELEASE" "$CURRENT_DIR.new"
-        echo "$SUDO_PASSWORD" | sudo -S mv -Tf "$CURRENT_DIR.new" "$CURRENT_DIR"
-
-        # Verify symlink
-        if [ ! -L "$CURRENT_DIR" ] || [ ! -d "$(readlink -f "$CURRENT_DIR")" ]; then
-            echo "Error: Failed to create symlink correctly"
-            if [ -L "$PREVIOUS_RELEASE_LINK" ]; then
-                echo "Rolling back to previous release..."
-                echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
-                exit 1
-            fi
-        fi
-
-        # Restart PM2 with zero downtime
-        echo "Restarting PM2 process..."
-        pm2 list | grep "thebarcodeapi-frontend-${ENVIRONMENT}" | awk '{print $2}' | while read process; do
-            echo "Reloading process: $process"
-            PM2_HOME="/home/github-runner/.pm2" pm2 reload "$process" --update-env || {
-                echo "Failed to reload PM2 process, rolling back..."
-                if [ -L "$PREVIOUS_RELEASE_LINK" ]; then
-                    echo "$SUDO_PASSWORD" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
-                    PM2_HOME="/home/github-runner/.pm2" pm2 reload "$process" --update-env
-                fi
-                exit 1
-            }
-        done
-
-        # Clean up old releases (keep last 5)
-        echo "Cleaning up old releases"
-        cd "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
-        OLD_RELEASES=$(ls -1dt */ | tail -n +6)
-        if [ ! -z "$OLD_RELEASES" ]; then
-            echo "$SUDO_PASSWORD" | sudo -S rm -rf $OLD_RELEASES
-        fi
-
-        cd "$CURRENT_DIR"
-
-        # Set final permissions
-        echo "$SUDO_PASSWORD" | sudo -S chown -R www-data:www-data "/opt/thebarcodeapi/${ENVIRONMENT}/current"
-        echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "/opt/thebarcodeapi/${ENVIRONMENT}/current"
-
-        echo "Frontend deployment completed"
-        EOF
-
-        # Modify the deploy_frontend.sh script to include copying .git-commit
-        sed -i '/echo "$SUDO_PASSWORD" | sudo -S cp .\/package-lock.json "$NEW_RELEASE\/"/a\
-        if [ -f ".git-commit" ]; then\
-            echo "$SUDO_PASSWORD" | sudo -S cp ./.git-commit "$NEW_RELEASE/"\
-        fi' deploy_frontend.sh
-
-        # Make the script executable
-        chmod +x deploy_frontend.sh
-
-        # Run the deployment script
-        ./deploy_frontend.sh
-
-        # Cleanup
-        rm -f .env_vars
-
-    - name: Verify Frontend Deployment
+    - name: Deploy and Health Check
       run: |
-        cat << 'EOF' > verify_frontend.sh
-        #!/bin/bash
-        # verify_frontend.sh
-        set -e
+          # Store current commit hash
+          git rev-parse HEAD > .git-commit
 
-        if [ ! -f "/tmp/env_vars" ]; then
-            echo "Error: /tmp/env_vars not found"
-            exit 1
-        fi
+          # Function for health check
+          check_health() {
+            local url="http://localhost:3000"
+            local max_workers=2
+            local seconds_per_worker=30
+            local max_attempts=$((seconds_per_worker * max_workers / 5))
 
-        source /tmp/env_vars
+            echo "Starting health check... Will try $max_attempts times (${seconds_per_worker}s per worker)"
 
-        echo "Verifying frontend deployment..."
+            for i in $(seq 1 $max_attempts); do
+              if curl -s -f -m 5 "$url" > /dev/null; then
+                echo "Health check passed on attempt $i"
+                return 0
+              fi
+              echo "Health check attempt $i/$max_attempts..."
 
-        # Check current symlink
-        echo "Checking current symlink:"
-        ls -la "/opt/thebarcodeapi/${ENVIRONMENT}/current"
+              if [ $((i % 5)) -eq 0 ]; then
+                echo "Current PM2 status:"
+                PM2_HOME="/home/github-runner/.pm2" pm2 list
+                echo "Recent logs:"
+                PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 10 --nostream
+              fi
 
-        # PM2 Process Management
-        echo "Managing PM2 process..."
-
-        # Function to safely stop and delete PM2 processes
-        cleanup_pm2() {
-            local app_name="$1"
-            echo "Cleaning up PM2 processes for $app_name..."
-
-            # Stop all instances
-            PM2_HOME="/home/github-runner/.pm2" pm2 stop "$app_name" || true
-            sleep 5
-
-            # Delete all instances
-            PM2_HOME="/home/github-runner/.pm2" pm2 delete "$app_name" || true
-            sleep 5
-
-            # Flush PM2 logs
-            PM2_HOME="/home/github-runner/.pm2" pm2 flush
-
-            # Save PM2 state
-            PM2_HOME="/home/github-runner/.pm2" pm2 save --force || true
-        }
-
-        # Clean up existing processes
-        cleanup_pm2 "thebarcodeapi-frontend-${ENVIRONMENT}"
-
-        # Wait for cleanup to complete
-        sleep 5
-
-        # Function to start PM2 with better error handling
-        start_pm2_process() {
-            echo "Starting Next.js application with PM2..."
-            cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
-
-            # Start PM2
-            PM2_HOME="/home/github-runner/.pm2" pm2 start "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js" \
-                || {
-                    echo "Failed to start PM2 process"
-                    pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
-                    exit 1
-                }
-
-            local max_wait=60
-            local count=0
-            while [ $count -lt $max_wait ]; do
-                # Get process status
-                local status=$(PM2_HOME="/home/github-runner/.pm2" pm2 jlist | grep -o '"status":"[^"]*"' | head -1)
-
-                if [[ $status == *"online"* ]]; then
-                    echo "PM2 process is online"
-                    # Additional verification - check if the app is responding
-                    if curl -s -f "http://localhost:3000/" > /dev/null; then
-                        echo "Application is responding"
-                        PM2_HOME="/home/github-runner/.pm2" pm2 save --force
-                        return 0
-                    fi
-                fi
-
-                # Show process details every 10 seconds
-                if [ $((count % 10)) -eq 0 ]; then
-                    echo "Current PM2 status:"
-                    PM2_HOME="/home/github-runner/.pm2" pm2 list
-                    echo "Recent logs:"
-                    PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 10 --nostream
-                fi
-
-                echo "Waiting for application to be ready... ($count/$max_wait)"
-                sleep 1
-                count=$((count + 1))
+              sleep 5
             done
 
-            echo "Process verification failed. Showing logs:"
-            PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
-            return 1
-        }
-
-        # Main execution
-        echo "Starting PM2 process..."
-        if ! start_pm2_process; then
-            echo "Failed to start PM2 process"
-            exit 1
-        fi
-
-        # Save PM2 configuration
-        PM2_HOME="/home/github-runner/.pm2" pm2 save --force || true
-
-        check_frontend_health() {
-            local max_attempts=12
-            local attempt=1
-            local timeout=5
-
-            while [ $attempt -le $max_attempts ]; do
-                echo "Health check attempt $attempt of $max_attempts..."
-
-                # # Comprehensive status check
-                # local pm2_status=$(PM2_HOME="/home/github-runner/.pm2" pm2 jlist)
-                # if ! echo "$pm2_status" | grep -q '"status":"online".*"name":"thebarcodeapi-frontend-'; then
-                #     echo "PM2 process is not running properly!"
-                #     PM2_HOME="/home/github-runner/.pm2" pm2 list
-                #     PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
-                #     return 1
-                # fi
-
-                # Test the application endpoint with increased timeout
-                if curl -s -f -m $timeout "http://localhost:3000/" > /dev/null; then
-                    echo "Frontend is responding successfully!"
-                    return 0
-                fi
-
-                echo "Frontend not ready yet, waiting 5 seconds... (Attempt $attempt/$max_attempts)"
-                sleep 5
-                attempt=$((attempt + 1))
-            done
-
-            echo "ERROR: Frontend failed to respond after health checks"
-            echo "PM2 Status:"
+            echo "Health check failed after $max_attempts attempts. Final PM2 status:"
             PM2_HOME="/home/github-runner/.pm2" pm2 list
-            echo "Recent PM2 logs:"
-            PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50
+            echo "Recent logs:"
+            PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50 --nostream
             return 1
-        }
+          }
 
-        echo "Testing frontend health..."
-        if ! check_frontend_health; then
-            echo "DEPLOYMENT VERIFICATION FAILED"
+          # Ensure base directories exist with proper permissions
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/{releases,current}
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
+
+          if [ "${{ steps.check_frontend_changes.outputs.changes }}" == "true" ]; then
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            NEW_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/release-${TIMESTAMP}"
+            CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
+            PREVIOUS_RELEASE_LINK="/opt/thebarcodeapi/${ENVIRONMENT}/previous"
+
+            # Create and setup new release directory
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./.next "$NEW_RELEASE/"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./public "$NEW_RELEASE/"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./package*.json ./.git-commit "$NEW_RELEASE/"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
+
+            # Install dependencies
+            cd "$NEW_RELEASE"
+            npm ci --omit=dev
+            if [ $? -ne 0 ]; then
+              echo "npm install failed"
+              exit 1
+            fi
+
+            # Handle the current directory symlink
+            if [ -d "$CURRENT_DIR" ] && [ ! -L "$CURRENT_DIR" ]; then
+              echo "Converting existing current directory to symlink..."
+              # Move the content to a new release directory if it exists
+              if [ -d "$CURRENT_DIR/.next" ] || [ -d "$CURRENT_DIR/public" ]; then
+                INITIAL_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/initial-release"
+                echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv "$CURRENT_DIR" "$INITIAL_RELEASE"
+                echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$INITIAL_RELEASE" "$PREVIOUS_RELEASE_LINK"
+              else
+                # If it's empty or not a proper release, just remove it
+                echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf "$CURRENT_DIR"
+              fi
+            elif [ -L "$CURRENT_DIR" ] && [ -e "$CURRENT_DIR" ]; then
+              # Store current as previous before switching
+              CURRENT_RELEASE=$(readlink -f "$CURRENT_DIR")
+              echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$CURRENT_RELEASE" "$PREVIOUS_RELEASE_LINK"
+            fi
+
+            # Update symlinks and set final permissions
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$NEW_RELEASE" "$CURRENT_DIR"
+
+            # Cleanup old releases (keep last 3)
+            cd "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'ls -1dt */ | tail -n +4 | xargs -r rm -rf'
+          fi
+
+          # PM2 process management
+          if ! PM2_HOME="/home/github-runner/.pm2" pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
+            echo "PM2 process not found, starting new instance..."
+            cd "/opt/thebarcodeapi/${ENVIRONMENT}/current"
+            PM2_HOME="/home/github-runner/.pm2" pm2 start "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js"
+          fi
+
+          echo "Restarting PM2 process..."
+          PM2_HOME="/home/github-runner/.pm2" pm2 reload "thebarcodeapi-frontend-${ENVIRONMENT}" --update-env
+          PM2_HOME="/home/github-runner/.pm2" pm2 save --force
+
+          # Health check and rollback if needed
+          echo "Starting health checks..."
+          if ! check_health; then
+            echo "Health check failed, attempting rollback..."
+            if [ -L "$PREVIOUS_RELEASE_LINK" ] && [ -e "$PREVIOUS_RELEASE_LINK" ]; then
+              echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
+
+              echo "Restarting PM2 for rollback..."
+              PM2_HOME="/home/github-runner/.pm2" pm2 reload "thebarcodeapi-frontend-${ENVIRONMENT}" --update-env
+              PM2_HOME="/home/github-runner/.pm2" pm2 save --force
+
+              if ! check_health; then
+                echo "CRITICAL: Rollback failed! Site is down!"
+                PM2_HOME="/home/github-runner/.pm2" pm2 list
+                PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 100 --nostream
+                exit 1
+              fi
+              echo "Rollback successful, but original deployment failed"
+              exit 1
+            fi
+            echo "No previous release available for rollback"
             exit 1
-        fi
+          fi
 
-        echo "Frontend verification completed successfully"
-        EOF
-        chmod +x verify_frontend.sh
-
-        echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" | sudo tee /tmp/env_vars > /dev/null
-        ./verify_frontend.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
+          echo "Deployment successful!"
 
   backend-deployment:
     runs-on: self-hosted
@@ -476,7 +276,7 @@ jobs:
             # Verify the commit exists in git history
             if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
               echo "Comparing changes with deployed commit ${DEPLOYED_COMMIT}"
-              CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- \
+                CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- \
                 'api/' \
                 'alembic/' \
                 'requirements.txt' \
@@ -485,8 +285,9 @@ jobs:
                 '*.ini' \
                 'scripts/' \
                 '*.sh' \
+                '.github/workflows/' \
                 || true)
-            else
+              else
               echo "Deployed commit ${DEPLOYED_COMMIT} not found in history, forcing update"
               CHANGES="force_update"
             fi
@@ -525,15 +326,20 @@ jobs:
     - name: Create .env file for backend
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /opt/thebarcodeapi/barcodeAPI/.env << EOF
+        API_VERSION=${{ vars.API_VERSION }}
+        ALGORITHM=HS256
+        ACCESS_TOKEN_EXPIRE_MINUTES=30
+        REDIS_URL=redis://redis:6379/1
+        SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        LOG_DIRECTORY=/app/logs
+
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         SECRET_KEY=${{ env.API_SECRET_KEY }}
         MASTER_API_KEY=${{ env.API_MASTER_KEY }}
-        API_VERSION=${{ vars.API_VERSION }}
         DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        REDIS_URL=redis://redis:6379
         ALGORITHM=HS256
-        ACCESS_TOKEN_EXPIRE_MINUTES=30
+        ENVIRONMENT=${{ env.ENVIRONMENT }}
         EOF'
 
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
@@ -669,20 +475,6 @@ jobs:
         source /tmp/docker_vars
 
         cd /opt/thebarcodeapi/barcodeAPI
-
-        # # Create temporary env file
-        # echo "Creating temporary environment file..."
-        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
-        # DB_PASSWORD=${DB_PASSWORD}
-        # POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-        # SECRET_KEY=${API_SECRET_KEY}
-        # MASTER_API_KEY=${API_MASTER_KEY}
-        # API_VERSION=${API_VERSION:-v1}
-        # DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api
-        # REDIS_URL=redis://redis:6379
-        # ALGORITHM=HS256
-        # ACCESS_TOKEN_EXPIRE_MINUTES=30
-        # EOF'
 
         echo "Starting backend deployment..."
         echo "Using DOCKER_COMPOSE command: ${DOCKER_COMPOSE}"
@@ -902,20 +694,6 @@ jobs:
         else
           COMPOSE_CMD="docker compose"
         fi
-
-        # Create temporary env file with sudo
-        # echo "Creating temporary environment file..."
-        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat << EOF > /opt/thebarcodeapi/barcodeAPI/.env
-        # DB_PASSWORD=${{ env.DB_PASSWORD }}
-        # POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-        # SECRET_KEY=${{ env.API_SECRET_KEY }}
-        # MASTER_API_KEY=${{ env.API_MASTER_KEY }}
-        # API_VERSION=${{ vars.API_VERSION }}
-        # DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        # REDIS_URL=redis://redis:6379
-        # ALGORITHM=HS256
-        # ACCESS_TOKEN_EXPIRE_MINUTES=30
-        # EOF'
 
         # Set proper permissions
         # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/.env

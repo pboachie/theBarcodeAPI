@@ -1,12 +1,19 @@
 // BarcodeControls.tsx
 
 import React from 'react';
-import { Input } from "@/components/ui/input";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
-import { BarcodeType, barcodeTypes, ImageFormat, imageFormats, maxChars } from './types';
+import { Input } from '@/components/ui/input';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import {
+  BarcodeType,
+  barcodeTypes,
+  ImageFormat,
+  imageFormats,
+  maxChars,
+} from '@/components/types/barcode';
 import { FormatSelector } from './FormatSelector';
 import { getBarcodeText } from './barcodeConfig';
+import { Label } from '@radix-ui/react-dropdown-menu';
 
 interface BarcodeControlsProps {
   barcodeType: BarcodeType;
@@ -23,6 +30,10 @@ interface BarcodeControlsProps {
   setDpi: (dpi: number) => void;
   showText: boolean;
   setShowText: (show: boolean) => void;
+  customText: string;
+  setCustomText: (text: string) => void;
+  centerText: boolean;
+  setCenterText: (center: boolean) => void;
   isLimitExceeded: boolean;
   className?: string;
 }
@@ -42,6 +53,10 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
   setDpi,
   showText,
   setShowText,
+  customText,
+  setCustomText,
+  centerText,
+  setCenterText,
   isLimitExceeded,
   className,
 }) => {
@@ -54,15 +69,19 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
     }
   };
 
+  // const handleCustomTextChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  //   setCustomText(e.target.value);
+  // };
+
   const handleTypeChange = (newType: BarcodeType) => {
     setBarcodeType(newType);
-    setBarcodeText(getBarcodeText(newType)); // Updated usage
+    setBarcodeText(getBarcodeText(newType));
   };
 
   const [maxDimension, setMaxDimension] = React.useState(600);
   const hasCalculatedMaxRef = React.useRef(false);
   const previousBreakpointRef = React.useRef<'mobile' | 'desktop'>(
-    window.innerWidth <= 768 ? 'mobile' : 'desktop'
+    typeof window !== 'undefined' && window.innerWidth <= 768 ? 'mobile' : 'desktop'
   );
 
   React.useEffect(() => {
@@ -70,24 +89,17 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
       const viewportWidth = window.innerWidth;
       const currentBreakpoint = viewportWidth <= 768 ? 'mobile' : 'desktop';
 
-      // Force recalculation on breakpoint change
       if (!hasCalculatedMaxRef.current || previousBreakpointRef.current !== currentBreakpoint) {
         if (currentBreakpoint === 'mobile') {
-          // For mobile: Calculate based on viewport and container constraints
           const container = document.querySelector('.barcode-container');
           if (container) {
             const containerRect = container.getBoundingClientRect();
-            const mobileMax = Math.min(
-              containerRect.width - 32, // Account for padding
-              300 // Hard cap for mobile
-            );
+            const mobileMax = Math.min(containerRect.width - 32, 300);
             setMaxDimension(Math.floor(mobileMax));
             setBarcodeWidth((prev) => Math.min(Number(prev), mobileMax));
             setBarcodeHeight((prev) => Math.min(Number(prev), mobileMax));
-
           }
         } else {
-          // Desktop calculation remains the same
           const previewArea = document.querySelector('.preview-area');
           const container = document.querySelector('.barcode-container');
           if (previewArea && container) {
@@ -106,10 +118,8 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
       }
     };
 
-    // Run initial calculation after a short delay to ensure DOM is ready
     const initialTimer = setTimeout(calculateAbsoluteMax, 100);
 
-    // Set up mutation observer to watch for container size changes
     const observer = new MutationObserver(() => {
       hasCalculatedMaxRef.current = false;
       calculateAbsoluteMax();
@@ -120,7 +130,6 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
       observer.observe(container, { attributes: true, childList: true, subtree: true });
     }
 
-    // Handle resize events
     const handleResize = () => {
       hasCalculatedMaxRef.current = false;
       calculateAbsoluteMax();
@@ -146,12 +155,12 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
       />
 
       <div>
-        <label className="block text-sm font-medium mb-1">
-          Barcode Content {barcodeType in maxChars ?
-            `(Max ${maxChars[barcodeType as keyof typeof maxChars]} characters)` :
-            ''
-          }
-        </label>
+        <Label className="text-sm font-medium mb-1">
+          Barcode Content{' '}
+          {barcodeType in maxChars
+            ? `(Max ${maxChars[barcodeType as keyof typeof maxChars]} characters)`
+            : ''}
+        </Label>
         <Input
           value={barcodeText}
           onChange={handleTextChange}
@@ -161,8 +170,46 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
         />
       </div>
 
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm font-medium">Show Text Below Barcode</Label>
+          <Switch
+            id="show-text"
+            checked={showText}
+            onCheckedChange={setShowText}
+            disabled={isLimitExceeded}
+          />
+        </div>
+
+        {showText && (
+          <>
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium">Center Text</Label>
+              <Switch
+                id="center-text"
+                checked={centerText}
+                onCheckedChange={setCenterText}
+                disabled={isLimitExceeded}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Custom Text (Optional)</Label>
+              <Input
+                id="custom-text"
+                value={customText}
+                onChange={(e) => setCustomText(e.target.value)}
+                className="w-full"
+                placeholder="Enter custom text to display"
+                disabled={isLimitExceeded}
+              />
+            </div>
+          </>
+        )}
+      </div>
+
       <div>
-        <label className="block text-sm font-medium mb-1">Width: {barcodeWidth}px</label>
+        <Label className="text-sm font-medium mb-1">Width: {barcodeWidth}px</Label>
         <Slider
           min={50}
           max={maxDimension}
@@ -174,7 +221,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1">Height: {barcodeHeight}px</label>
+        <Label className="text-sm font-medium mb-1">Height: {barcodeHeight}px</Label>
         <Slider
           min={50}
           max={maxDimension}
@@ -194,7 +241,7 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
       />
 
       <div>
-        <label className="block text-sm font-medium mb-1">DPI: {dpi}</label>
+        <Label className="text-sm font-medium mb-1">DPI: {dpi}</Label>
         <Slider
           min={130}
           max={600}
@@ -207,18 +254,6 @@ export const BarcodeControls: React.FC<BarcodeControlsProps> = ({
           <span>130</span>
           <span>600</span>
         </div>
-      </div>
-
-      <div className="flex items-center space-x-2">
-        <Switch
-          id="show-text"
-          checked={showText}
-          onCheckedChange={setShowText}
-          disabled={isLimitExceeded}
-        />
-        <label htmlFor="show-text" className="text-sm font-medium">
-          Center Text in Barcode
-        </label>
       </div>
     </div>
   );

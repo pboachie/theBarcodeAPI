@@ -4,7 +4,7 @@ import React from 'react';
 import { useMediaQuery } from 'react-responsive';
 import { Button } from "@/components/ui/button";
 import { CustomSelect } from "@/components/ui/custom-select";
-import { BarcodeType } from './types';
+import { BarcodeType } from '@/components/types/barcode';
 
 interface FormatSelectorProps {
   title: string;

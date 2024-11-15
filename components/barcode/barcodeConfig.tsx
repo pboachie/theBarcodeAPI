@@ -1,6 +1,6 @@
 // barcodeConfig.ts
 
-import { BarcodeType } from './types';
+import { BarcodeType } from '@/components/types/barcode';
 
 export const barcodeTextMap: { [key in BarcodeType | 'default']: string } = {
     ean13: '123456789123',

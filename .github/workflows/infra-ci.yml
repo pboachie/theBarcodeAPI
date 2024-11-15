@@ -524,6 +524,8 @@ jobs:
 
           db:
             image: postgres:13
+            ports:
+              - "5432:5432"
             volumes:
               - /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres:/var/lib/postgresql/data
               - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
@@ -803,7 +805,7 @@ jobs:
         create_script "$BACKUP_SCRIPT" '#!/bin/bash
         timestamp=$(date +%Y%m%d_%H%M%S)
         backup_dir="/opt/thebarcodeapi/backups"
-        tar -czf "$backup_dir/backup_$timestamp.tar.gz" -C /opt/thebarcodeapi/data .'
+        tar -czf "$backup_dir/backup_$timestamp.tar.gz" -C /opt/thebarcodeapi/${ENVIRONMENT}/releases/data .'
 
         PRE_BACKUP_SCRIPT="/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh"
         create_script "$PRE_BACKUP_SCRIPT" '#!/bin/bash
