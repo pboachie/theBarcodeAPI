@@ -19,10 +19,10 @@ const BarcodeGenerator = dynamic(
 );
 
 export const metadata: Metadata = {
-  title: 'Barcode Generator',
+  title: 'the Barcode API',
   description: 'Generate barcodes quickly and easily with our free online tool',
   openGraph: {
-    title: 'Barcode Generator | The Barcode API',
+    title: 'the Barcode API | theBarcodeAPI',
     description: 'Generate barcodes quickly and easily with our free online tool',
   },
 };

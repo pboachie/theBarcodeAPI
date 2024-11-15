@@ -1,5 +1,3 @@
-// component/layout/Footer
-
 import React from 'react';
 import Link from 'next/link';
 import { siteConfig } from '@/lib/config/site';
@@ -9,6 +7,7 @@ import { SocialIcons } from '@/components/icons/social-icons';
 export const Footer: React.FC = () => {
   const currentYear = new Date().getFullYear();
   const { navigation, social } = siteConfig.footer;
+  const version = process.env.NEXT_PUBLIC_APP_VERSION || "0.1.0";
 
   const renderSocialIcon = (platform: SocialLink['platform']) => {
     return SocialIcons[platform];
@@ -43,12 +42,15 @@ export const Footer: React.FC = () => {
           </nav>
 
           {/* Copyright */}
-          <div className="text-sm text-foreground order-2 md:order-1">
-            <span>© {currentYear} </span>
-            <Link href="/" className="hover:underline">
-              {siteConfig.name}
-            </Link>
-            <span> - All rights reserved.</span>
+          <div className="text-sm text-foreground order-2 md:order-1 text-center">
+            <div>
+              <span>© {currentYear} </span>
+              <Link href="/" className="hover:underline">
+                {siteConfig.name}
+              </Link>
+              <span> - All rights reserved.</span>
+            </div>
+            <div className="text-xs text-gray-500 mt-1">Version {version}</div>
           </div>
 
           {/* Social Links */}

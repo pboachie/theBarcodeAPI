@@ -7,6 +7,7 @@ import { Providers } from './providers';
 import { Metadata, Viewport } from 'next';
 import type { OpenGraph } from 'next/dist/lib/metadata/types/opengraph-types';
 import type { Twitter } from 'next/dist/lib/metadata/types/twitter-types';
+import { siteConfig } from '@/lib/config/site';
 
 interface RootLayoutProps {
   children: ReactNode;
@@ -18,6 +19,13 @@ interface StructuredData {
   url: string;
   name: string;
   description: string;
+  applicationCategory: string;
+  operatingSystem: string;
+  offers: {
+    "@type": string;
+    price: string;
+    priceCurrency: string;
+  };
   publisher: {
     "@type": string;
     name: string;
@@ -31,13 +39,25 @@ interface StructuredData {
     target: string;
     "query-input": string;
   };
+  featureList: string[];
+  mainEntityOfPage?: {
+    "@type": string;
+    "@id": string;
+  };
+  inLanguage?: string;
+  datePublished?: string;
+  dateModified?: string;
+  author?: {
+    "@type": string;
+    name: string;
+  };
+  image?: {
+    "@type": string;
+    url: string;
+    width: number;
+    height: number;
+  };
 }
-
-const siteConfig = {
-  title: 'Free Barcode API - Generate EAN, GS1, UPC Barcodes Online',
-  description: 'Use our free barcode API to generate EAN, GS1, UPC, and other barcodes online. Fast, reliable, and easy to use.',
-  url: 'https://www.thebarcodeapi.com',
-} as const;
 
 export const metadata = {
   metadataBase: new URL(siteConfig.url),
@@ -46,109 +66,20 @@ export const metadata = {
     template: `%s | The Barcode API`,
   },
   description: siteConfig.description,
-  keywords: [
-    // Core Service Keywords
-    'Free Barcode API',
-    'Barcode Generator',
-    'Online Barcode',
-    'Barcode API',
-    'Free Barcode Generator',
-    'Online Barcode Generator',
-    'API Barcode Generator',
-    'REST Barcode API',
-    'HTTP Barcode API',
-
-    // Barcode Types
-    'EAN',
-    'EAN-13',
-    'EAN-8',
-    'UPC',
-    'UPC-A',
-    'UPC-E',
-    'GS1',
-    'GS1-128',
-    'Code 128',
-    'Code 39',
-    'Code 93',
-    'Codabar',
-    'ITF',
-    'ITF-14',
-    'QR Code',
-    'DataMatrix',
-    'PDF417',
-    'ISBN',
-    'ISSN',
-    'GTIN',
-
-    // Use Cases
-    'Product Barcodes',
-    'Retail Barcodes',
-    'Inventory Barcodes',
-    'Shipping Barcodes',
-    'Package Tracking',
-    'Asset Tracking',
-    'Warehouse Management',
-    'Supply Chain',
-    'POS System',
-
-    // Technical Terms
-    'Barcode Integration',
-    'Barcode Web Service',
-    'Barcode Generation Service',
-    'Programmatic Barcode Generation',
-    'Developer Barcode Tools',
-    'Barcode Development API',
-    'REST API Barcodes',
-    'JSON Barcode Response',
-    'SVG Barcodes',
-    'PNG Barcodes',
-
-    // Industry Terms
-    'Retail Barcode Solution',
-    'E-commerce Barcodes',
-    'Logistics Barcodes',
-    'Inventory Management',
-    'Supply Chain Management',
-    'Asset Management',
-
-    // Features
-    'High Resolution Barcodes',
-    'Vector Barcodes',
-    'Scalable Barcodes',
-    'Customizable Barcodes',
-    'Bulk Barcode Generation',
-    'Barcode Validation',
-    'Barcode Verification',
-
-    // Quality Terms
-    'Professional Barcodes',
-    'Commercial Grade Barcodes',
-    'Industry Standard Barcodes',
-    'GS1 Compliant',
-    'ISO Compliant',
-
-    // Generic Terms
-    'Generate Barcodes',
-    'Create Barcodes',
-    'Make Barcodes',
-    'Print Barcodes',
-    'Download Barcodes',
-    'Custom Barcodes',
-    'Digital Barcodes'
-  ],
+  keywords: [...siteConfig.keywords],
   openGraph: {
-    type: 'website',
-    locale: 'en_US',
+    type: siteConfig.type,
+    locale: siteConfig.locale,
     url: siteConfig.url,
-    siteName: 'The Barcode API',
-    title: 'Free Barcode API - Generate EAN, GS1, UPC Online',
-    description: 'Generate EAN, GS1, UPC, and other barcodes for free with The Barcode API.',
+    siteName: siteConfig.name,
+    title: siteConfig.title,
+    description: siteConfig.description,
     images: [
       {
-        url: '/og-image.png',
+        url: siteConfig.images.ogImage,
         width: 1200,
         height: 630,
-        alt: 'The Barcode API',
+        alt: siteConfig.name,
       },
     ],
   } satisfies OpenGraph,
@@ -156,9 +87,9 @@ export const metadata = {
     card: 'summary_large_image',
     site: '@thebarcodeapi',
     creator: '@thebarcodeapi',
-    title: 'Free Barcode API - Generate Barcodes Online',
-    description: 'Generate EAN, GS1, UPC, and more barcodes for free using our online API.',
-    images: ['/og-image.png']
+    title: siteConfig.title,
+    description: siteConfig.description,
+    images: siteConfig.images.ogImage,
   } satisfies Twitter,
   icons: {
     icon: [{ url: '/favicon.ico' }],
@@ -174,20 +105,52 @@ const structuredData: StructuredData = {
   "@context": "https://schema.org",
   "@type": "WebSite",
   "url": siteConfig.url,
-  "name": "The Barcode API",
+  "name": siteConfig.name,
   "description": siteConfig.description,
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "All",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
   "publisher": {
     "@type": "Organization",
-    "name": "The Barcode API",
+    "name": siteConfig.name,
     "logo": {
       "@type": "ImageObject",
-      "url": `${siteConfig.url}/og-image.png`
+      "url": `${siteConfig.url}/${siteConfig.images.ogImage}`
     }
   },
   "potentialAction": {
     "@type": "SearchAction",
     "target": `${siteConfig.url}/?s={search_term_string}`,
     "query-input": "required name=search_term_string"
+  },
+  "featureList": [
+    "Free barcode generation",
+    "Multiple barcode formats supported",
+    "RESTful API",
+    "No registration required",
+    "High resolution output",
+    "Customizable options"
+  ],
+  "mainEntityOfPage": {
+    "@type": "WebPage",
+    "@id": siteConfig.url
+  },
+  "inLanguage": siteConfig.locale,
+  "datePublished": "2023-01-01",
+  "dateModified": new Date().toISOString(),
+  "author": {
+    "@type": "Organization",
+    "name": siteConfig.name
+  },
+  "image": {
+    "@type": "ImageObject",
+    "url": `${siteConfig.url}/${siteConfig.images.ogImage}`,
+    "width": 1200,
+    "height": 630
   }
 };
 
