@@ -402,13 +402,14 @@ jobs:
         cache-from: |
           type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
           type=gha,scope=${{ github.workflow }}
-        cache-to: |
-          type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=max,compression=zstd
+        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=min
         build-args: |
           DEBIAN_FRONTEND=noninteractive
           PYTHON_ENV=${{ env.ENVIRONMENT }}
         platforms: linux/amd64
         outputs: type=docker
+        provenance: false
+        sbom: false
 
     - name: Optimize cache
       if: steps.check_backend_changes.outputs.changes == 'true'
