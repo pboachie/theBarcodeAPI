@@ -405,40 +405,53 @@ jobs:
           DEBIAN_FRONTEND=noninteractive
           PYTHON_ENV=${{ env.ENVIRONMENT }}
         platforms: linux/amd64
-        target: runtime
-        outputs: type=docker,dest=/tmp/barcodeapi.tar
+        outputs: type=docker
 
     - name: Optimize cache
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
-        # Set max cache size (5GB)
-        MAX_CACHE_SIZE=5368709120  # 5GB in bytes
-
-        # Clean old cache
-        rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+        # Create backup of old cache
+        if [ -d "/opt/thebarcodeapi/barcodeAPI/.buildx-cache" ]; then
+          mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache /opt/thebarcodeapi/barcodeAPI/.buildx-cache.old
+        fi
 
         # Move new cache
         mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache-new /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+
+        # Merge old and new caches, keeping only unique and recent files
+        if [ -d "/opt/thebarcodeapi/barcodeAPI/.buildx-cache.old" ]; then
+          # Only copy files that don't exist in new cache
+          rsync -av --ignore-existing /opt/thebarcodeapi/barcodeAPI/.buildx-cache.old/ /opt/thebarcodeapi/barcodeAPI/.buildx-cache/
+          rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache.old
+        fi
 
         # Get current cache size
         CACHE_SIZE=$(du -sb /opt/thebarcodeapi/barcodeAPI/.buildx-cache | cut -f1)
         echo "Current cache size: $CACHE_SIZE bytes"
 
+        # Set max cache size (5GB)
+        MAX_CACHE_SIZE=5368709120
+
         if [ "$CACHE_SIZE" -gt "$MAX_CACHE_SIZE" ]; then
           echo "Cache exceeds maximum size, pruning old layers..."
 
-          # Remove old cache files while preserving most recent
+          # Find and remove files older than 5 days
           find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type f -atime +5 -delete
 
           # Remove empty directories
           find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type d -empty -delete
+
+          # Get new cache size
+          NEW_CACHE_SIZE=$(du -sb /opt/thebarcodeapi/barcodeAPI/.buildx-cache | cut -f1)
+          echo "New cache size after pruning: $NEW_CACHE_SIZE bytes"
         fi
 
         # Compress cache
+        echo "Compressing cache..."
         cd /opt/thebarcodeapi/barcodeAPI
-        tar czf .buildx-cache.tar.gz .buildx-cache
+        tar -I 'zstd -19 -T0' -cf .buildx-cache.tar.zst .buildx-cache
         rm -rf .buildx-cache
-        mv .buildx-cache.tar.gz .buildx-cache
+        mv .buildx-cache.tar.zst .buildx-cache
 
     - name: Monitor cache
       if: always()

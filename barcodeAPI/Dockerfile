@@ -1,4 +1,4 @@
-# Stage 1: Build dependencies
+# Stage 1: Build stage
 FROM python:3.9-slim-buster as builder
 
 # Build args
@@ -20,20 +20,14 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy only requirements files
+# Copy requirements files
 COPY requirements.txt .
 
-# Create virtual environment and install dependencies
-RUN python -m venv /opt/venv && \
-    /opt/venv/bin/pip install --no-cache-dir pip setuptools wheel && \
-    if [ "$PYTHON_ENV" = "production" ]; then \
-        /opt/venv/bin/pip install --no-cache-dir -r requirements.txt; \
-    else \
-        /opt/venv/bin/pip install --no-cache-dir -r requirements.txt; \
-    fi && \
-    /opt/venv/bin/pip install --no-cache-dir bcrypt psutil
+# Install dependencies
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir bcrypt psutil
 
-# Stage 2: Runtime
+# Stage 2: Final stage
 FROM python:3.9-slim-buster
 
 # Runtime args
@@ -44,8 +38,7 @@ ARG PYTHON_ENV=production
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=${DEBIAN_FRONTEND} \
-    PYTHON_ENV=${PYTHON_ENV} \
-    PATH="/opt/venv/bin:$PATH"
+    PYTHON_ENV=${PYTHON_ENV}
 
 # Set work directory
 WORKDIR /app
@@ -63,8 +56,9 @@ RUN apt-get update && apt-get install -y \
 RUN (groupadd -g 1000 github-runner || true) && \
     (useradd -u 1000 -g github-runner -m github-runner || true)
 
-# Copy virtual environment from builder
-COPY --from=builder /opt/venv /opt/venv
+# Copy installed dependencies from builder
+COPY --from=builder /usr/local/lib/python3.9/site-packages/ /usr/local/lib/python3.9/site-packages/
+COPY --from=builder /usr/local/bin/ /usr/local/bin/
 
 # Copy application files
 COPY . .
