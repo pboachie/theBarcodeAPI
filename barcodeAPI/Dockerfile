@@ -40,6 +40,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
     netcat-openbsd \
     curl \
+    gcc \
+    zlib1g-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean \
     && groupadd -g 1000 github-runner \
