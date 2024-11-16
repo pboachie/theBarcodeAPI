@@ -20,6 +20,20 @@ FROM builder-base as builder-deps
 
 WORKDIR /build
 
+# Install runtime dependencies in a single layer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client \
+    netcat-openbsd \
+    curl \
+    gcc \
+    zlib1g-dev \
+    libjpeg-dev \
+    libfreetype6-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean \
+    && groupadd -g 1000 github-runner \
+    && useradd -u 1000 -g github-runner -m github-runner
+
 # Copy and install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
@@ -34,20 +48,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
-
-# Install runtime dependencies in a single layer
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client \
-    netcat-openbsd \
-    curl \
-    gcc \
-    zlib1g-dev \
-    libjpeg-dev \
-    libfreetype6-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean \
-    && groupadd -g 1000 github-runner \
-    && useradd -u 1000 -g github-runner -m github-runner
 
 # Copy Python packages from builder
 COPY --from=builder-deps /usr/local/lib/python3.9/site-packages/ /usr/local/lib/python3.9/site-packages/
