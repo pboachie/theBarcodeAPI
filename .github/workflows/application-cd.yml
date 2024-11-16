@@ -364,16 +364,27 @@ jobs:
       with:
         install: true
 
-    - name: Cache Docker layers
+    - name: Setup build cache
       if: steps.check_backend_changes.outputs.changes == 'true'
       uses: actions/cache@v3
       with:
         path: |
           /opt/thebarcodeapi/barcodeAPI/.buildx-cache
           ~/.docker/buildx
-        key: ${{ runner.os }}-buildx-${{ hashFiles('api/**', 'Dockerfile', 'requirements.txt') }}
+        key: ${{ runner.os }}-buildx-${{ hashFiles('requirements.txt', 'Dockerfile') }}-${{ github.sha }}
         restore-keys: |
+          ${{ runner.os }}-buildx-${{ hashFiles('requirements.txt', 'Dockerfile') }}-
           ${{ runner.os }}-buildx-
+
+    - name: Extract Docker metadata
+      if: steps.check_backend_changes.outputs.changes == 'true'
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: barcodeapi
+        tags: |
+          type=raw,value=latest
+          type=sha,prefix=,suffix=,format=short
 
     - name: Build and cache Docker image
       if: steps.check_backend_changes.outputs.changes == 'true'
@@ -383,18 +394,62 @@ jobs:
         file: /opt/thebarcodeapi/barcodeAPI/Dockerfile
         push: false
         load: true
-        tags: barcodeapi:latest
-        cache-from: type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
-        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=max
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: |
+          type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
+          type=gha,scope=${{ github.workflow }}
+        cache-to: |
+          type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=max,compression=zstd
         build-args: |
           DEBIAN_FRONTEND=noninteractive
-          PYTHON_ENV=production
+          PYTHON_ENV=${{ env.ENVIRONMENT }}
+        platforms: linux/amd64
+        target: runtime
+        outputs: type=docker,dest=/tmp/barcodeapi.tar
 
-    - name: Move cache
+    - name: Optimize cache
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
+        # Set max cache size (5GB)
+        MAX_CACHE_SIZE=5368709120  # 5GB in bytes
+
+        # Clean old cache
         rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+
+        # Move new cache
         mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache-new /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+
+        # Get current cache size
+        CACHE_SIZE=$(du -sb /opt/thebarcodeapi/barcodeAPI/.buildx-cache | cut -f1)
+        echo "Current cache size: $CACHE_SIZE bytes"
+
+        if [ "$CACHE_SIZE" -gt "$MAX_CACHE_SIZE" ]; then
+          echo "Cache exceeds maximum size, pruning old layers..."
+
+          # Remove old cache files while preserving most recent
+          find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type f -atime +5 -delete
+
+          # Remove empty directories
+          find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type d -empty -delete
+        fi
+
+        # Compress cache
+        cd /opt/thebarcodeapi/barcodeAPI
+        tar czf .buildx-cache.tar.gz .buildx-cache
+        rm -rf .buildx-cache
+        mv .buildx-cache.tar.gz .buildx-cache
+
+    - name: Monitor cache
+      if: always()
+      run: |
+        echo "Cache statistics:"
+        echo "----------------"
+        echo "Cache location: /opt/thebarcodeapi/barcodeAPI/.buildx-cache"
+        echo "Cache size: $(du -sh /opt/thebarcodeapi/barcodeAPI/.buildx-cache | cut -f1)"
+        echo "Number of layers: $(find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type f | wc -l)"
+        echo "Oldest cache file: $(find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type f -exec ls -ltr {} + | head -n 1)"
+        echo "Newest cache file: $(find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type f -exec ls -ltr {} + | tail -n 1)"
 
     - name: Store Git commit hash
       if: steps.check_backend_changes.outputs.changes == 'true'
