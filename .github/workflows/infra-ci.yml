@@ -608,13 +608,21 @@ jobs:
         # Create environment variables file
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
         ENVIRONMENT=${{ env.ENVIRONMENT }}
-        NODE_ENV=production
+        NODE_ENV=${{ env.ENVIRONMENT }}
         SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
         API_SECRET_KEY=${{ env.API_SECRET_KEY }}
         API_MASTER_KEY=${{ env.API_MASTER_KEY }}
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         API_VERSION=${{ env.API_VERSION }}
+        ALGORITHM=HS256
+        ACCESS_TOKEN_EXPIRE_MINUTES=30
+        REDIS_URL=redis://redis:6379/1
+        SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        LOG_DIRECTORY=/app/logs
+        SECRET_KEY=${{ env.API_SECRET_KEY }}
+        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
         EOF"
 
         # Run setup script
