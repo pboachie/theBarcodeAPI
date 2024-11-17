@@ -9,62 +9,46 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     DEBIAN_FRONTEND=${DEBIAN_FRONTEND} \
     PYTHON_ENV=${PYTHON_ENV}
 
-# Install build dependencies in a single layer
+# Install build dependencies first in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     python3-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# Stage 2: Install Python dependencies
-FROM builder-base as builder-deps
-
-WORKDIR /build
-
-# Install runtime dependencies in a single layer
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    postgresql-client \
-    netcat-openbsd \
-    curl \
-    gcc \
     zlib1g-dev \
     libjpeg-dev \
     libfreetype6-dev \
-    && rm -rf /var/lib/apt/lists/* \
+    postgresql-client \
+    netcat-openbsd \
+    curl \
     && apt-get clean \
-    && groupadd -g 1000 github-runner \
-    && useradd -u 1000 -g github-runner -m github-runner
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apt/*
 
-# Copy and install dependencies
+# Create github-runner user and group
+RUN (groupadd -g 1000 github-runner || true) && \
+    (useradd -u 1000 -g github-runner -m github-runner || true)
+
+# Copy requirements first to leverage Docker cache
+WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir --upgrade bcrypt psutil
 
-# Stage 3: Final runtime
-FROM python:3.9-slim-buster
-
-# Runtime environment setup
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PATH="/opt/venv/bin:$PATH"
-
-WORKDIR /app
-
-# Copy Python packages from builder
-COPY --from=builder-deps /usr/local/lib/python3.9/site-packages/ /usr/local/lib/python3.9/site-packages/
-
 # Copy application files
 COPY . .
 
-# Set permissions
-RUN chown -R github-runner:github-runner /app \
-    && chmod -R 755 /app \
-    && chmod +x /app/start.sh /app/init-db.sh
+# Set correct permissions
+RUN chmod +x /app/start.sh && \
+    chmod +x /app/init-db.sh && \
+    chown -R github-runner:github-runner /app && \
+    chmod -R 755 /app
 
-# Switch to non-root user
+# Switch to github-runner user
 USER github-runner
 
-# Set up volumes and expose port
+# Set up volumes for persistent data
 VOLUME ["/app/data", "/app/logs"]
+
+# Expose port
 EXPOSE 8000
 
 # Health check
