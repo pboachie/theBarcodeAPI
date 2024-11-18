@@ -27,7 +27,8 @@ from app.schemas import SecurityScheme
 log_directory = settings.LOG_DIRECTORY
 os.makedirs(log_directory, exist_ok=True)
 
-log_level = logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG
+# log_level = logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG
+log_level = logging.DEBUG
 logging.basicConfig(
     level=log_level,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
