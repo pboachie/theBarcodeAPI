@@ -369,9 +369,10 @@ jobs:
         path: |
           /opt/thebarcodeapi/barcodeAPI/.buildx-cache
           ~/.docker/buildx
-        key: ${{ runner.os }}-buildx-${{ hashFiles('api/**', 'Dockerfile', 'requirements.txt') }}
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-buildx-
+          ${{ runner.os }}-buildx-${{ hashFiles('**/requirements.txt', '**/Dockerfile', 'api/**/*.py', 'alembic/**/*.py') }}
+          ${{ runner.os }}-buildx-${{ github.ref_name }}-
 
     - name: Build and cache Docker image
       if: steps.check_backend_changes.outputs.changes == 'true'
