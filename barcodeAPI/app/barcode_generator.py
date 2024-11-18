@@ -55,10 +55,10 @@ def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options
 
         # Process the generated image
         buffer.seek(0)
-        img = Image.open(buffer)
+        img = PIL.Image.open(buffer)
 
         # Resize to requested dimensions
-        img = img.resize((barcode_request.width, barcode_request.height), Image.Resampling.LANCZOS)
+        img = img.resize((barcode_request.width, barcode_request.height), PIL.Image.Resampling.LANCZOS)
 
         # Save to new buffer
         try:
