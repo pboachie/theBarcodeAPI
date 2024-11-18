@@ -35,8 +35,6 @@ services:
         limits:
           cpus: '4.0'
           memory: 2G
-        reservations:
-          memory: 1G
 
   redis:
     image: redislabs/rejson:latest
