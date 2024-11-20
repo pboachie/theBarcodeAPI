@@ -335,13 +335,11 @@ jobs:
         REDIS_URL=redis://redis:6379/1
         SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
         LOG_DIRECTORY=/app/logs
-
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         SECRET_KEY=${{ env.API_SECRET_KEY }}
         MASTER_API_KEY=${{ env.API_MASTER_KEY }}
         DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        ALGORITHM=HS256
         ENVIRONMENT=${{ env.ENVIRONMENT }}
         EOF'
 
@@ -374,20 +372,10 @@ jobs:
         path: |
           /opt/thebarcodeapi/barcodeAPI/.buildx-cache
           ~/.docker/buildx
-        key: ${{ runner.os }}-buildx-${{ hashFiles('requirements.txt', 'Dockerfile') }}-${{ github.sha }}
+        key: ${{ runner.os }}-buildx-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-buildx-${{ hashFiles('requirements.txt', 'Dockerfile') }}-
-          ${{ runner.os }}-buildx-
-
-    - name: Extract Docker metadata
-      if: steps.check_backend_changes.outputs.changes == 'true'
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: barcodeapi
-        tags: |
-          type=raw,value=latest
-          type=sha,prefix=,suffix=,format=short
+          ${{ runner.os }}-buildx-${{ hashFiles('**/requirements.txt', '**/Dockerfile', 'api/**/*.py', 'alembic/**/*.py') }}
+          ${{ runner.os }}-buildx-${{ github.ref_name }}-
 
     - name: Build and cache Docker image
       if: steps.check_backend_changes.outputs.changes == 'true'
@@ -411,62 +399,11 @@ jobs:
         provenance: false
         sbom: false
 
-    - name: Optimize cache
+    - name: Move cache
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
-        # Create backup of old cache
-        if [ -d "/opt/thebarcodeapi/barcodeAPI/.buildx-cache" ]; then
-          mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache /opt/thebarcodeapi/barcodeAPI/.buildx-cache.old
-        fi
-
-        # Move new cache
+        rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache
         mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache-new /opt/thebarcodeapi/barcodeAPI/.buildx-cache
-
-        # Merge old and new caches, keeping only unique and recent files
-        if [ -d "/opt/thebarcodeapi/barcodeAPI/.buildx-cache.old" ]; then
-          # Only copy files that don't exist in new cache
-          rsync -av --ignore-existing /opt/thebarcodeapi/barcodeAPI/.buildx-cache.old/ /opt/thebarcodeapi/barcodeAPI/.buildx-cache/
-          rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache.old
-        fi
-
-        # Get current cache size
-        CACHE_SIZE=$(du -sb /opt/thebarcodeapi/barcodeAPI/.buildx-cache | cut -f1)
-        echo "Current cache size: $CACHE_SIZE bytes"
-
-        # Set max cache size (5GB)
-        MAX_CACHE_SIZE=5368709120
-
-        if [ "$CACHE_SIZE" -gt "$MAX_CACHE_SIZE" ]; then
-          echo "Cache exceeds maximum size, pruning old layers..."
-
-          # Find and remove files older than 5 days
-          find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type f -atime +5 -delete
-
-          # Remove empty directories
-          find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type d -empty -delete
-
-          # Get new cache size
-          NEW_CACHE_SIZE=$(du -sb /opt/thebarcodeapi/barcodeAPI/.buildx-cache | cut -f1)
-          echo "New cache size after pruning: $NEW_CACHE_SIZE bytes"
-        fi
-
-        # Compress cache
-        echo "Compressing cache..."
-        cd /opt/thebarcodeapi/barcodeAPI
-        tar -I 'zstd -19 -T0' -cf .buildx-cache.tar.zst .buildx-cache
-        rm -rf .buildx-cache
-        mv .buildx-cache.tar.zst .buildx-cache
-
-    - name: Monitor cache
-      if: always()
-      run: |
-        echo "Cache statistics:"
-        echo "----------------"
-        echo "Cache location: /opt/thebarcodeapi/barcodeAPI/.buildx-cache"
-        echo "Cache size: $(du -sh /opt/thebarcodeapi/barcodeAPI/.buildx-cache | cut -f1)"
-        echo "Number of layers: $(find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type f | wc -l)"
-        echo "Oldest cache file: $(find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type f -exec ls -ltr {} + | head -n 1)"
-        echo "Newest cache file: $(find /opt/thebarcodeapi/barcodeAPI/.buildx-cache -type f -exec ls -ltr {} + | tail -n 1)"
 
     - name: Store Git commit hash
       if: steps.check_backend_changes.outputs.changes == 'true'
@@ -502,6 +439,14 @@ jobs:
         API_SECRET_KEY=${{ env.API_SECRET_KEY }}
         API_MASTER_KEY=${{ env.API_MASTER_KEY }}
         API_VERSION=${{ vars.API_VERSION }}
+        ALGORITHM=HS256
+        ACCESS_TOKEN_EXPIRE_MINUTES=30
+        REDIS_URL=redis://redis:6379/1
+        SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        LOG_DIRECTORY=/app/logs
+        SECRET_KEY=${{ env.API_SECRET_KEY }}
+        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
         EOF"
 
         # Determine and set docker compose command

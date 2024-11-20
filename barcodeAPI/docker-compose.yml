@@ -33,11 +33,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.25'
-          memory: 512M
+          cpus: '4.0'
+          memory: 2G
 
   redis:
     image: redislabs/rejson:latest
