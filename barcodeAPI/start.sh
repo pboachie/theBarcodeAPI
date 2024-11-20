@@ -37,6 +37,8 @@ fi
 
 if [ ! -d "/app/logs" ]; then
     mkdir -p /app/logs
+    chown -R appuser:appuser /app/logs
+    chmod -R 775 /app/logs
 fi
 
 # Wait for the database to be ready
@@ -109,5 +111,5 @@ print_colored "32" "Starting application with $WORKERS workers..."
 if [ "$PYTHON_ENV" = "development" ]; then
     exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header --workers 1
 else
-    exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers $WORKERS
+    exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers 1
 fi
