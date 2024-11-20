@@ -340,7 +340,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeAPI/*
 
         # Copy new files
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./* /opt/thebarcodeapi/barcodeAPI/
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeAPI/* /opt/thebarcodeapi/barcodeAPI/
 
         # Set proper permissions
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
