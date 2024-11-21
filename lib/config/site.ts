@@ -35,6 +35,10 @@ export const siteConfig = {
       // Core Service Keywords
       'Free Barcode API',
       'The Barcode API',
+      'The Barcode API Free',
+      'The Barcode API Online',
+      'The Barcode API Generator',
+      'The Barcode API com',
       'Barcode Generator',
       'Online Barcode',
       'Barcode API',
@@ -114,6 +118,10 @@ export const siteConfig = {
       'ISO Compliant',
 
       // Generic Terms
+      'API Barcodes',
+      'api.thebarcodeapi.com',
+      'thebarcodeapi.com',
+
       'Generate Barcodes',
       'Create Barcodes',
       'Make Barcodes',
