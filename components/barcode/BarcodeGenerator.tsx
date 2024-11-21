@@ -151,7 +151,7 @@ const BarcodeGenerator: React.FC = () => {
 
     return (
         <main className="container mx-auto">
-            <div className="barcode-generator-container p-4 md:p-8">
+            <div className="barcode-generator-container">
                 <Card className="max-w-full">
                     <CardHeader>
                         <CardTitle className="text-2xl font-bold text-center">
