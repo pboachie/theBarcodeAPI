@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from fastapi_limiter import FastAPILimiter
 from pydantic import ValidationError
@@ -20,7 +21,7 @@ import asyncio
 from app.api import barcode, usage, health, token, admin
 from app.config import settings
 from app.barcode_generator import BarcodeGenerationError
-from app.database import close_db_connection, init_db, get_db, engine
+from app.database import close_db_connection, init_db, get_db
 from app.redis import redis_manager, close_redis_connection, initialize_redis_manager
 from app.schemas import SecurityScheme
 
@@ -177,7 +178,7 @@ def custom_openapi():
     )
 
     openapi_schema["components"]["securitySchemes"] = {
-        "bearerAuth": SecurityScheme().dict()
+        "bearerAuth": SecurityScheme().model_dump()
     }
 
     for path in openapi_schema["paths"].values():
@@ -198,28 +199,28 @@ app = FastAPI(
     redoc_url="/docs",
     openapi_url="/openapi.json",
     lifespan=lifespan,
+    root_path=settings.ROOT_PATH,
+    servers=[{"url": settings.SERVER_URL}],
     contact={
         "name": "Barcode API Support",
         "url": "https://thebarcodeapi.com/support",
         "email": "support@boachiefamily.net",
     },
     license_info={
-        "name": "MIT",
-        "url": "https://opensource.org/licenses/MIT",
+        "name": "Proprietary",
+        "url": "https://thebarcodeapi.com/tos",
     }
 )
 
 app.openapi = custom_openapi
-
-# Custom middleware to add server header
-app.add_middleware(CustomServerHeaderMiddleware)
 
 # Initialize CORS origins before adding middleware
 app.state.cors_origins = [
     "http://localhost",
     "http://localhost:3000",
     "http://localhost:8000",
-    "https://thebarcodeapi.com"
+    "https://thebarcodeapi.com",
+    "https://api.thebarcodeapi.com"
 ]
 
 # Add CORS middleware
@@ -235,6 +236,21 @@ app.add_middleware(
         "X-RateLimit-Reset"
     ],
     max_age=3600
+)
+
+app.add_middleware(CustomServerHeaderMiddleware)
+
+
+if settings.ENVIRONMENT == "development":
+    settings.ALLOWED_HOSTS.extend([
+        "localhost",
+        "127.0.0.1"
+    ])
+
+
+app.add_middleware(
+    TrustedHostMiddleware,
+    allowed_hosts=settings.ALLOWED_HOSTS,
 )
 
 async def log_pool_status():
@@ -293,7 +309,7 @@ app.include_router(token.router)
 app.include_router(admin.router)
 
 @app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
+async def global_exception_handler(exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
@@ -301,7 +317,7 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 @app.exception_handler(BarcodeGenerationError)
-async def barcode_generation_exception_handler(request: Request, exc: BarcodeGenerationError):
+async def barcode_generation_exception_handler(exc: BarcodeGenerationError):
     logger.error(f"Barcode generation error: {exc}")
     return JSONResponse(
         status_code=400,
@@ -309,7 +325,7 @@ async def barcode_generation_exception_handler(request: Request, exc: BarcodeGen
     )
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
+async def validation_exception_handler(exc: RequestValidationError):
     logger.error(f"Validation error: {exc}")
     error_messages = [f"{'.'.join(err['loc'])}: {err['msg']}" for err in exc.errors()]
     return JSONResponse(
@@ -318,7 +334,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 @app.exception_handler(ValidationError)
-async def pydantic_validation_exception_handler(request: Request, exc: ValidationError):
+async def pydantic_validation_exception_handler(exc: ValidationError):
     logger.error(f"Pydantic validation error: {exc}")
     error_messages = [f"{'.'.join(err['loc'])}: {err['msg']}" for err in exc.errors()]
     return JSONResponse(

@@ -1,5 +1,5 @@
 # Use slim Python base image
-FROM python:3.9-slim-buster
+FROM --platform=linux/amd64 python:3.9-slim-buster as builder-base
 
 # Set build arguments with defaults
 ARG DEBIAN_FRONTEND=noninteractive
@@ -27,9 +27,9 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/*
 
-# Create github-runner user and group (with retry logic)
-RUN (groupadd -g 1000 github-runner || true) && \
-    (useradd -u 1000 -g github-runner -m github-runner || true)
+# Create appuser user and group
+RUN groupadd -g 1000 appuser && \
+    useradd -u 1000 -g appuser -m appuser
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
@@ -42,11 +42,11 @@ COPY . .
 # Set correct permissions
 RUN chmod +x /app/start.sh && \
     chmod +x /app/init-db.sh && \
-    chown -R github-runner:github-runner /app && \
+    chown -R appuser:appuser /app && \
     chmod -R 755 /app
 
-# Switch to github-runner user
-USER github-runner
+# Switch to appuser user
+USER appuser
 
 # Set up volumes for persistent data
 VOLUME ["/app/data", "/app/logs"]

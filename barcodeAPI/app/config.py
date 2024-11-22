@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings
 from sqlalchemy import engine_from_config, pool
 from alembic.config import Config
 from alembic import context
+from typing import List, ClassVar
 
 class Settings(BaseSettings):
     SECRET_KEY: str = os.getenv("SECRET_KEY")
@@ -16,6 +17,13 @@ class Settings(BaseSettings):
     API_VERSION: str = os.getenv("API_VERSION")
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     LOG_DIRECTORY: str = os.getenv("LOG_DIRECTORY", "logs")
+    ROOT_PATH: str = os.getenv("ROOT_PATH", "/api/v1")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD")
+    SERVER_URL: str = os.getenv("SERVER_URL", "https://www.thebarcodeapi.com")
+    ALLOWED_HOSTS: ClassVar[List[str]] = [
+        "thebarcodeapi.com",
+        "*.thebarcodeapi.com"
+    ]
 
     @property
     def SYNC_DATABASE_URL(self) -> str:

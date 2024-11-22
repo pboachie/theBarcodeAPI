@@ -3,7 +3,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-// import dynamic from 'next/dynamic';
 import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { BarcodeControls } from './BarcodeControls';
 import { BarcodeDisplay } from './BarcodeDisplay';
@@ -14,188 +13,154 @@ import { ApiCallDisplay } from './ApiCallDisplay';
 import { ActionButtons } from './ActionButtons';
 import { getBarcodeText } from './barcodeConfig';
 
-const apiDomain = process.env.NEXT_PUBLIC_API_DOMAIN ||
+const apiDomain =
+  process.env.NEXT_PUBLIC_API_DOMAIN ||
   (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com');
 
 const BarcodeGenerator: React.FC = () => {
-    const [barcodeType, setBarcodeType] = useState<BarcodeType>('code128');
-    const [barcodeText, setBarcodeText] = useState('Change Me!');
-    const [barcodeWidth, setBarcodeWidth] = useState(200);
-    const [barcodeHeight, setBarcodeHeight] = useState(100);
-    const [imageFormat, setImageFormat] = useState<ImageFormat>('PNG');
-    const [isLoading, setIsLoading] = useState(false);
-    const [barcodeUrl, setBarcodeUrl] = useState('');
-    const [apiCallUrl, setApiCallUrl] = useState('');
-    const [dpi, setDpi] = useState(200);
-    const [error, setError] = useState<string | null>(null);
-    const [isLimitExceeded, setIsLimitExceeded] = useState(false);
-    const [showText, setShowText] = useState(true);
-    const [customText, setCustomText] = useState('');
-    const [centerText, setCenterText] = useState(true);
+  const [barcodeType, setBarcodeType] = useState<BarcodeType>('code128');
+  const [barcodeText, setBarcodeText] = useState('Change Me!');
+  const [barcodeWidth, setBarcodeWidth] = useState(200);
+  const [barcodeHeight, setBarcodeHeight] = useState(100);
+  const [imageFormat, setImageFormat] = useState<ImageFormat>('PNG');
+  const [isLoading, setIsLoading] = useState(false);
+  const [barcodeUrl, setBarcodeUrl] = useState('');
+  const [apiCallUrl, setApiCallUrl] = useState('');
+  const [dpi, setDpi] = useState(200);
+  const [error, setError] = useState<string | null>(null);
+  const [isLimitExceeded, setIsLimitExceeded] = useState(false);
+  const [showText, setShowText] = useState(true);
+  const [customText, setCustomText] = useState('');
+  const [centerText, setCenterText] = useState(true);
 
-    const { toast } = useToast();
-    const timeoutRef = useRef<NodeJS.Timeout>();
+  const { toast } = useToast();
+  const timeoutRef = useRef<NodeJS.Timeout>();
 
-    const handleBarcodeTypeChange = (newType: BarcodeType) => {
-        setBarcodeType(newType);
-    };
+  const handleBarcodeTypeChange = (newType: BarcodeType) => setBarcodeType(newType);
 
-    const handleCopy = async () => {
-        try {
-            const formattedApiCallUrl = `${apiDomain}${apiCallUrl}`;
-            await navigator.clipboard.writeText(formattedApiCallUrl);
-            toast({
-                title: "Copied!",
-                description: "API URL copied to clipboard",
-                duration: 2200,
-            });
-        } catch (error) {
-            console.error("Failed to copy:", error);
-            toast({
-                title: "Failed to Copy",
-                description: "Could not copy the API URL to clipboard",
-                variant: "destructive",
-                duration: 3000,
-            });
-        }
-    };
+  const handleCopy = async () => {
+    try {
+      const formattedApiCallUrl = `${apiDomain}${apiCallUrl}`;
+      await navigator.clipboard.writeText(formattedApiCallUrl);
+      toast({ title: 'Copied!', description: 'API URL copied to clipboard', duration: 2200 });
+    } catch (error) {
+      console.error('Failed to copy:', error);
+      toast({
+        title: 'Failed to Copy',
+        description: 'Could not copy the API URL to clipboard',
+        variant: 'destructive',
+        duration: 3000,
+      });
+    }
+  };
 
-    const handleDownload = () => {
-        const cleanedBarcodeValue = barcodeText.replace(/[^a-zA-Z0-9]/g, '');
-        const fileName = `${cleanedBarcodeValue}_${barcodeWidth}_${barcodeHeight}.${imageFormat.toLowerCase()}`;
+  const handleDownload = () => {
+    const cleanedBarcodeValue = barcodeText.replace(/[^a-zA-Z0-9]/g, '');
+    const fileName = `${cleanedBarcodeValue}_${barcodeWidth}_${barcodeHeight}.${imageFormat.toLowerCase()}`;
+    const link = document.createElement('a');
+    link.href = barcodeUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-        const link = document.createElement('a');
-        link.href = barcodeUrl;
-        link.download = fileName;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    const debouncedUpdateBarcode = useCallback((
-        type: string,
-        text: string,
-        width: number,
-        height: number,
-        format: string,
-        dpi: number,
-        showText: boolean,
-        customText: string,
-        centerText: boolean
-        ) => {
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-        }
-
-        timeoutRef.current = setTimeout(async () => {
-            if (!isLimitExceeded) {
-                const displayText = getBarcodeText(type as BarcodeType, text);
-
-                const url = await generateBarcode(
-                    type,
-                    displayText,
-                    width,
-                    height,
-                    format,
-                    dpi,
-                    showText,
-                    setIsLoading,
-                    setError,
-                    setIsLimitExceeded,
-                    customText,
-                    centerText
-                );
-                if (url) {
-                    setBarcodeUrl(url);
-                    const params = new URLSearchParams({
-                      data: encodeURIComponent(displayText),
-                      format: type,
-                      width: width.toString(),
-                      height: height.toString(),
-                      image_format: format,
-                      dpi: dpi.toString(),
-                      show_text: showText.toString(),
-                      center_text: centerText.toString()
-                    });
-
-                    if (showText && customText) {
-                        params.append('text_content', encodeURIComponent(customText));
-                      }
-
-                      setApiCallUrl(`/api/generate?${params.toString()}`);
-                }
-            }
-        }, 420);
-    }, [isLimitExceeded]);
-    // Add a mounted ref to prevent double requests
-    const isMounted = useRef(false);
-
-    useEffect(() => {
-        if (isMounted.current) return;
-        isMounted.current = true;
-
-        const initializeBarcode = async () => {
-            setIsLoading(true);
-            if (!isLimitExceeded) {
-                const displayText = getBarcodeText(barcodeType, barcodeText);
-
-                const url = await generateBarcode(
-                    barcodeType,
-                    displayText,
-                    barcodeWidth,
-                    barcodeHeight,
-                    imageFormat,
-                    dpi,
-                    showText,
-                    setIsLoading,
-                    setError,
-                    setIsLimitExceeded
-                );
-                if (url) {
-                    setBarcodeUrl(url);
-                    setApiCallUrl(`/api/generate?data=${encodeURIComponent(displayText)}&format=${barcodeType}&width=${barcodeWidth}&height=${barcodeHeight}&image_format=${imageFormat}&dpi=${dpi}&center_text=${showText}`);
-                }
-            }
-            setIsLoading(false);
-        };
-
-        initializeBarcode();
-    }, [barcodeType, barcodeText, barcodeWidth, barcodeHeight, imageFormat, dpi, showText, isLimitExceeded]); // Added dependencies
-    useEffect(() => {
-        debouncedUpdateBarcode(
-            barcodeType,
-            barcodeText,
-            barcodeWidth,
-            barcodeHeight,
-            imageFormat,
+  const debouncedUpdateBarcode = useCallback(
+    (
+      type: string,
+      text: string,
+      width: number,
+      height: number,
+      format: string,
+      dpi: number,
+      showText: boolean,
+      customText: string,
+      centerText: boolean
+    ) => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(async () => {
+        if (!isLimitExceeded) {
+          const displayText = getBarcodeText(type as BarcodeType, text);
+          const url = await generateBarcode(
+            type,
+            displayText,
+            width,
+            height,
+            format,
             dpi,
             showText,
+            setIsLoading,
+            setError,
+            setIsLimitExceeded,
             customText,
             centerText
-        );
-    }, [barcodeType, barcodeText, barcodeWidth, barcodeHeight, imageFormat, dpi, showText, customText, centerText, debouncedUpdateBarcode]);
+          );
+          if (url) {
+            setBarcodeUrl(url);
+            const params = new URLSearchParams({
+              data: encodeURIComponent(displayText),
+              format: type,
+              width: width.toString(),
+              height: height.toString(),
+              image_format: format,
+              dpi: dpi.toString(),
+              show_text: showText.toString(),
+              center_text: centerText.toString(),
+            });
+            if (showText && customText)
+              params.append('text_content', encodeURIComponent(customText));
+            setApiCallUrl(`/api/generate?${params.toString()}`);
+          }
+        }
+      }, 420);
+    },
+    [isLimitExceeded]
+  );
 
-    useEffect(() => {
-        return () => {
-            if (barcodeUrl) {
-                cleanupBarcodeUrl(barcodeUrl);
-            }
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
-        };
-    }, [barcodeUrl]);
+  useEffect(() => {
+    debouncedUpdateBarcode(
+      barcodeType,
+      barcodeText,
+      barcodeWidth,
+      barcodeHeight,
+      imageFormat,
+      dpi,
+      showText,
+      customText,
+      centerText
+    );
+  }, [
+    barcodeType,
+    barcodeText,
+    barcodeWidth,
+    barcodeHeight,
+    imageFormat,
+    dpi,
+    showText,
+    customText,
+    centerText,
+    debouncedUpdateBarcode,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (barcodeUrl) cleanupBarcodeUrl(barcodeUrl);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [barcodeUrl]);
 
     return (
         <main className="container mx-auto">
-            <div className="barcode-generator-container p-4 md:p-8">
+            <div className="barcode-generator-container">
                 <Card className="max-w-full">
                     <CardHeader>
-                        <CardTitle className="text-2xl font-bold text-center">
-                            The Barcode API {process.env.NODE_ENV == 'development' ?
-                                <span className="text-red-500">DEV*</span> :
+                        <CardTitle className="text-2xl font-bold text-center relative">
+                            <a href="/" className="absolute inset-0 z-10"></a>
+                            The Barcode API {process.env.NODE_ENV == 'development' ? (
+                                <span className="text-red-500">DEV*</span>
+                            ) : (
                                 <span className="text-green-500">*</span>
-                            }
+                            )}
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-6">

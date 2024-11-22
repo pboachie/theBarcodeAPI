@@ -1,8 +1,6 @@
 name: theBarcodeApi Infrastructure Setup
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
 
 env:
@@ -25,10 +23,9 @@ jobs:
 
     - name: Setup Initial Directories
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/barcodeAPI"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/backups"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/backups"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
 
     # - name: Configure sudoers
@@ -444,7 +441,7 @@ jobs:
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/backups
+        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/backups
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
 
@@ -556,7 +553,7 @@ jobs:
         cat > /opt/thebarcodeapi/barcodeAPI/backup.sh << EOL
         #!/bin/bash
         TIMESTAMP=\$(date +%Y%m%d_%H%M%S)
-        BACKUP_DIR="/opt/thebarcodeapi/backups"
+        BACKUP_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/backups"
 
         # Backup PostgreSQL
         docker compose exec db pg_dump -U barcodeboachiefamily barcode_api > "\$BACKUP_DIR/db_backup_\$TIMESTAMP.sql"
@@ -647,7 +644,7 @@ jobs:
         # Create required directories if they don't exist
         mkdir -p /opt/thebarcodeapi/barcodeAPI
         mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data
-        mkdir -p /opt/thebarcodeapi/backups
+        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/backups
 
         # Set ownership
         chown -R github-runner:github-runner /opt/thebarcodeapi
@@ -675,7 +672,7 @@ jobs:
         chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
         # set ownership for backup folder
-        chown github-runner:github-runner /opt/thebarcodeapi/backups
+        chown github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}/backups
         echo "Permissions fixed successfully"
         EOF
 
@@ -721,7 +718,7 @@ jobs:
         find /opt/thebarcodeapi/${ENVIRONMENT}/releases -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
 
         # Clean old backups (keep last 30 days)
-        find /opt/thebarcodeapi/backups -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
+        find /opt/thebarcodeapi/${ENVIRONMENT}/backups -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
 
         # Clean Docker
         docker system prune -f --filter "until=168h"
@@ -812,12 +809,12 @@ jobs:
         BACKUP_SCRIPT="/opt/thebarcodeapi/barcodeAPI/backup.sh"
         create_script "$BACKUP_SCRIPT" '#!/bin/bash
         timestamp=$(date +%Y%m%d_%H%M%S)
-        backup_dir="/opt/thebarcodeapi/backups"
+        backup_dir="/opt/thebarcodeapi/${ENVIRONMENT}/backups"
         tar -czf "$backup_dir/backup_$timestamp.tar.gz" -C /opt/thebarcodeapi/${ENVIRONMENT}/releases/data .'
 
         PRE_BACKUP_SCRIPT="/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh"
         create_script "$PRE_BACKUP_SCRIPT" '#!/bin/bash
-        if [ $(df -P /opt/thebarcodeapi/backups | tail -1 | awk '"'"'{print $5}'"'"' | sed '"'"'s/%//'"'"') -gt 90 ]; then
+        if [ $(df -P /opt/thebarcodeapi/${ENVIRONMENT}/backups | tail -1 | awk '"'"'{print $5}'"'"' | sed '"'"'s/%//'"'"') -gt 90 ]; then
           echo "Backup directory is over 90% full"
           exit 1
         fi'

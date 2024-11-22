@@ -1,11 +1,14 @@
 name: theBarcodeApi Application Deployment
 
+# on:
+#   workflow_run:
+#     workflows: ["theBarcodeApi Infrastructure Setup"]
+#     branches: [main]
+#     types:
+#       - completed
 on:
-  workflow_run:
-    workflows: ["theBarcodeApi Infrastructure Setup"]
-    branches: [main]
-    types:
-      - completed
+  push:
+    branches: [ main ]
   workflow_dispatch:
     inputs:
       branch:
@@ -323,6 +326,30 @@ jobs:
         echo "Git diff output:"
         git diff --name-only HEAD^ HEAD || true
 
+    - name: Clean and copy backend files
+      if: steps.check_backend_changes.outputs.changes == 'true'
+      run: |
+        # Create backup of current deployment if it exists
+        if [ -d "/opt/thebarcodeapi/barcodeAPI" ]; then
+          BACKUP_DIR="/opt/thebarcodeapi/${{ vars.ENVIRONMENT }}/backups/$(date +%Y%m%d_%H%M%S)"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "${BACKUP_DIR}"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r /opt/thebarcodeapi/barcodeAPI "${BACKUP_DIR}/"
+        fi
+
+        # Clean the deployment directory
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeAPI/*
+
+        # Copy new files
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeAPI/* /opt/thebarcodeapi/barcodeAPI/
+
+        # Set proper permissions
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/barcodeAPI
+
+        # Debug output
+        echo "Contents of deployment directory:"
+        ls -la /opt/thebarcodeapi/barcodeAPI/
+
     - name: Create .env file for backend
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /opt/thebarcodeapi/barcodeAPI/.env << EOF
@@ -331,7 +358,8 @@ jobs:
         ACCESS_TOKEN_EXPIRE_MINUTES=30
         REDIS_URL=redis://redis:6379/1
         SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        LOG_DIRECTORY=/app/logs
+        LOG_DIRECTORY=/app
+        ROOT_PATH=/api/v1
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         SECRET_KEY=${{ env.API_SECRET_KEY }}
@@ -362,7 +390,7 @@ jobs:
       with:
         install: true
 
-    - name: Cache Docker layers
+    - name: Setup build cache
       if: steps.check_backend_changes.outputs.changes == 'true'
       uses: actions/cache@v3
       with:
@@ -382,12 +410,19 @@ jobs:
         file: /opt/thebarcodeapi/barcodeAPI/Dockerfile
         push: false
         load: true
-        tags: barcodeapi:latest
-        cache-from: type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
-        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=max
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: |
+          type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
+          type=gha,scope=${{ github.workflow }}
+        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=min
         build-args: |
           DEBIAN_FRONTEND=noninteractive
-          PYTHON_ENV=production
+          PYTHON_ENV=${{ env.ENVIRONMENT }}
+        platforms: linux/amd64
+        outputs: type=docker
+        provenance: false
+        sbom: false
 
     - name: Move cache
       if: steps.check_backend_changes.outputs.changes == 'true'
@@ -406,7 +441,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/backups/
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/backups/
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
 
     - name: Setup Docker and Environment
@@ -433,7 +468,8 @@ jobs:
         ACCESS_TOKEN_EXPIRE_MINUTES=30
         REDIS_URL=redis://redis:6379/1
         SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        LOG_DIRECTORY=/app/logs
+        LOG_DIRECTORY=/app
+        ROOT_PATH=/api/v1
         SECRET_KEY=${{ env.API_SECRET_KEY }}
         MASTER_API_KEY=${{ env.API_MASTER_KEY }}
         DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
@@ -509,7 +545,7 @@ jobs:
         fi
 
         # Create backup directory
-        BACKUP_DIR="/opt/thebarcodeapi/backups/${ENVIRONMENT:-production}/$(date +%Y%m%d_%H%M%S)"
+        BACKUP_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/backups/$(date +%Y%m%d_%H%M%S)"
         echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${BACKUP_DIR}"
         echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "${BACKUP_DIR}"
 
