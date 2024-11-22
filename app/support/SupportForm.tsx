@@ -62,7 +62,7 @@ export default function SupportForm() {
   ) : (
     <div className="text-center py-4">
       <h3 className="font-semibold text-primary mb-2">Thank you for reaching out!</h3>
-      <p className="text-sm text-muted-foreground">We'll get back to you soon.</p>
+    <p className="text-sm text-muted-foreground">Unfortunately, this feature is currently under development and will be available soon. Thank you for your patience.</p>
     </div>
   );
 }
