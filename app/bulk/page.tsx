@@ -8,7 +8,7 @@ import BulkWebOptions from '@/components/bulk/BulkWebOptions';
 import { AlertCircle } from 'lucide-react';
 
 export default function BulkPage() {
-    const [showWebOptions, setShowWebOptions] = useState(false);
+    const [showWebOptions] = useState(false);
     const { toast } = useToast();
 
     const handleAPIClick = () => {
