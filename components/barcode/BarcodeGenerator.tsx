@@ -154,11 +154,13 @@ const BarcodeGenerator: React.FC = () => {
             <div className="barcode-generator-container">
                 <Card className="max-w-full">
                     <CardHeader>
-                        <CardTitle className="text-2xl font-bold text-center">
-                            The Barcode API {process.env.NODE_ENV == 'development' ?
-                                <span className="text-red-500">DEV*</span> :
+                        <CardTitle className="text-2xl font-bold text-center relative">
+                            <a href="/" className="absolute inset-0 z-10"></a>
+                            The Barcode API {process.env.NODE_ENV == 'development' ? (
+                                <span className="text-red-500">DEV*</span>
+                            ) : (
                                 <span className="text-green-500">*</span>
-                            }
+                            )}
                         </CardTitle>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-6">
