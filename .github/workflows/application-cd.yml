@@ -689,7 +689,7 @@ jobs:
 
         # Check API health
         curl -f http://localhost:8000/health || {
-            echo "API health check failed"
+            echo "API health check failed."
             docker logs barcodeapi_api
             exit 1
         }
