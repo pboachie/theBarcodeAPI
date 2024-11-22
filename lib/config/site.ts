@@ -10,7 +10,7 @@ export const siteConfig = {
   footer: {
     navigation: [
     { href: '/', label: 'Home' },
-    { href: '/mass-generate', label: 'Upload', longLabel: 'Mass Generate' },
+    { href: '/bulk', label: 'Bulk', longLabel: 'Bulk Generate' },
     { href: 'https://api.thebarcodeapi.com', label: 'Docs', longLabel: 'API Documentation', target: '_blank' },
     { href: '/support', label: 'Support' }
     ],
