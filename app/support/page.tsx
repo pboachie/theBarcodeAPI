@@ -84,7 +84,7 @@ export default function SupportPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-4 max-w-md mx-auto">
-          <a href="/docs" className="flex items-center gap-2 text-sm hover:text-primary">
+          <a href="https://api.thebarcodeapi.com" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm hover:text-primary">
             <Globe className="h-4 w-4" />
             Documentation
           </a>
