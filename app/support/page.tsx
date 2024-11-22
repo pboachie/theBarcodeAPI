@@ -2,7 +2,7 @@
 import React from 'react';
 import { Mail, Phone, MessageCircle, Clock, ArrowRight, FileText, Globe } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import SupportForm from './SupportForm';
+import SupportForm from '@/components/support/SupportForm';
 
 export const metadata = {
   title: 'Support - The Barcode API | Free Barcode Generation Tools',
