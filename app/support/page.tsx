@@ -56,7 +56,7 @@ export default function SupportPage() {
                 <MessageCircle className="text-primary h-5 w-5" />
                 <div>
                   <h3 className="font-medium">Live Chat</h3>
-                  <p className="text-sm text-muted-foreground">Available 24/7  <span style={{ color: 'red' }}>* (Coming soon)</span></p>
+                  <p className="text-sm text-muted-foreground">Available 24/7  <span style={{ color: 'red' }}>* (Under development)</span></p>
                 </div>
               </div>
             </CardContent>
@@ -66,13 +66,13 @@ export default function SupportPage() {
         <div className="grid md:grid-cols-3 gap-6">
           <div className="flex flex-col items-start gap-2">
             <Clock className="h-5 w-5 text-primary" />
-            <h3 className="font-medium">24/7 Availability <span style={{ color: 'red' }}>* (Coming soon)</span></h3>
+            <h3 className="font-medium">24/7 Availability <span style={{ color: 'red' }}>* (Under development)</span></h3>
             <p className="text-sm text-muted-foreground">Round-the-clock support for all your barcode generation needs</p>
           </div>
 
           <div className="flex flex-col items-start gap-2">
             <ArrowRight className="h-5 w-5 text-primary" />
-            <h3 className="font-medium">Quick Response  <span style={{ color: 'red' }}>* (Coming soon)</span></h3>
+            <h3 className="font-medium">Quick Response  <span style={{ color: 'red' }}>* (Under development)</span></h3>
             <p className="text-sm text-muted-foreground">Fast and efficient support to keep your projects moving</p>
           </div>
 
