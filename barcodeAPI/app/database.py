@@ -14,7 +14,11 @@ DATABASE_URL = settings.DATABASE_URL
 ASYNC_DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://')
 
 # Synchronous engine for Alembic
-sync_engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+try:
+    sync_engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+except Exception as e:
+    logger.error(f"Error creating database engine: {e}")
+    raise
 
 # Asynchronous engine for the application
 engine = create_async_engine(
