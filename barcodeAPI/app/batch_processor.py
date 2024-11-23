@@ -35,13 +35,8 @@ class BatchProcessor:
         """Start the batch processor"""
         logger.info(f"Starting batch processor with batch size {self.batch_size}")
         if self.running:
-            logger.warning("Batch processor already running")
+            logger.warning("Batch processor is already running.")
             return
-
-        self.running = True
-        self._task = asyncio.create_task(self._process_loop())
-        logger.info("Batch processor started and processing loop initialized")
-
         self.running = True
         self._task = asyncio.create_task(self._process_loop())
         logger.info("Batch processor started")
@@ -49,19 +44,12 @@ class BatchProcessor:
     async def stop(self):
         """Stop the batch processor"""
         if not self.running:
+            logger.warning("Batch processor is not running.")
             return
-
         self.running = False
         self._process_event.set()  # Wake up the process loop
         if self._task:
-            try:
-                await asyncio.wait_for(self._task, timeout=self.max_wait_time)
-            except asyncio.TimeoutError:
-                self._task.cancel()
-                try:
-                    await self._task
-                except asyncio.CancelledError:
-                    pass
+            await self._task
         logger.info("Batch processor stopped")
 
     async def add_operation(self, operation: str, item: Any, priority: str) -> Any:
