@@ -102,7 +102,8 @@ async def detailed_health_check(redis_manager: RedisManager) -> None:
                 "redis_details": {
                     "connected_clients": redis_details.connected_clients,
                     "blocked_clients": redis_details.blocked_clients,
-                    "tracking_clients": redis_details.tracking_clients
+                    "tracking_clients": redis_details.tracking_clients,
+                    "total_connections": redis_details.total_connections
                 }
             }
 

@@ -259,43 +259,12 @@ async def log_pool_status():
     while True:
         try:
             pool = redis_manager.redis.connection_pool
-            logger.info(f"Redis Pool Status - Max Connections: {pool.max_connections}, In Use: {len(pool._in_use_connections)}, Available: {len(pool._available_connections)}")
+            in_use = len(pool._available_connections)
+            available = pool.max_connections - in_use
+            logger.info(f"Redis Pool Status - Max Connections: {pool.max_connections}, In Use: {in_use}, Available: {available}")
         except Exception as e:
             logger.error(f"Error logging pool status: {e}")
         await asyncio.sleep(60)
-
-# Remove or comment out the startup and shutdown event handlers to prevent duplicate initialization
-# @app.on_event("startup")
-# async def startup():
-#     logger.info("Starting up...")
-#     try:
-#         if settings.ENVIRONMENT == "development":
-#             gc.set_debug(gc.DEBUG_LEAK)
-#         await initialize_redis_manager()
-#         await init_db()
-#         await FastAPILimiter.init(redis_manager.redis)
-#         await redis_manager.start()
-#         # ...other startup tasks...
-#     except Exception as e:
-#         logger.error(f"Error during startup: {e}", exc_info=True)
-#         raise
-
-# @app.on_event("shutdown")
-# async def shutdown_event():
-#     logger.info("Starting shutdown process...")
-#     try:
-#         for priority, processor in redis_manager.batch_processor.processors.items():
-#             logger.info(f"Stopping {priority.name} priority batch processor...")
-#             await processor.stop()
-#         await redis_manager.sync_redis_to_db(db)
-#         await redis_manager.stop()
-#         await close_redis_connection()
-#         await close_db_connection()
-#         gc.collect()
-#         logger.info("Shutdown complete")
-#     except Exception as e:
-#         logger.error(f"Error during shutdown: {e}", exc_info=True)
-#         raise
 
 async def log_memory_usage():
     while True:
@@ -352,10 +321,24 @@ async def log_requests(request: Request, call_next):
     try:
         response = await call_next(request)
         logger.info(f"Response status: {response.status_code}")
+        # Add logging for Redis connection stats
+        redis_stats = await app.state.redis_manager.get_connection_stats()
+        logger.debug(f"Redis Stats - Total Connections: {redis_stats.total_connections}, In Use: {redis_stats.in_use_connections}")
         return response
     except Exception as ex:
         logger.error(f"Error processing request: {ex}", exc_info=True)
         raise
+
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    origin = request.headers.get("origin")
+
+    if origin in app.state.cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+
+    return response
 
 async def add_rate_limit_headers(request: Request, call_next):
     response = await call_next(request)
@@ -367,15 +350,4 @@ async def add_rate_limit_headers(request: Request, call_next):
 
     return response
 
-# Add a custom middleware to ensure CORS headers are always present
-@app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-    response = await call_next(request)
-    origin = request.headers.get("origin")
-
-    if origin in app.state.cors_origins:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-
-    return response
 

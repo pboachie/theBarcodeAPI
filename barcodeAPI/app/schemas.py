@@ -477,6 +477,8 @@ class RedisConnectionStats(BaseModel):
     connected_clients: int
     blocked_clients: int
     tracking_clients: int
+    total_connections: int
+    in_use_connections: int
 
 class DetailedHealthResponse(BaseModel):
     status: str

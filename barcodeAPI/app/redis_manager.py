@@ -227,7 +227,7 @@ class RedisManager:
                         if results[i]:
                             try:
                                 defaults = await self.create_default_user_data(items[i][0][0])
-                                user_data_dict = self._parse_redis_hash(results[i], defaults.__dict__)
+                                user_data_dict = self._decode_redis_hash(results[i], defaults.__dict__)
                                 future.set_result(UserData(**user_data_dict))
                             except Exception as ex:
                                 logger.error(f"Error processing user data: {ex}")
@@ -348,71 +348,90 @@ class RedisManager:
     async def _process_increment_usage(self, items: List[Tuple[Any, str]], pipe, pending_results):
         """Process batch of increment usage operations"""
         try:
-            current_time = datetime.now(pytz.utc).isoformat()
-            operation_futures = []
-
             for (user_id, ip_address), batch_id in items:
-                key = self._get_key(user_id, ip_address)
-                await pipe.evalsha(
+                pipe.evalsha(
                     self.increment_usage_sha,
                     1,
-                    key,
-                    str(user_id if user_id else -1),
-                    str(ip_address),
-                    str(settings.RateLimit.get_limit("unauthenticated")),
-                    current_time
+                    f"user_data:{user_id}",
+                    user_id,
+                    ip_address,
+                    settings.RateLimit.get_limit("unauthenticated"),
+                    datetime.now(pytz.utc).isoformat()
                 )
-                operation_futures.append((key, ip_address, batch_id))
-
             results = await pipe.execute()
 
-            for i, (key, ip_address, batch_id) in enumerate(operation_futures):
-                lua_result = results[i]
-                future = pending_results.get(batch_id)
+            if len(results) != len(items):
+                logger.error(f"Unexpected number of results from pipeline: expected {len(items)}, got {len(results)}")
+                # Set default values for missing results
+                for (_, batch_id) in items:
+                    user_data = await self.get_default_value("increment_usage")
+                    self._cleanup_future(batch_id, user_data)
+                return
 
-                if future and not future.done():
-                    try:
-                        if lua_result:
-                            # Convert Lua result list to dict
-                            result_dict = {}
-                            for j in range(0, len(lua_result), 2):
-                                k = lua_result[j].decode() if isinstance(lua_result[j], bytes) else str(lua_result[j])
-                                v = lua_result[j+1].decode() if isinstance(lua_result[j+1], bytes) else str(lua_result[j+1])
-                                result_dict[k] = v
-
-                            # Create user data from result (Throw exception if missing fields)
-                            required_fields = ["id", "ip_address", "username", "tier", "requests_today", "remaining_requests", "last_request", "last_reset"]
-                            for field in required_fields:
-                                if field not in result_dict or result_dict[field] is None:
-                                    raise ValueError(f"Missing required field: {field}")
-
-                            user_data_dict = {
-                                "id": str(result_dict.get("id")),
-                                "ip_address": result_dict.get("ip_address"),
-                                "username": result_dict.get("username"),
-                                "tier": result_dict.get("tier"),
-                                "requests_today": int(result_dict.get("requests_today", 0)),
-                                "remaining_requests": int(result_dict.get("remaining_requests", 0)),
-                                "last_request": datetime.fromisoformat(result_dict.get("last_request", datetime.now(pytz.utc).isoformat())),
-                                "last_reset": datetime.fromisoformat(result_dict.get("last_reset", datetime.now(pytz.utc).isoformat()))
-                            }
-
-                            user_data = UserData(**user_data_dict)
-                            future.set_result(user_data)
-                        else:
-                            logger.error(f"No result from Lua script for {key}")
-                            future.set_result(await self.create_default_user_data(ip_address))
-                    except Exception as ex:
-                        logger.error(f"Error processing increment result: {ex}")
-                        future.set_result(await self.create_default_user_data(ip_address))
-
+            for result, (_, batch_id) in zip(results, items):
+                if result and isinstance(result, dict):
+                    user_data = self._decode_redis_hash(
+                        result,
+                        (await self.get_default_value("increment_usage")).__dict__
+                    )
+                    self._cleanup_future(batch_id, user_data)
+                else:
+                    logger.error(f"Invalid result type from increment: {type(result)}")
+                    user_data = await self.get_default_value("increment_usage")
+                    self._cleanup_future(batch_id, user_data)
         except Exception as ex:
             logger.error(f"Error in _process_increment_usage: {ex}")
-            for (_, ip_address), batch_id in items:
-                if batch_id in pending_results:
-                    future = pending_results[batch_id]
-                    if not future.done():
-                        future.set_result(await self.create_default_user_data(ip_address))
+            for (_, batch_id) in items:
+                user_data = await self.get_default_value("increment_usage")
+                self._cleanup_future(batch_id, user_data)
+
+    def _convert_list_to_dict(self, data: List[Any]) -> Dict[bytes, bytes]:
+        """Convert list to dict converting strings to bytes"""
+        result = {}
+        for i in range(0, len(data), 2):
+            key = data[i].encode('utf-8') if isinstance(data[i], str) else data[i]
+            value = data[i+1].encode('utf-8') if isinstance(data[i+1], str) else data[i+1]
+            result[key] = value
+        return result
+
+    def _decode_redis_hash(self, hash_data: Dict[bytes, bytes], defaults: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Decode Redis hash data with proper type conversion.
+
+        Args:
+            hash_data: Raw Redis hash data with byte keys and values
+            defaults: Dictionary of default values with their expected types
+
+        Returns:
+            Dict with properly decoded and typed values
+        """
+        result = {}
+        try:
+            str_data = {k.decode('utf-8'): v.decode('utf-8') for k, v in hash_data.items()}
+
+            logger.debug(f"Decoded Redis hash data: {str_data}")
+
+            # Start with defaults
+            result = defaults.copy()
+
+            # Update with actual values from Redis
+            for key, value in str_data.items():
+                if key in result:
+                    value_str = str(value).strip()
+                    try:
+                        if isinstance(result[key], int):
+                            result[key] = int(value_str) if value_str else result[key]
+                        elif isinstance(result[key], datetime):
+                            result[key] = datetime.fromisoformat(value_str) if value_str else result[key]
+                        else:
+                            result[key] = value_str if value_str else result[key]
+                    except (ValueError, TypeError) as ex:
+                        logger.error(f"Error converting {key}={value}: {ex}")
+
+            return result
+        except Exception as ex:
+            logger.error(f"Error parsing Redis hash: {ex}")
+            return defaults
 
     async def _process_check_rate_limit(self, items: List[Tuple[Any, str]], pipe, pending_results):
         """Process batch of rate limit checks"""
@@ -557,7 +576,7 @@ class RedisManager:
                     if results[i]:
                         try:
                             defaults = await self.create_default_user_data(ip_address)
-                            user_data_dict = self._parse_redis_hash(results[i], defaults.__dict__)
+                            user_data_dict = self._decode_redis_hash(results[i], defaults.__dict__)
                             future.set_result(UserData(**user_data_dict))
                         except Exception as ex:
                             logger.error(f"Error processing user data: {ex}")
@@ -1100,82 +1119,55 @@ class RedisManager:
             logger.error(f"Error fetching user data: {str(ex)}")
             return await self.create_default_user_data(ip_address)
 
-    def _decode_redis_hash(self, hash_data: Dict[bytes, bytes], defaults: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Decode Redis hash data with proper type conversion.
+    # def _decode_redis_hash(self, hash_data: Dict[bytes, bytes], defaults: Dict[str, Any]) -> Dict[str, Any]:
+    #     """
+    #     Decode Redis hash data with proper type conversion.
 
-        Args:
-            hash_data: Raw Redis hash data with byte keys and values
-            defaults: Dictionary of default values with their expected types
+    #     Args:
+    #         hash_data: Raw Redis hash data with byte keys and values
+    #         defaults: Dictionary of default values with their expected types
 
-        Returns:
-            Dict with properly decoded and typed values
-        """
-        result = {}
-        try:
-            # First decode all bytes to strings
-            str_data = {
-                k.decode('utf-8') if isinstance(k, bytes) else k:
-                v.decode('utf-8') if isinstance(v, bytes) else v
-                for k, v in hash_data.items()
-            }
+    #     Returns:
+    #         Dict with properly decoded and typed values
+    #     """
+    #     result = {}
+    #     try:
+    #         # First decode all bytes to strings
+    #         str_data = {k.decode('utf-8'): v.decode('utf-8') for k, v in hash_data.items()}
 
-            logger.debug(f"Decoded Redis hash data: {str_data}")
+    #         logger.debug(f"Decoded Redis hash data: {str_data}")
 
-            # Convert values based on default types
-            for key, default in defaults.items():
-                if key in str_data:
-                    value = str(str_data[key]).strip()
-                    try:
-                        if isinstance(default, int):
-                            result[key] = int(value) if value else default
-                        elif isinstance(default, datetime):
-                            result[key] = datetime.fromisoformat(value) if value else default
-                        else:
-                            result[key] = value if value else default
-                    except (ValueError, TypeError) as ex:
-                        logger.error(f"Error converting {key}={value}: {ex}")
-                        result[key] = default
-                else:
-                    result[key] = default
+    #         # Start with defaults
+    #         result = defaults.copy()
 
-            return result
+    #         # Update with actual values from Redis
+    #         for key, value in str_data.items():
+    #             if key in result:
+    #                 value_str = str(value).strip()
+    #                 try:
+    #                     if isinstance(result[key], int):
+    #                         result[key] = int(value_str) if value_str else result[key]
+    #                     elif isinstance(result[key], datetime):
+    #                         result[key] = datetime.fromisoformat(value_str) if value_str else result[key]
+    #                     else:
+    #                         result[key] = value_str if value_str else result[key]
+    #                 except (ValueError, TypeError) as ex:
+    #                     logger.error(f"Error converting {key}={value}: {ex}")
+    #             if key in result:
+    #                 try:
+    #                     if isinstance(result[key], int):
+    #                         result[key] = int(value)
+    #                     elif isinstance(result[key], datetime):
+    #                         result[key] = datetime.fromisoformat(str(value))
+    #                     else:
+    #                         result[key] = value
+    #                 except (ValueError, TypeError) as ex:
+    #                     logger.error(f"Error converting {key}={value}: {ex}")
 
-        except Exception as ex:
-            logger.error(f"Error decoding Redis hash: {ex}")
-            return defaults
-
-    def _parse_redis_hash(self, data: Dict[bytes, bytes], defaults: Dict[str, Any]) -> Dict[str, Any]:
-        """Parse Redis hash data with proper type conversion"""
-        result = {}
-        try:
-            # Convert byte keys and values to strings
-            str_data = {
-                k.decode('utf-8') if isinstance(k, bytes) else k:
-                v.decode('utf-8') if isinstance(v, bytes) else v
-                for k, v in data.items()
-            }
-
-            # Use provided defaults for all fields
-            result = defaults.copy()
-
-            # Update with actual values from Redis
-            for key, value in str_data.items():
-                if key in result:
-                    try:
-                        if isinstance(result[key], int):
-                            result[key] = int(value)
-                        elif isinstance(result[key], datetime):
-                            result[key] = datetime.fromisoformat(str(value))
-                        else:
-                            result[key] = value
-                    except (ValueError, TypeError) as ex:
-                        logger.error(f"Error converting {key}={value}: {ex}")
-
-            return result
-        except Exception as ex:
-            logger.error(f"Error parsing Redis hash: {ex}")
-            return defaults
+    #         return result
+    #     except Exception as ex:
+    #         logger.error(f"Error parsing Redis hash: {ex}")
+    #         return defaults
 
     async def get_user_data_by_ip(self, ip_address: str) -> Optional[UserData]:
         """Get user data by IP address, using consistent hash storage"""
@@ -1595,14 +1587,18 @@ class RedisManager:
                 return RedisConnectionStats(
                     connected_clients=info["connected_clients"],
                     blocked_clients=info["blocked_clients"],
-                    tracking_clients=info.get("tracking_clients", 0)
+                    tracking_clients=info.get("tracking_clients", 0),
+                    total_connections=info.get("total_connections", 0),
+                    in_use_connections=len(self.redis.connection_pool._in_use_connections),
                 )
         except Exception as ex:
             logger.error(f"Error getting connection stats: {str(ex)}")
             return RedisConnectionStats(
                 connected_clients=0,
                 blocked_clients=0,
-                tracking_clients=0
+                tracking_clients=0,
+                total_connections=0,
+                in_use_connections=0
             )
 
     async def create_default_user_data(self, ip_address: str) -> UserData:
@@ -1711,7 +1707,8 @@ class RedisManager:
                 "connection_pool": {
                     "max_connections": pool.max_connections,
                     "in_use_connections": len(pool._in_use_connections),
-                    "available_connections": len(pool._available_connections)
+                    "available_connections": len(pool._available_connections),
+                    "total_connections": len(pool._in_use_connections) + len(pool._available_connections),
                 },
                 "batch_processors": batch_metrics
             }
@@ -1774,6 +1771,13 @@ class RedisManager:
             # Create a dictionary of pending results if any exist
             pending_results = {"get_user_data": [batch_response]} if batch_response else {}
             await self.batch_processor._cleanup_pending_results(pending_results)
+
+
+            await self.batch_processor._cleanup_pending_results(pending_results)
+
+
+            await self.batch_processor._cleanup_pending_results(pending_results)
+
 
 
             await self.batch_processor._cleanup_pending_results(pending_results)
