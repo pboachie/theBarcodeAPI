@@ -1,5 +1,4 @@
 from .config import settings
 
 __version__ = settings.API_VERSION
-
-# app/__init__.py
+__title__ = settings.PROJECT_NAME

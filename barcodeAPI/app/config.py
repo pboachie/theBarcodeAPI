@@ -8,6 +8,7 @@ from alembic import context
 from typing import List, ClassVar
 
 class Settings(BaseSettings):
+    PROJECT_NAME: str = os.getenv("PROJECT_NAME", "thebarcodeapi")
     SECRET_KEY: str = os.getenv("SECRET_KEY")
     MASTER_API_KEY: str = os.getenv("MASTER_API_KEY")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")

@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
             #     gc.set_debug(gc.DEBUG_LEAK)
 
             await initialize_redis_manager()
+            app.state.redis_manager = redis_manager
 
             # Store batch processor reference in app state
             app.state.batch_processor = redis_manager.batch_processor
@@ -370,3 +371,4 @@ async def add_cors_headers(request: Request, call_next):
         response.headers["Access-Control-Allow-Credentials"] = "true"
 
     return response
+

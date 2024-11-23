@@ -1,18 +1,17 @@
 # app/api/admin.py
 
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database import get_db
-from app import models
-from app.dependencies import get_current_user
+from app.models import User
+from app.dependencies import get_current_user, get_redis_manager
 from app.security import get_password_hash, validate_password_strength, verify_master_key
 from app.config import settings
 from app.schemas import BatchPriority, UserCreate, UsersResponse, UserCreatedResponse, UserData
 from app.rate_limiter import rate_limit
-from app.redis import get_redis_manager
 from app.redis_manager import RedisManager
 from datetime import datetime
 import logging
@@ -52,7 +51,7 @@ async def get_users(
 
     try:
         async with db.begin():
-            result = await db.execute(select(models.User))
+            result = await db.execute(select(User))
             db_users = result.scalars().all()
 
         for user in db_users:
@@ -142,7 +141,7 @@ async def get_users(
 async def create_user(
     user: UserCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     _: None = Depends(verify_master_key),
     redis_manager: RedisManager = Depends(get_redis_manager)
 ):
@@ -160,7 +159,7 @@ async def create_user(
     Args:
         user (UserCreate): The user data for creating a new user.
         db (AsyncSession): The database session dependency.
-        current_user (models.User): The current authenticated user.
+        current_user (User): The current authenticated user.
         _ (None): Dependency to verify the master key.
         __ (bool): Dependency to apply rate limiting.
         redis_manager (RedisManager): The Redis manager dependency.
@@ -174,7 +173,7 @@ async def create_user(
     try:
         async with db.begin():
             # Check if user already exists
-            result = await db.execute(select(models.User).filter(models.User.username == user.username))
+            result = await db.execute(select(User).filter(User.username == user.username))
             existing_user = result.scalar_one_or_none()
             if existing_user:
                 raise HTTPException(
@@ -184,7 +183,7 @@ async def create_user(
 
             validate_password_strength(user.password)
             hashed_password = get_password_hash(user.password)
-            new_user = models.User(username=user.username, hashed_password=hashed_password, tier=user.tier.value)
+            new_user = User(username=user.username, hashed_password=hashed_password, tier=user.tier.value)
             db.add(new_user)
             await db.flush()
             await db.refresh(new_user) # Refresh the user object to get the ID
@@ -216,10 +215,11 @@ async def create_user(
 @router.post("/admin/sync-db", status_code=status.HTTP_202_ACCEPTED, include_in_schema=include_in_schema())
 @rate_limit(times=10, interval=5, period="minutes")
 async def sync_database(
+    request: Request,
+    redis_manager: RedisManager = Depends(get_redis_manager),
     db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     _: None = Depends(verify_master_key),
-    redis_manager: RedisManager = Depends(get_redis_manager)
 ):
     """
     Endpoint to synchronize the database with the Redis cache.
@@ -234,12 +234,34 @@ async def sync_database(
     Raises:
         HTTPException: If there is an error during the synchronization process.
     """
+    # Attempt database sync
     try:
-        await redis_manager.sync_redis_to_db(db)
-        return JSONResponse(content={"message": "Database sync completed successfully"}, status_code=status.HTTP_200_OK)
+
+        # Log the user and IP attempting the sync
+        logger.info(f"Database sync requested by {current_user.username} from {current_user.ip_address}")
+
+        try:
+            await redis_manager.sync_redis_to_db(db)
+            await db.commit()
+
+            return JSONResponse(
+                content={"message": "Database sync completed successfully"},
+                status_code=status.HTTP_200_OK
+            )
+        except Exception as sync_error:
+            logger.error(f"Sync error: {str(sync_error)}", exc_info=True)
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Database sync failed: {str(sync_error)}"
+            )
+    except HTTPException as http_exc:
+        raise http_exc
     except Exception as e:
-        logger.error(f"Error syncing database: {e}")
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error syncing database"
+            detail=str(e)
         )
+    finally:
+        await db.close()

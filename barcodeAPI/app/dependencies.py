@@ -6,7 +6,6 @@ from redis.exceptions import RedisError
 from typing import Optional
 
 from app.config import settings
-from app.redis import get_redis_manager
 from app.redis_manager import RedisManager
 from app.schemas import UserData
 
@@ -22,6 +21,9 @@ async def get_client_ip(request: Request):
                 request.headers.get("X-Real-IP") or \
                 (request.client.host if request else None)
     return client_ip
+
+async def get_redis_manager(request: Request) -> RedisManager:
+    return request.app.state.redis_manager
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme),
