@@ -6,7 +6,7 @@ from sqlalchemy import text
 from app.schemas import HealthResponse, DetailedHealthResponse
 from app.config import settings
 from app.database import get_db, AsyncSessionLocal
-from app.redis import get_redis_manager
+from app.dependencies import get_redis_manager
 from app.redis_manager import RedisManager
 from app.rate_limiter import rate_limit
 from app.security import verify_master_key

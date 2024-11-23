@@ -1,10 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
-from app.dependencies import get_current_user, get_client_ip
-from app.schemas import BatchPriority, UsageResponse, UserData
+from app.dependencies import get_current_user, get_redis_manager
+from app.schemas import UsageResponse, UserData
 from app.config import settings
 from app.rate_limiter import rate_limit
-from app.redis import get_redis_manager
 from app.redis_manager import RedisManager
 from app.security import verify_master_key
 from datetime import datetime, timedelta

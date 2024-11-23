@@ -9,7 +9,7 @@ from app.models import User
 from app.security import create_access_token, verify_password
 from app.rate_limiter import rate_limit
 from app.schemas import Token
-from app.redis import get_redis_manager
+from app.dependencies import get_redis_manager
 from app.redis_manager import RedisManager
 import logging
 
