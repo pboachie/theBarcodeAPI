@@ -9,21 +9,20 @@ local current_time = ARGV[4]
 
 -- Input validation
 if not key or key == '' then
-    return redis.error_reply("Key is required")
+    return {err="Key is required"}
 end
 if not user_id or user_id == '' then
-    return redis.error_reply("User ID is required")
+    return {err="User ID is required"}
 end
 if not ip_address or ip_address == '' then
-    return redis.error_reply("IP address is required")
+    return {err="IP address is required"}
 end
 if not rate_limit or rate_limit < 0 then
-    return redis.error_reply("Valid rate limit is required")
+    return {err="Valid rate limit is required"}
 end
 
 -- Check if we have user data for this key
 local user_exists = redis.call("EXISTS", key)
-local result = {}
 
 if user_exists == 1 then
     -- Get current values with proper type conversion
@@ -50,7 +49,6 @@ if user_exists == 1 then
     -- Atomic update
     redis.call("HMSET", key, unpack(updates))
     redis.call("EXPIRE", key, 86400)
-    result = redis.call("HGETALL", key)
 else
     -- Initialize new user data with proper type conversion
     local initial_data = {
@@ -65,10 +63,20 @@ else
 
     redis.call("HMSET", key, unpack(initial_data))
     redis.call("EXPIRE", key, 86400)
-    result = redis.call("HGETALL", key)
 end
 
-return result
+-- Function to convert list to table
+local function list_to_table(list)
+    local result = {}
+    for i = 1, #list, 2 do
+        result[list[i]] = list[i + 1]
+    end
+    return result
+end
+
+-- Always return as key-value table
+local data = redis.call("HGETALL", key)
+return list_to_table(data)
 """
 
 GET_ALL_USER_DATA_SCRIPT = """
