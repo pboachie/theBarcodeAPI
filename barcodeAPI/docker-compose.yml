@@ -17,7 +17,7 @@ services:
       - .env
     volumes:
       - ./app:/app/app:ro
-      - ./alembic:/app/alembic:ro
+      - ./alembic:/app/alembic:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s

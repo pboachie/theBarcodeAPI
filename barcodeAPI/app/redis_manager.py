@@ -3,6 +3,7 @@ from redis.asyncio import Redis
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple, Union
+from sqlalchemy import or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import logging
@@ -1175,58 +1176,6 @@ class RedisManager:
         """
         logger.debug("Starting sync_redis_to_db process.")
 
-        async def ensure_user_exists(data: dict) -> Optional[str]:
-            """Create or get user, return user_id"""
-            try:
-                user_id = data.get('id')
-                if not user_id:
-                    return None
-
-                # Check if user already exists
-                result = await db.execute(
-                    select(User).filter(User.id == user_id)
-                )
-                user = result.scalar_one_or_none()
-
-                if not user:
-                    # Create new user with direct model instantiation
-                    new_user = User(
-                        id=user_id,
-                        username=data.get('username', f"ip:{data.get('ip_address')}"),
-                        tier=data.get('tier', 'unauthenticated'),
-                        ip_address=data.get('ip_address'),
-                        requests_today=int(data.get('requests_today', 0)),
-                        remaining_requests=int(data.get('remaining_requests', 5000)),
-                        hashed_password=None
-                    )
-                    db.add(new_user)
-                    await db.flush()  # Flush to get the ID but don't commit yet
-                    logger.debug(f"Created new user: {user_id}")
-                    return user_id
-
-                return user.id
-
-            except Exception as e:
-                logger.error(f"Error ensuring user exists: {e}", exc_info=True)
-                return None
-
-        def create_usage_record(data: dict, user_id: str) -> Optional[Usage]:
-            """Create Usage record"""
-            try:
-                current_time = datetime.now(pytz.utc)
-
-                return Usage(
-                    user_id=user_id,
-                    ip_address=data.get('ip_address'),
-                    requests_today=int(data.get('requests_today', 0)),
-                    last_reset=datetime.fromisoformat(data.get('last_reset', current_time.isoformat())),
-                    last_request=datetime.fromisoformat(data.get('last_request', current_time.isoformat())),
-                    tier=data.get('tier', 'unauthenticated')
-                )
-            except Exception as e:
-                logger.error(f"Error creating usage record: {e}", exc_info=True)
-                return None
-
         try:
             logger.debug("Retrieving all user data from Redis.")
             all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0)
@@ -1258,15 +1207,72 @@ class RedisManager:
                                 logger.debug(f"Field: {field}, Value: {value}")
                                 user_data_dict[field] = value
 
-                            # Ensure user exists (creates if needed)
-                            user_id = await ensure_user_exists(user_data_dict)
-                            if user_id:
-                                processed_users.add(key_id)
-                                # Create usage record
-                                usage = create_usage_record(user_data_dict, user_id)
-                                if usage:
-                                    db.add(usage)
-                                    logger.debug(f"Added Usage record for user_id={user_id}")
+                            # First check if user exists
+                            result = await db.execute(
+                                select(User).filter(
+                                    or_(
+                                        User.id == key_id,
+                                        User.username == user_data_dict.get('username')
+                                    )
+                                )
+                            )
+                            user = result.scalar_one_or_none()
+
+                            current_time = datetime.now(pytz.utc)
+                            data_time = datetime.fromisoformat(user_data_dict.get('last_request', current_time.isoformat()))
+
+                            if user:
+                                # Update if newer data or higher limits
+                                if (not user.last_request or
+                                    data_time > user.last_request or
+                                    int(user_data_dict.get('remaining_requests', 0)) > user.remaining_requests):
+
+                                    user.username = user_data_dict.get('username', f"ip:{user_data_dict.get('ip_address')}")
+                                    user.tier = user_data_dict.get('tier', 'unauthenticated')
+                                    user.ip_address = user_data_dict.get('ip_address')
+                                    user.requests_today = min(int(user_data_dict.get('requests_today', 0)), user.requests_today or 0)
+                                    user.remaining_requests = max(int(user_data_dict.get('remaining_requests', 5000)), user.remaining_requests or 0)
+                                    user.last_request = data_time
+                                    logger.debug(f"Updated existing user: {user.id} with newer data")
+                            else:
+                                # Create new user
+                                user = await self.create_default_user_data(user_data_dict.get('ip_address'))
+                                db.add(user)
+                                logger.debug(f"Created new user: {key_id}")
+
+                            await db.flush()
+
+                            # Now update or create usage record
+                            usage_result = await db.execute(
+                                select(Usage).filter(Usage.user_id == key_id)
+                            )
+                            usage = usage_result.scalar_one_or_none()
+
+                            if usage:
+                                # Update usage if newer data
+                                if data_time > usage.last_request or int(user_data_dict.get('remaining_requests', 0)) > usage.remaining_requests:
+                                    usage.requests_today = min(int(user_data_dict.get('requests_today', 0)), usage.requests_today)
+                                    usage.remaining_requests = max(int(user_data_dict.get('remaining_requests', 5000)), usage.remaining_requests)
+                                    usage.last_reset = datetime.fromisoformat(user_data_dict.get('last_reset', current_time.isoformat()))
+                                    usage.last_request = data_time
+                                    usage.tier = user_data_dict.get('tier', 'unauthenticated')
+                                    usage.ip_address = user_data_dict.get('ip_address')
+                                    logger.debug(f"Updated Usage record for user_id={key_id}")
+                            else:
+                                # Create new usage record
+                                new_usage = Usage(
+                                    user_id=key_id,
+                                    ip_address=user_data_dict.get('ip_address'),
+                                    requests_today=int(user_data_dict.get('requests_today', 0)),
+                                    remaining_requests=int(user_data_dict.get('remaining_requests', 5000)),
+                                    last_reset=datetime.fromisoformat(user_data_dict.get('last_reset', current_time.isoformat())),
+                                    last_request=data_time,
+                                    tier=user_data_dict.get('tier', 'unauthenticated')
+                                )
+                                db.add(new_usage)
+                                logger.debug(f"Created new Usage record for user_id={key_id}")
+
+                            processed_users.add(key_id)
 
                         except Exception as ex:
                             logger.error(f"Error processing record {index + 1}: {ex}")
