@@ -1,6 +1,5 @@
 # lua_scripts.py
 
-# Script to increment the usage of a user or client, updating remaining requests and today's usage count
 INCREMENT_USAGE_SCRIPT = """
 local key = KEYS[1]
 local user_id = ARGV[1]
@@ -8,82 +7,95 @@ local ip_address = ARGV[2]
 local rate_limit = tonumber(ARGV[3])
 local current_time = ARGV[4]
 
--- Validate inputs
-if not ip_address then
+-- Input validation
+if not key or key == '' then
+    return redis.error_reply("Key is required")
+end
+if not user_id or user_id == '' then
+    return redis.error_reply("User ID is required")
+end
+if not ip_address or ip_address == '' then
     return redis.error_reply("IP address is required")
 end
-if not rate_limit then
-    return redis.error_reply("Rate limit is required")
+if not rate_limit or rate_limit < 0 then
+    return redis.error_reply("Valid rate limit is required")
 end
 
 -- Check if we have user data for this key
 local user_exists = redis.call("EXISTS", key)
+local result = {}
 
 if user_exists == 1 then
-    -- Get current values with proper defaults
+    -- Get current values with proper type conversion
     local requests_today = tonumber(redis.call("HGET", key, "requests_today")) or 0
     local remaining = tonumber(redis.call("HGET", key, "remaining_requests")) or rate_limit
-
-    -- Ensure we don't go below zero remaining requests
     local new_remaining = math.max(0, remaining - 1)
 
-    -- Update hash fields
+    -- Prepare updates with type safety
     local updates = {
-        "id", user_id,
-        "requests_today", requests_today + 1,
-        "remaining_requests", new_remaining,
-        "last_request", current_time
+        "id", tostring(user_id),
+        "requests_today", tostring(requests_today + 1),
+        "remaining_requests", tostring(new_remaining),
+        "last_request", current_time,
+        "ip_address", ip_address
     }
 
-    -- Preserve existing fields
+    -- Preserve existing tier or set default
     local user_type = redis.call("HGET", key, "tier")
     if not user_type then
         table.insert(updates, "tier")
         table.insert(updates, "unauthenticated")
     end
 
-    -- Ensure IP address is always set
-    table.insert(updates, "ip_address")
-    table.insert(updates, ip_address)
-
+    -- Atomic update
     redis.call("HMSET", key, unpack(updates))
     redis.call("EXPIRE", key, 86400)
-
-    -- Return all fields
-    return redis.call("HGETALL", key)
+    result = redis.call("HGETALL", key)
 else
-    -- Initialize new user data
-    redis.call("HMSET", key,
-        "id", user_id,
+    -- Initialize new user data with proper type conversion
+    local initial_data = {
+        "id", tostring(user_id),
         "ip_address", ip_address,
         "tier", "unauthenticated",
-        "requests_today", 1,
-        "remaining_requests", rate_limit - 1,
+        "requests_today", "1",
+        "remaining_requests", tostring(rate_limit - 1),
         "last_request", current_time,
         "last_reset", current_time
-    )
+    }
+
+    redis.call("HMSET", key, unpack(initial_data))
     redis.call("EXPIRE", key, 86400)
-    return redis.call("HGETALL", key)
+    result = redis.call("HGETALL", key)
 end
+
+return result
 """
 
-# Script for rate limiting with hash-based counters
 RATE_LIMIT_SCRIPT = """
 local key = KEYS[1]
 local window = tonumber(ARGV[1])
 local limit = tonumber(ARGV[2])
 local current_time = tonumber(redis.call('TIME')[1])
 
-if not window or not limit then
-    return redis.error_reply("Window and limit are required")
+-- Input validation
+if not key or key == '' then
+    return redis.error_reply("Key is required")
+end
+if not window or window <= 0 then
+    return redis.error_reply("Valid window period is required")
+end
+if not limit or limit <= 0 then
+    return redis.error_reply("Valid limit is required")
 end
 
--- Clean up old entries
+-- Clean up old entries more efficiently
 local cleanup_before = current_time - window
 local keys_to_del = {}
 local cursor = "0"
+local batch_size = 100
+
 repeat
-    local scan_result = redis.call("HSCAN", key, cursor)
+    local scan_result = redis.call("HSCAN", key, cursor, "COUNT", batch_size)
     cursor = scan_result[1]
     local pairs = scan_result[2]
 
@@ -93,89 +105,27 @@ repeat
             table.insert(keys_to_del, pairs[i])
         end
     end
+
+    -- Process deletions in batches
+    if #keys_to_del >= batch_size then
+        redis.call("HDEL", key, unpack(keys_to_del))
+        keys_to_del = {}
+    end
 until cursor == "0"
 
--- Delete old entries if any found
+-- Delete any remaining old entries
 if #keys_to_del > 0 then
     redis.call("HDEL", key, unpack(keys_to_del))
 end
 
--- Get current window count
-local window_count = 0
+-- Update current window count
 local current_field = tostring(current_time)
-window_count = redis.call("HINCRBY", key, current_field, 1)
+local window_count = redis.call("HINCRBY", key, current_field, 1)
 
 -- Set expiration on first hit
 if window_count == 1 then
     redis.call("EXPIRE", key, window)
 end
 
--- Check if over limit
-if window_count > limit then
-    return -1
-end
-
-return window_count
-"""
-
-# Script to retrieve all user and client data stored in Redis
-GET_ALL_USER_DATA_SCRIPT = """
-local user_keys = redis.call('KEYS', 'user_data:*')
-local ip_keys = redis.call('KEYS', 'ip:*')
-local all_data = {}
-
-local function process_user_data(key, type)
-    local data = redis.call('HGETALL', key)
-    if #data > 0 then
-        local identifier = string.sub(key, type == 'user' and string.len('user_data:') + 1 or string.len('ip:') + 1)
-        local formatted_data = {type, identifier}
-
-        -- Create a table for the fields
-        local fields = {}
-        for i = 1, #data, 2 do
-            -- Convert numeric strings to numbers where appropriate
-            local value = data[i + 1]
-            local field = data[i]
-            if field == "requests_today" or field == "remaining_requests" then
-                value = tonumber(value) or value
-            end
-            table.insert(formatted_data, {field, value})
-        end
-
-        -- Add required fields if missing
-        local has_fields = {}
-        for i = 1, #data, 2 do
-            has_fields[data[i]] = true
-        end
-
-        -- Check and add missing required fields
-        local required_fields = {
-            "requests_today", "0",
-            "remaining_requests", "0",
-            "tier", "unauthenticated",
-            "last_request", ""
-        }
-
-        for i = 1, #required_fields, 2 do
-            local field = required_fields[i]
-            if not has_fields[field] then
-                table.insert(formatted_data, {field, required_fields[i + 1]})
-            end
-        end
-
-        table.insert(all_data, formatted_data)
-    end
-end
-
--- Process user data
-for _, key in ipairs(user_keys) do
-    process_user_data(key, 'user')
-end
-
--- Process IP data
-for _, key in ipairs(ip_keys) do
-    process_user_data(key, 'ip')
-end
-
-return all_data
+return window_count <= limit and window_count or -1
 """
