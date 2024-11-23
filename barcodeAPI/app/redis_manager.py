@@ -28,30 +28,39 @@ class RedisManager:
     def __init__(self, redis: Redis):
         self.redis = redis
         self.increment_usage_sha = None
+        self.pending_results = {}
+        self.rate_limit_sha = None
         self.ip_cache = {}
+        self.current_batch_id = 0
+        
         # Initialize batch processor
         self.batch_processor = MultiLevelBatchProcessor(self)
+        self._batch_lock = asyncio.Lock()
         logger.info("Redis manager initialized")
 
 
     @asynccontextmanager
     async def get_connection(self):
         """Context manager to handle Redis connections with proper cleanup"""
-        conn = await self.redis.connection_pool.get_connection("_")
+        conn = await self.redis.connection_pool.get_connection("_") # type: ignore
+
+        if not conn:
+            raise ConnectionError("Failed to get Redis connection from pool")
+
         try:
             yield conn
         finally:
-            await self.redis.connection_pool.release(conn)
+            await conn.disconnect()
+            self.redis.connection_pool._available_connections.append(conn)
 
     @asynccontextmanager
     async def get_pipeline(self):
         """Context manager for Redis pipeline operations"""
-        pipe = await self.redis.pipeline()
+        pipe = self.redis.pipeline()
         try:
-            yield pipe
-            await pipe.execute()
+            yield await pipe
         finally:
-            await pipe.reset()
+            await (await pipe).reset()
 
     async def load_lua_scripts(self):
         """Load Lua scripts into Redis and store their SHAs"""
@@ -83,7 +92,7 @@ class RedisManager:
         try:
             await self.batch_processor.stop()
             await self.redis.close()
-            await self.redis.connection_pool.disconnect()
+            self.redis.connection_pool.disconnect()
             self.ip_cache.clear()
             gc.collect()
             logger.info("Redis manager stopped successfully")
@@ -118,14 +127,14 @@ class RedisManager:
                     if batch_id in pending_results:
                         future = pending_results[batch_id]
                         if not future.done():
-                            future.set_result(self.get_default_value(operation))
+                            future.set_result(await self.get_default_value(operation))
         except Exception as ex:
             logger.error(f"Error in process_batch_operation {operation}: {ex}")
             for _, batch_id in items:
                 if batch_id in pending_results:
                     future = pending_results[batch_id]
                     if not future.done():
-                        future.set_result(self.get_default_value(operation))
+                        future.set_result(await self.get_default_value(operation))
 
     async def _process_set_user_data(self, items: List[Tuple[Any, str]], pipe, pending_results):
         """Process batch of set_user_data operations"""
@@ -229,7 +238,7 @@ class RedisManager:
 
             for (user_id, ip_address), batch_id in items:
                 key = self._get_key(user_id, ip_address)
-                pipe.evalsha(
+                await pipe.evalsha(
                     self.increment_usage_sha,
                     1,
                     key,
@@ -267,20 +276,20 @@ class RedisManager:
                                 "ip_address": result_dict.get("ip_address"),
                                 "username": result_dict.get("username"),
                                 "tier": result_dict.get("tier"),
-                                "requests_today": int(result_dict.get("requests_today")),
-                                "remaining_requests": int(result_dict.get("remaining_requests")),
-                                "last_request": datetime.fromisoformat(result_dict.get("last_request")),
-                                "last_reset": datetime.fromisoformat(result_dict.get("last_reset"))
+                                "requests_today": int(result_dict.get("requests_today", 0)),
+                                "remaining_requests": int(result_dict.get("remaining_requests", 0)),
+                                "last_request": datetime.fromisoformat(result_dict.get("last_request", datetime.now(pytz.utc).isoformat())),
+                                "last_reset": datetime.fromisoformat(result_dict.get("last_reset", datetime.now(pytz.utc).isoformat()))
                             }
 
                             user_data = UserData(**user_data_dict)
                             future.set_result(user_data)
                         else:
                             logger.error(f"No result from Lua script for {key}")
-                            future.set_result(self.create_default_user_data(ip_address))
+                            future.set_result(await self.create_default_user_data(ip_address))
                     except Exception as ex:
                         logger.error(f"Error processing increment result: {ex}")
-                        future.set_result(self.create_default_user_data(ip_address))
+                        future.set_result(await self.create_default_user_data(ip_address))
 
         except Exception as ex:
             logger.error(f"Error in _process_increment_usage: {ex}")
@@ -288,7 +297,7 @@ class RedisManager:
                 if batch_id in pending_results:
                     future = pending_results[batch_id]
                     if not future.done():
-                        future.set_result(self.create_default_user_data(ip_address))
+                        future.set_result(await self.create_default_user_data(ip_address))
 
     async def _process_check_rate_limit(self, items: List[Tuple[Any, str]], pipe, pending_results):
         """Process batch of rate limit checks"""
@@ -437,8 +446,8 @@ class RedisManager:
                 if future and not future.done():
                     if results[i]:
                         try:
-                            defaults = self.create_default_user_data(ip_address)
-                            user_data_dict = self._parse_redis_hash(results[i], defaults)
+                            defaults = await self.create_default_user_data(ip_address)
+                            user_data_dict = self._parse_redis_hash(results[i], defaults.__dict__)
                             future.set_result(UserData(**user_data_dict))
                         except Exception as ex:
                             logger.error(f"Error processing user data: {ex}")
@@ -453,7 +462,7 @@ class RedisManager:
                 if future and not future.done():
                     future.set_result(await self.create_default_user_data(ip_address))
 
-    def get_default_value(self, operation: str, item: Any = None) -> Any:
+    async def get_default_value(self, operation: str, item: Any = None) -> Any:
         """Get default values for operations"""
         defaults = {
             "check_rate_limit": False,
@@ -465,7 +474,7 @@ class RedisManager:
         }
         if operation in ["get_user_data", "get_user_data_by_ip", "increment_usage"]:
             ip_address = self._extract_ip_address(item)
-            return self.create_default_user_data(ip_address)
+            return await self.create_default_user_data(ip_address)
         return defaults.get(operation, None)
 
     async def _batch_get_user_data(self, items: List[Tuple[Any, str]], pipe):
@@ -528,7 +537,8 @@ class RedisManager:
     async def _batch_set_user_data(self, items: List[Tuple[UserData, str]], pipe):
         """Process batch of set user data operations"""
         try:
-            for (user_data,), batch_id in items:
+            for item, batch_id in items:
+                user_data = item if isinstance(item, UserData) else UserData(**item)
                 key = f"user_data:{user_data.id}"
                 current_time = datetime.now(pytz.utc)
 
@@ -546,7 +556,7 @@ class RedisManager:
                         else current_time.isoformat()
                 }
 
-                await pipe.hset(key, mapping=mapping)
+                pipe.hset(key, mapping=mapping)
                 await pipe.expire(key, 86400)  # 24 hour expiry
 
             results = await pipe.execute()
@@ -559,16 +569,22 @@ class RedisManager:
             for _, batch_id in items:
                 self._cleanup_future(batch_id, False)
 
+    def _cleanup_future(self, batch_id: str, result: Any):
+        """Cleanup future by setting result"""
+        future = self.pending_results.get(batch_id)
+        if future and not future.done():
+            future.set_result(result)
+
     async def _batch_increment_usage(self, items: List[Tuple[Any, str]], pipe):
         """Process batch of increment_usage operations using hash fields"""
         try:
             for (user_id, ip_address), batch_id in items:
-                key = self.redis_manager._get_key(user_id, ip_address)
+                key = self._get_key(user_id, ip_address)
                 current_time = datetime.now(pytz.utc).isoformat()
 
                 # Use Lua script for atomic increment
                 pipe.evalsha(
-                    self.redis_manager.increment_usage_sha,
+                    self.increment_usage_sha,
                     1,  # number of keys
                     key,  # key
                     str(user_id if user_id else -1),
@@ -606,14 +622,14 @@ class RedisManager:
                             user_data = UserData(**user_data_dict)
                             future.set_result(user_data)
                         else:
-                            future.set_result(self.redis_manager.create_default_user_data(ip_address))
+                            future.set_result(self.create_default_user_data(ip_address))
                     except Exception as ex:
                         logger.error(f"Error parsing increment usage result: {ex}")
-                        future.set_result(self.redis_manager.create_default_user_data(ip_address))
+                        future.set_result(self.create_default_user_data(ip_address))
         except Exception as ex:
             logger.error(f"Error in increment_usage batch: {str(ex)}")
             for (_, ip_address), batch_id in items:
-                self._cleanup_future(batch_id, self.redis_manager.create_default_user_data(ip_address))
+                self._cleanup_future(batch_id, self.create_default_user_data(ip_address))
 
     async def _batch_check_rate_limit(self, items: List[Tuple[Any, str]], pipe):
         """Process batch of rate limit checks using hash fields"""
@@ -621,7 +637,7 @@ class RedisManager:
             current_time = datetime.now(pytz.utc).isoformat()
             for (key,), batch_id in items:
                 pipe.evalsha(
-                    self.redis_manager.rate_limit_sha,
+                    self.rate_limit_sha,
                     1,  # number of keys
                     key,
                     86400,  # window size
@@ -682,7 +698,7 @@ class RedisManager:
             keys = [key for (key,), _ in items]
             # Use Redis pipeline to reset usage counts
             for key in keys:
-                key_type = await self.redis_manager.redis.type(key)
+                key_type = await self.redis.type(key)
                 if key_type == b'hash':
                     pipe.hset(key, mapping={
                         "requests_today": 0,
@@ -692,7 +708,7 @@ class RedisManager:
                     logger.info(f"Converting key {key} to a hash type")
                     # Retrieve existing value if needed
                     # Delete the existing key
-                    await self.redis_manager.redis.delete(key)
+                    await self.redis.delete(key)
                     # Set as hash with default values
                     pipe.hset(key, mapping={
                         "requests_today": 0,
@@ -700,7 +716,7 @@ class RedisManager:
                     })
                 else:
                     logger.warning(f"Key {key} is not a hash and does not match pattern, deleting key and skipping HSET operation")
-                    await self.redis_manager.redis.delete(key)
+                    await self.redis.delete(key)
             await pipe.execute()
             # Resolve futures if you are tracking them
             for _, batch_id in items:
@@ -764,14 +780,14 @@ class RedisManager:
                         if future and not future.done():
                             future.set_result(user_data)
                     except Exception:
-                        self._cleanup_future(batch_id, self.redis_manager.create_default_user_data(ip_address))
+                        self._cleanup_future(batch_id, self.create_default_user_data(ip_address))
                 else:
-                    self._cleanup_future(batch_id, self.redis_manager.create_default_user_data(ip_address))
+                    self._cleanup_future(batch_id, self.create_default_user_data(ip_address))
 
         except Exception as ex:
             logger.error(f"Error in get_user_data_by_ip batch: {str(ex)}")
             for (ip_address,), batch_id in items:
-                self._cleanup_future(batch_id, self.redis_manager.create_default_user_data(ip_address))
+                self._cleanup_future(batch_id, self.create_default_user_data(ip_address))
 
     async def _batch_operation_group(self, operation: str, items: List[Tuple[Any, str]], pipe):
         """Process a group of similar operations"""
@@ -799,12 +815,12 @@ class RedisManager:
                 else:
                     logger.warning(f"Unknown operation type: {operation}")
                     for _, batch_id in items:
-                        self._cleanup_future(batch_id, self._get_default_value(operation))
+                        self._cleanup_future(batch_id, await self.get_default_value(operation))
 
         except Exception as ex:
             logger.error(f"Error processing operation {operation}: {str(ex)}")
             for _, batch_id in items:
-                self._cleanup_future(batch_id, self._get_default_value(operation))
+                self._cleanup_future(batch_id, await self.get_default_value(operation))
 
     async def _batch_current_batch(self):
         """Process the current batch of operations with error handling"""
@@ -825,7 +841,7 @@ class RedisManager:
             operation_groups = self._group_operations(current_batch)
 
             # Process each operation group using Redis pipeline where possible
-            async with self.redis_manager.get_pipeline() as pipe:
+            async with self.get_pipeline() as pipe:
                 for operation, items in operation_groups.items():
                     await self._batch_operation_group(operation, items, pipe)
 
@@ -834,20 +850,23 @@ class RedisManager:
 
         except Exception as ex:
             logger.error(f"Error processing batch: {str(ex)}\n{traceback.format_exc()}")
-            self.batch_processor._handle_batch_error(current_batch)
+            # self.batch_processor.handle_batch_error(current_batch)
         finally:
+            for _, batch_id in current_batch:
+                future = self.pending_results.get(batch_id)
+                if future and not future.done():
+                    future.set_result(await self.get_default_value(operation))
             self.processing = False
             self.last_batch_time = time.time()
 
-    async def _batch_operation_group(self, operation: str, items: List[Tuple[Any, str]], pipe):
-        """Process a group of similar operations"""
-        processor = getattr(self, f"_batch_{operation}", None)
-        if processor:
-            await processor(items, pipe)
-        else:
-            logger.warning(f"Unknown operation type: {operation}")
-            for _, batch_id in items:
-                self._cleanup_future(batch_id, None)
+    def _group_operations(self, batch: List[Tuple[str, Tuple[Any, str]]]) -> Dict[str, List[Tuple[Any, str]]]:
+        """Group batch operations by their type"""
+        operation_groups = {}
+        for operation, item in batch:
+            if operation not in operation_groups:
+                operation_groups[operation] = []
+            operation_groups[operation].append(item)
+        return operation_groups
 
     async def _batch_pipeline_operation(self, operation: str, items: List[Tuple[Any, str]], pipe):
         """Process operations that can use Redis pipeline"""
@@ -862,7 +881,7 @@ class RedisManager:
         except Exception as ex:
             logger.error(f"Error in pipeline operation {operation}: {str(ex)}")
             for _, batch_id in items:
-                self._cleanup_future(batch_id, self._get_default_value(operation))
+                self._cleanup_future(batch_id, await self.get_default_value(operation))
 
     def _get_key(self, user_id: Optional[str] = None, ip_address: Optional[str] = None) -> str:
         """Generate normalized Redis key for user data"""
@@ -870,7 +889,11 @@ class RedisManager:
             ip_str = self.ip_cache.get(ip_address)
             if ip_str is None:
                 try:
-                    ip = ipaddress.ip_address(ip_address)
+                    if ip_address is not None:
+                        ip = ipaddress.ip_address(ip_address)
+                    else:
+                        logger.error("ip_address is None")
+                        ip_str = "unknown_ip"
                     ip_str = ip.compressed
                     self.ip_cache[ip_address] = ip_str
                 except ValueError:
@@ -882,7 +905,12 @@ class RedisManager:
     def _extract_ip_address(self, item: Any) -> str:
         """Extract IP address from different item types"""
         if isinstance(item, tuple):
-            return str(item[1] if len(item) > 1 else item[0])
+            if len(item) > 1:
+                return str(item[1])
+            elif len(item) == 1:
+                return str(item[0])
+            else:
+                return "unknown"
         elif isinstance(item, dict):
             return item.get('ip_address', "unknown")
         return str(item)
@@ -902,14 +930,14 @@ class RedisManager:
                 "tier": str(user_data.tier),
                 "requests_today": str(user_data.requests_today),
                 "remaining_requests": str(user_data.remaining_requests),
-                "last_request": user_data.last_request.isoformat(),
-                "last_reset": user_data.last_reset.isoformat()
+                "last_request": user_data.last_request.isoformat() if user_data.last_request else None,
+                "last_reset": user_data.last_reset.isoformat() if user_data.last_reset else None
             }
 
             # Store both user data and IP mapping as hashes
             async with self.redis.pipeline() as pipe:
                 # Store main user data
-                await pipe.hset(user_key, mapping=mapping)
+                pipe.hset(user_key, mapping=mapping)
                 await pipe.expire(user_key, 86400)  # 24 hour expiry
 
                 # Store IP mapping as a hash with minimal data
@@ -917,8 +945,8 @@ class RedisManager:
                     "id": str(user_data.id),
                     "ip_address": str(user_data.ip_address)
                 }
-                await pipe.hset(ip_key, mapping=ip_mapping)
-                await pipe.expire(ip_key, 86400)  # 24 hour expiry
+                pipe.hset(ip_key, mapping=ip_mapping)
+                pipe.expire(ip_key, 86400)  # 24 hour expiry
 
                 await pipe.execute()
 
@@ -934,13 +962,13 @@ class RedisManager:
         try:
             key = self._get_key(user_id, ip_address)
             async with self.get_connection():
-                data = await self.redis.hgetall(key)
+                data = await self.redis.hgetall(key) # type: ignore
                 if data:
                     try:
-                        defaults = self.create_default_user_data(ip_address)
+                        defaults = await self.create_default_user_data(ip_address)
 
                         user_data_dict = {}
-                        for key, default in defaults.items():
+                        for key, default in defaults.__dict__.items():
                             byte_key = key.encode()
                             if byte_key in data:
                                 value = data[byte_key]
@@ -956,11 +984,11 @@ class RedisManager:
                         return UserData(**user_data_dict)
                     except Exception as ex:
                         logger.error(f"Error parsing Redis hash data: {ex}")
-                        return self.create_default_user_data(ip_address)
-                return self.create_default_user_data(ip_address)
+                        return await self.create_default_user_data(ip_address)
+                return await self.create_default_user_data(ip_address)
         except Exception as ex:
             logger.error(f"Error fetching user data: {str(ex)}")
-            return self.create_default_user_data(ip_address)
+            return await self.create_default_user_data(ip_address)
 
     def _decode_redis_hash(self, hash_data: Dict[bytes, bytes], defaults: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -987,7 +1015,7 @@ class RedisManager:
             # Convert values based on default types
             for key, default in defaults.items():
                 if key in str_data:
-                    value = str_data[key].strip()
+                    value = str(str_data[key]).strip()
                     try:
                         if isinstance(default, int):
                             result[key] = int(value) if value else default
@@ -1006,7 +1034,6 @@ class RedisManager:
         except Exception as ex:
             logger.error(f"Error decoding Redis hash: {ex}")
             return defaults
-
 
     def _parse_redis_hash(self, data: Dict[bytes, bytes], defaults: Dict[str, Any]) -> Dict[str, Any]:
         """Parse Redis hash data with proper type conversion"""
@@ -1029,7 +1056,7 @@ class RedisManager:
                         if isinstance(result[key], int):
                             result[key] = int(value)
                         elif isinstance(result[key], datetime):
-                            result[key] = datetime.fromisoformat(value)
+                            result[key] = datetime.fromisoformat(str(value))
                         else:
                             result[key] = value
                     except (ValueError, TypeError) as ex:
@@ -1045,7 +1072,7 @@ class RedisManager:
         try:
             # Always use hash storage for IP keys
             ip_key = f"ip:{ip_address}"
-            ip_data = await self.redis.hgetall(ip_key)
+            ip_data = await self.redis.hgetall(ip_key) # type: ignore
 
             if ip_data:
                 # If we have IP data, check for user_id mapping
@@ -1058,7 +1085,7 @@ class RedisManager:
                 if user_id:
                     # Get full user data if we have an ID
                     user_key = f"user_data:{user_id}"
-                    data = await self.redis.hgetall(user_key)
+                    data = await self.redis.hgetall(user_key) # type: ignore
                     if not data:  # If no user data found, fall back to IP data
                         data = ip_data
                 else:
@@ -1250,23 +1277,26 @@ class RedisManager:
                 if user_id in existing_users:
                     user = existing_users[user_id]
                     data_time = user_data['last_request']
-                    if (not user.last_request or
+                    if (user.last_request is None or
                         data_time > user.last_request or
                         user_data['remaining_requests'] > user.remaining_requests):
 
                         user.username = user_data['username']
                         user.tier = user_data['tier']
                         user.ip_address = user_data['ip_address']
-                        user.requests_today = min(user_data['requests_today'], user.requests_today or 0)
-                        user.remaining_requests = max(user_data['remaining_requests'], user.remaining_requests or 0)
-                        user.last_request = data_time
+                        current_requests = getattr(user, 'requests_today', 0) or 0
+                        current_remaining = getattr(user, 'remaining_requests', 0) or 0
+                        setattr(user, 'requests_today', min(int(user_data['requests_today']), int(current_requests)))
+                        setattr(user, 'remaining_requests', max(int(user_data['remaining_requests']), int(current_remaining)))
+                        setattr(user, 'last_request', data_time)
                         users_to_update.append(user)
                         logger.debug(f"Prepared to update existing user: {user.id}")
                 else:
                     new_user = User(**user_data)
                     users_to_create.append(new_user)
-                    new_user.remaining_requests = max(user_data['remaining_requests'], new_user.remaining_requests or 0)
-                    new_user.last_request = data_time
+                    remaining_requests = getattr(new_user, 'remaining_requests', None)
+                    setattr(new_user, 'remaining_requests', max(user_data['remaining_requests'], int(remaining_requests) if remaining_requests is not None else 0))
+                    setattr(new_user, 'last_request', data_time)
                     logger.debug(f"Prepared to create new user: {new_user.id}")
 
             # Prepare usages for bulk upsert
@@ -1275,9 +1305,15 @@ class RedisManager:
             for user_id, usage_data in usage_records.items():
                 if user_id in existing_usages:
                     usage = existing_usages[user_id]
-                    usage.requests_today = min(usage_data['requests_today'], usage.requests_today)
-                    usage.remaining_requests = max(usage_data['remaining_requests'], usage.remaining_requests)
-                    usage.last_reset = usage_data['last_reset']
+                    current_requests = getattr(usage, 'requests_today', 0) or 0
+                    new_requests = min(int(usage_data['requests_today']), int(current_requests))
+                    setattr(usage, 'requests_today', new_requests)
+
+                    current_remaining = getattr(usage, 'remaining_requests', 0) or 0
+                    new_remaining = max(int(usage_data['remaining_requests']), int(current_remaining))
+                    setattr(usage, 'remaining_requests', new_remaining)
+
+                    setattr(usage, 'last_reset', usage_data['last_reset'])
                     usage.last_request = usage_data['last_request']
                     usage.tier = usage_data['tier']
                     usage.ip_address = usage_data['ip_address']
@@ -1336,16 +1372,16 @@ class RedisManager:
 
                     if user.id is not None:
                         mapping["id"] = str(user.id)
-                    if user.username:
+                    if user.username is not None:
                         mapping["username"] = user.username
-                    if user.tier:
+                    if user.tier is not None:
                         mapping["tier"] = user.tier
                     # if user.api_key:
                     #     mapping["api_key"] = user.api_key
 
                     if mapping:
                         logger.debug(f"Syncing user: {user.username} with ID: {user.id}")
-                        await pipe.hmset(key, mapping)
+                        pipe.hset(key, mapping=mapping)
                     else:
                         logger.warning(f"No valid data to sync for user with ID {user.id}")
                 await pipe.execute()
@@ -1364,7 +1400,7 @@ class RedisManager:
 
             async with self.get_pipeline() as pipe:
                 for usage in usages:
-                    key = self._get_key(usage.user_id, usage.ip_address)
+                    key = self._get_key(str(usage.user_id), str(usage.ip_address))
                     mapping = {
                         "id": str(usage.user_id),
                         "user_identifier": usage.user_identifier,
@@ -1375,7 +1411,7 @@ class RedisManager:
                         "last_reset": usage.last_reset.isoformat(),
                         "tier": usage.tier
                     }
-                    await pipe.hmset(key, mapping)
+                    pipe.hset(key, mapping=mapping)
                 await pipe.execute()
             logger.info("Database data synced to Redis successfully.")
         except Exception as ex:
@@ -1393,13 +1429,16 @@ class RedisManager:
                     results = await pipe.execute()
                     return bool(results[0])
                 elif operation == "remove":
-                    return bool(await self.redis.hdel(key, "active_token"))
+                    result = self.redis.hdel(key, "active_token")
+                    return bool(result)
                 elif operation == "get":
-                    result = await self.redis.hget(key, "active_token")
-                    return result.decode() if result else None
+                    result = self.redis.hget(key, "active_token")
+                    return result.decode('utf-8') if isinstance(result, bytes) else result
                 elif operation == "check":
-                    stored_token = await self.redis.hget(key, "active_token")
-                    return stored_token == token.encode() if stored_token else False
+                    stored_token = self.redis.hget(key, "active_token")
+                    if stored_token and token:
+                        return stored_token == token.encode('utf-8')
+                    return False
         except Exception as ex:
             logger.error(f"Error in token management ({operation}): {str(ex)}")
             return None if operation == "get" else False
@@ -1494,11 +1533,12 @@ class RedisManager:
             ip_keys = await self.redis.keys("ip:*")
             user_keys = await self.redis.keys("user_data:*")
 
-            async with self.redis.pipeline() as pipe:
+            async with self.get_pipeline() as pipe:
                 # Check each IP key
                 for key in ip_keys:
                     key_type = await self.redis.type(key)
                     if key_type != b'hash':
+                        logger.debug(f"Cleaning up IP key: {key}")
                         # If not a hash, delete it
                         await pipe.delete(key)
 
@@ -1506,6 +1546,7 @@ class RedisManager:
                 for key in user_keys:
                     key_type = await self.redis.type(key)
                     if key_type != b'hash':
+                        logger.debug(f"Cleaning up user data key: {key}")
                         # If not a hash, delete it
                         await pipe.delete(key)
 
@@ -1542,8 +1583,8 @@ class RedisManager:
 
             # Get batch processor stats
             batch_metrics = {
-                priority.name: {
-                    "queue_size": len(processor.batch),
+                str(priority): {
+                    "queue_size": len(processor.operations),
                     "processing": processor.processing,
                     "interval_ms": int(processor.interval * 1000)
                 }
@@ -1620,4 +1661,7 @@ class RedisManager:
             logger.error(f"Error getting user data by username: {str(ex)}")
             return None
         finally:
-            self.batch_processor._cleanup_pending_results()
+            # Create a dictionary of pending results if any exist
+            pending_results = {"get_user_data": [batch_response]} if batch_response else {}
+            await self.batch_processor._cleanup_pending_results(pending_results)
+
