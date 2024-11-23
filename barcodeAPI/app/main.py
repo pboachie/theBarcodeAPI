@@ -190,6 +190,7 @@ def custom_openapi():
     return app.openapi_schema
 
 app = FastAPI(
+    debug=settings.ENVIRONMENT == "development",
     title="the Barcode API",
     description="""
     The Barcode API allows you to generate various types of barcodes programmatically.

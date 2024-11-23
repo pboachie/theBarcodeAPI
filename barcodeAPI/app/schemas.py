@@ -417,12 +417,12 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     id: str
     username: str
-    tier: str
     ip_address: Optional[str] = None
+    tier: str
     remaining_requests: int
     requests_today: int
-    last_request: Optional[str] = None
-    last_reset: Optional[str] = None
+    last_request: Optional[datetime] = None
+    last_reset: Optional[datetime] = None
 
 class UsersResponse(BaseModel):
     users: List[UserResponse]
