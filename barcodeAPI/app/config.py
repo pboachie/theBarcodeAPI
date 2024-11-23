@@ -9,18 +9,20 @@ from typing import List, ClassVar
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = os.getenv("PROJECT_NAME", "thebarcodeapi")
-    SECRET_KEY: str = os.getenv("SECRET_KEY")
-    MASTER_API_KEY: str = os.getenv("MASTER_API_KEY")
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "")
+    MASTER_API_KEY: str = os.getenv("MASTER_API_KEY", "")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-    DATABASE_URL: str = os.getenv("DATABASE_URL")
-    REDIS_URL: str = os.getenv("REDIS_URL")
-    API_VERSION: str = os.getenv("API_VERSION")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
+    REDIS_URL: str = os.getenv("REDIS_URL", "")
+    API_VERSION: str = os.getenv("API_VERSION", "")
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     LOG_DIRECTORY: str = os.getenv("LOG_DIRECTORY", "logs")
     ROOT_PATH: str = os.getenv("ROOT_PATH", "/api/v1")
-    DB_PASSWORD: str = os.getenv("DB_PASSWORD")
+    DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
     SERVER_URL: str = os.getenv("SERVER_URL", "https://www.thebarcodeapi.com")
+    RATE_LIMIT_WINDOW: ClassVar[int] = 60  # Window duration in seconds
+    RATE_LIMIT_LIMIT: ClassVar[int] = 100  # Maximum number of requests within the window
     ALLOWED_HOSTS: ClassVar[List[str]] = [
         "thebarcodeapi.com",
         "*.thebarcodeapi.com"
@@ -50,6 +52,7 @@ class Settings(BaseSettings):
         def get_limit(tier: str) -> int:
             return getattr(Settings.RateLimit.Tier, tier, Settings.RateLimit.unauthenticated)
 
+
 settings = Settings()
 
 class OperationConfig:
@@ -60,7 +63,8 @@ class OperationConfig:
 def run_migrations_online() -> None:
     alembic_config = Config()
     configuration = alembic_config.get_section(alembic_config.config_ini_section)
-    configuration["sqlalchemy.url"] = settings.SYNC_DATABASE_URL
+    if configuration is None:
+        raise ValueError("Alembic configuration section not found")
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",

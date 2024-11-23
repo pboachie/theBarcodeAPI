@@ -20,7 +20,7 @@ from app.utils import IDGenerator
 from app.schemas import BatchPriority, UserData, RedisConnectionStats
 from app.models import User, Usage
 from app.batch_processor import MultiLevelBatchProcessor
-from .lua_scripts import INCREMENT_USAGE_SCRIPT, GET_ALL_USER_DATA_SCRIPT
+from .lua_scripts import INCREMENT_USAGE_SCRIPT, GET_ALL_USER_DATA_SCRIPT, RATE_LIMIT_SCRIPT
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,12 @@ class RedisManager:
         """Load Lua scripts into Redis and store their SHAs"""
         try:
             self.increment_usage_sha = await self.redis.script_load(INCREMENT_USAGE_SCRIPT)
-            logger.info("Lua scripts loaded successfully")
+            self.rate_limit_sha = await self.redis.script_load(RATE_LIMIT_SCRIPT)
+            self.get_all_user_data_sha = await self.redis.script_load(GET_ALL_USER_DATA_SCRIPT)
+            logger.info("Lua scripts loaded successfully with SHAs:")
+            logger.info(f"INCREMENT_USAGE_SCRIPT SHA: {self.increment_usage_sha}")
+            logger.info(f"RATE_LIMIT_SCRIPT SHA: {self.rate_limit_sha}")
+            logger.info(f"GET_ALL_USER_DATA_SCRIPT SHA: {self.get_all_user_data_sha}")
         except Exception as ex:
             logger.error(f"Error loading Lua scripts: {str(ex)}")
             raise
@@ -121,20 +126,122 @@ class RedisManager:
             handler = operation_handlers.get(operation)
             if handler:
                 await handler(items, pipe, pending_results)
+                results = await pipe.execute()
+
+                # Process results if necessary
+                if len(results) != len(items) * 2:
+                    logger.error(f"Unexpected number of results from pipeline: expected {len(items) * 2}, got {len(results)}")
+                    for _, batch_id in items:
+                        future = pending_results.get(batch_id)
+                        if future and not future.done():
+                            future.set_result(False)
+                    return
+
+                for i, (_, batch_id) in enumerate(items):
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        future.set_result(bool(results[i * 2]))
             else:
-                logger.warning(f"Unknown operation type: {operation}")
-                for _, batch_id in items:
-                    if batch_id in pending_results:
-                        future = pending_results[batch_id]
-                        if not future.done():
-                            future.set_result(await self.get_default_value(operation))
+                results = await pipe.execute()
+            if operation == "get_user_data":
+                results = await pipe.execute()
+                for i, (_, batch_id) in enumerate(items):
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        future.set_result(results[i])
+            elif operation == "get_user_data_by_ip":
+                for i, (_, batch_id) in enumerate(items):
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        if results[i]:
+                            try:
+                                defaults = await self.create_default_user_data(items[i][0][0])
+                                user_data_dict = self._decode_redis_hash(results[i], defaults.__dict__)
+                                future.set_result(UserData(**user_data_dict))
+                            except Exception as ex:
+                                logger.error(f"Error processing user data: {ex}")
+                                future.set_result(await self.create_default_user_data(items[i][0][0]))
+                        else:
+                            future.set_result(await self.create_default_user_data(items[i][0][0]))
+            elif operation == "increment_usage":
+                for i, (_, batch_id) in enumerate(items):
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        try:
+                            if results[i]:
+                                data = dict(zip(results[i][::2], results[i][1::2]))
+                                required_fields = ["id", "ip_address", "username", "tier", "requests_today", "remaining_requests", "last_request", "last_reset"]
+                                for field in required_fields:
+                                    if field.encode() not in data:
+                                        raise ValueError(f"Missing required field: {field}")
+
+                                user_data_dict = {
+                                    "id": str(data[b"id"].decode()),
+                                    "ip_address": data[b"ip_address"].decode(),
+                                    "username": data[b"username"].decode(),
+                                    "tier": data[b"tier"].decode(),
+                                    "requests_today": int(data[b"requests_today"].decode()),
+                                    "remaining_requests": int(data[b"remaining_requests"].decode()),
+                                    "last_request": datetime.fromisoformat(data[b"last_request"].decode()),
+                                    "last_reset": datetime.fromisoformat(data[b"last_reset"].decode())
+                                }
+
+                                user_data = UserData(**user_data_dict)
+                                future.set_result(user_data)
+                            else:
+                                future.set_result(self.create_default_user_data(items[i][0][1]))
+                        except Exception as ex:
+                            logger.error(f"Error parsing increment usage result: {ex}")
+                            future.set_result(self.create_default_user_data(items[i][0][1]))
+            elif operation == "check_rate_limit":
+                for i, (_, batch_id) in enumerate(items):
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        future.set_result(results[i] != -1)
+            elif operation == "is_token_active":
+                for i, (_, batch_id) in enumerate(items):
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        result = results[i].decode() if results[i] else None
+                        future.set_result(result == items[i][0][1])
+            elif operation == "get_active_token":
+                for i, (_, batch_id) in enumerate(items):
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        result = results[i].decode() if results[i] else None
+                        future.set_result(result)
+            elif operation == "reset_daily_usage":
+                for i, (_, batch_id) in enumerate(items):
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        future.set_result(True)
+            elif operation == "set_username_mapping":
+                for i, (_, batch_id) in enumerate(items):
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        future.set_result(bool(results[i]))
+            elif operation == "get_user_data_by_ip":
+                for i, (_, batch_id) in enumerate(items):
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        if results[i]:
+                            try:
+                                defaults = await self.create_default_user_data(items[i][0][0])
+                                user_data_dict = self._parse_redis_hash(results[i], defaults.__dict__)
+                                future.set_result(UserData(**user_data_dict))
+                            except Exception as ex:
+                                logger.error(f"Error processing user data: {ex}")
+                                future.set_result(await self.create_default_user_data(items[i][0][0]))
+                        else:
+                            future.set_result(await self.create_default_user_data(items[i][0][0]))
+
         except Exception as ex:
-            logger.error(f"Error in process_batch_operation {operation}: {ex}")
+            logger.error(f"Error in process_batch_operation {operation}: {ex}", exc_info=True)
             for _, batch_id in items:
-                if batch_id in pending_results:
-                    future = pending_results[batch_id]
-                    if not future.done():
-                        future.set_result(await self.get_default_value(operation))
+                # future = pending_results.get(batch_id)
+                # if future and not future.done():
+                #     future.set_result(None)
+                self._cleanup_future(batch_id, None)
 
     async def _process_set_user_data(self, items: List[Tuple[Any, str]], pipe, pending_results):
         """Process batch of set_user_data operations"""
@@ -160,6 +267,14 @@ class RedisManager:
                 pipe.expire(key, 86400)
 
             results = await pipe.execute()
+
+            if len(results) != len(items) * 2:
+                logger.error(f"Unexpected number of results from pipeline: expected {len(items) * 2}, got {len(results)}")
+                for _, batch_id in items:
+                    future = pending_results.get(batch_id)
+                    if future and not future.done():
+                        future.set_result(False)
+                return
 
             for i, (_, batch_id) in enumerate(items):
                 future = pending_results.get(batch_id)
@@ -302,17 +417,12 @@ class RedisManager:
     async def _process_check_rate_limit(self, items: List[Tuple[Any, str]], pipe, pending_results):
         """Process batch of rate limit checks"""
         try:
+            window = settings.RATE_LIMIT_WINDOW
+            limit = settings.RATE_LIMIT_LIMIT
             current_time = datetime.now(pytz.utc).isoformat()
 
             for (key,), batch_id in items:
-                pipe.evalsha(
-                    self.rate_limit_sha,
-                    1,  # number of keys
-                    key,
-                    86400,  # window size
-                    settings.RateLimit.get_limit("unauthenticated"),
-                    current_time
-                )
+                pipe.eval(RATE_LIMIT_SCRIPT, 1, key, window, limit, current_time)
 
             results = await pipe.execute()
 
@@ -1663,5 +1773,8 @@ class RedisManager:
         finally:
             # Create a dictionary of pending results if any exist
             pending_results = {"get_user_data": [batch_response]} if batch_response else {}
+            await self.batch_processor._cleanup_pending_results(pending_results)
+
+
             await self.batch_processor._cleanup_pending_results(pending_results)
 

@@ -71,6 +71,13 @@ end
 return result
 """
 
+GET_ALL_USER_DATA_SCRIPT = """
+-- Lua script to retrieve all user data
+local user_id = ARGV[1]
+-- Add your Lua logic here to fetch user data
+return redis.call('GET', 'user_data:' .. user_id)
+"""
+
 RATE_LIMIT_SCRIPT = """
 local key = KEYS[1]
 local window = tonumber(ARGV[1])
