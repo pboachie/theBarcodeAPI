@@ -16,7 +16,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./app:/app/app:ro
+      - ./app:/app/app:rw
       - ./alembic:/app/alembic:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

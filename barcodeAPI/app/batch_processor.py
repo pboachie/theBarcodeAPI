@@ -18,12 +18,13 @@ class BatchOperation:
     future: asyncio.Future
 
 class BatchProcessor:
-    def __init__(self, redis_manager, batch_size=100, max_wait_time=0.5):
+    def __init__(self, redis_manager, batch_size=100, max_wait_time=0.5, interval=0.1):
         self.redis_manager = redis_manager
         self.batch_size = batch_size
         self.max_wait_time = max_wait_time
         self.operations: List[BatchOperation] = []
         self.processing = False
+        self.interval = interval
         self.running = False
         self.last_process_time = time.time()
         self._lock = asyncio.Lock()
@@ -194,7 +195,6 @@ class BatchProcessor:
                 op.future.cancel()
         self.operations.clear()
 
-
 class MultiLevelBatchProcessor:
     def __init__(self, redis_manager):
         self.processors = {
@@ -221,3 +221,42 @@ class MultiLevelBatchProcessor:
             raise ValueError(f"Invalid priority: {priority}")
 
         return await processor.add_operation(operation, item, priority)
+
+    async def _cleanup_pending_results(self, pending_results: Dict[str, List[Any]]) -> None:
+        """Clean up pending results from batch operations.
+
+        Args:
+            pending_results: Dictionary mapping operation types to lists of results
+        """
+        try:
+            logger.debug("Starting cleanup of pending batch results")
+            for operation_type, results in pending_results.items():
+                if not results:
+                    continue
+
+                logger.debug(f"Cleaning up {len(results)} {operation_type} results")
+
+                if operation_type == "get":
+                    # Clean up get operation results
+                    for result in results:
+                        if hasattr(result, "close"):
+                            await result.close()
+
+                elif operation_type == "set":
+                    # Clean up set operation results if necessary
+                    for result in results:
+                        # Perform any required cleanup for 'set' results
+                        pass  # No specific cleanup needed for set operations in this case
+
+                elif operation_type == "delete":
+                    # Clean up delete operation results if necessary
+                    for result in results:
+                        # Perform any required cleanup for 'delete' results
+                        pass  # No specific cleanup needed for delete operations in this case
+
+                else:
+                    logger.warning(f"Unknown operation type: {operation_type}")
+
+            logger.debug("Finished cleanup of pending batch results")
+        except Exception as e:
+            logger.error(f"Error during cleanup of pending results: {e}")
