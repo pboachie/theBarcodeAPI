@@ -349,9 +349,13 @@ async def pydantic_validation_exception_handler(exc: ValidationError):
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     logger.info(f"Request: {request.method} {request.url}")
-    response = await call_next(request)
-    logger.info(f"Response status: {response.status_code}")
-    return response
+    try:
+        response = await call_next(request)
+        logger.info(f"Response status: {response.status_code}")
+        return response
+    except Exception as ex:
+        logger.error(f"Error processing request: {ex}", exc_info=True)
+        raise
 
 async def add_rate_limit_headers(request: Request, call_next):
     response = await call_next(request)
