@@ -7,7 +7,7 @@ from barcode.writer import ImageWriter
 from barcode.errors import BarcodeError
 from app.schemas import BarcodeRequest, BarcodeGenerationError
 from typing import Dict
-import asyncio.log as logging
+import logging
 
 import PIL.Image
 from PIL import Image
