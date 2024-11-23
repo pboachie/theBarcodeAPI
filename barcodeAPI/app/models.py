@@ -17,7 +17,7 @@ class User(Base):
     __tablename__ = "users"
     id = Column(String, primary_key=True, index=True, default=IDGenerator.generate_id)
     username = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
+    hashed_password = Column(String, nullable=True)
     tier = Column(String)
     ip_address = Column(String, nullable=True)
     remaining_requests = Column(Integer, default=0)
