@@ -22,6 +22,7 @@ class User(Base):
     ip_address = Column(String, nullable=True)
     remaining_requests = Column(Integer, default=0)
     active_token = relationship("ActiveToken", back_populates="user", uselist=False)
+    last_request = Column(DateTime(timezone=True), nullable=True)
     requests_today = Column(Integer, default=0)
 
     @classmethod
