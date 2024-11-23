@@ -1,7 +1,7 @@
 # app/database.py
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
 from sqlalchemy import create_engine
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 from app.config import settings
@@ -28,10 +28,10 @@ engine = create_async_engine(
     echo=False  # Set to True for SQL query logging
 )
 
-AsyncSessionLocal = sessionmaker(
+AsyncSessionLocal = async_sessionmaker(
     engine,
-    class_=AsyncSession,
     expire_on_commit=False,
+    class_=AsyncSession,
     autocommit=False,
     autoflush=False
 )
