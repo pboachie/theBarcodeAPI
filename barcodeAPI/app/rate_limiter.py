@@ -2,7 +2,7 @@
 
 from functools import wraps
 from typing import Callable
-import asyncio.log as logging
+import logging
 from fastapi import Request, HTTPException, Depends
 from starlette.status import HTTP_429_TOO_MANY_REQUESTS, HTTP_500_INTERNAL_SERVER_ERROR
 from app.redis_manager import RedisManager

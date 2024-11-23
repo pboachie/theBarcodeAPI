@@ -14,7 +14,7 @@ from app.schemas import BatchPriority, UserCreate, UsersResponse, UserCreatedRes
 from app.rate_limiter import rate_limit
 from app.redis_manager import RedisManager
 from datetime import datetime
-import asyncio.log as logging
+import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

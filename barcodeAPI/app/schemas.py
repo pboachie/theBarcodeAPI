@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from datetime import datetime
-import asyncio.log as logging
+import logging
 import json
 
 logger = logging.getLogger(__name__)

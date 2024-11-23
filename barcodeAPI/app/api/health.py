@@ -10,7 +10,7 @@ from app.dependencies import get_redis_manager
 from app.redis_manager import RedisManager
 from app.rate_limiter import rate_limit
 from app.security import verify_master_key
-import asyncio.log as logging
+import logging
 import psutil
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional

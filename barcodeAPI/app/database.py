@@ -5,7 +5,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import create_engine
 from sqlalchemy.pool import AsyncAdaptedQueuePool
 from app.config import settings
-import asyncio.log as logging
+import logging
 import gc
 
 logger = logging.getLogger(__name__)

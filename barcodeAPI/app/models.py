@@ -9,7 +9,7 @@ from sqlalchemy.orm import relationship
 from app.database import Base
 from app.utils import IDGenerator
 
-import asyncio.log as logging
+import logging
 
 logger = logging.getLogger(__name__)
 
