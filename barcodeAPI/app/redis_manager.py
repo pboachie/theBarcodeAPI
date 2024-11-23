@@ -1175,61 +1175,67 @@ class RedisManager:
         """
         logger.debug("Starting sync_redis_to_db process.")
 
-        # Field type definitions
-        TYPE_MAPPINGS = {
-            'integer_fields': {
-                'requests_today',
-                'remaining_requests'
-            },
-            'datetime_fields': {
-                'last_request',
-                'last_reset'
-            },
-            'required_fields': {
-                'id',
-                'ip_address',
-                'requests_today',
-                'last_reset',
-                'last_request',
-                'tier'
-            }
-        }
-
-        def convert_value(field: str, value: Any) -> Any:
-            """Convert value to appropriate type based on field name"""
+        async def ensure_user_exists(data: dict) -> Optional[str]:
+            """Create or get user, return user_id"""
             try:
-                if field in TYPE_MAPPINGS['integer_fields']:
-                    return int(value) if value is not None else 0
-                elif field in TYPE_MAPPINGS['datetime_fields']:
-                    return datetime.fromisoformat(value) if value else datetime.now(pytz.utc)
-                else:
-                    return str(value) if value is not None else ""
-            except (ValueError, TypeError) as e:
-                logger.warning(f"Error converting {field}={value}: {e}")
-                if field in TYPE_MAPPINGS['integer_fields']:
-                    return 0
-                elif field in TYPE_MAPPINGS['datetime_fields']:
-                    return datetime.now(pytz.utc)
-                return ""
+                user_id = data.get('id')
+                if not user_id:
+                    return None
 
-        def create_usage_record(data: dict) -> Usage:
-            """Create Usage record with proper defaults"""
-            current_time = datetime.now(pytz.utc)
-            return Usage(
-                user_id=data.get("id"),
-                ip_address=data.get("ip_address"),
-                requests_today=data.get("requests_today", 0),
-                last_reset=data.get("last_reset", current_time),
-                last_request=data.get("last_request", current_time),
-                tier=data.get("tier", "unauthenticated")
-            )
+                # Check if user already exists
+                result = await db.execute(
+                    select(User).filter(User.id == user_id)
+                )
+                user = result.scalar_one_or_none()
+
+                if not user:
+                    # Create new user with direct model instantiation
+                    new_user = User(
+                        id=user_id,
+                        username=data.get('username', f"ip:{data.get('ip_address')}"),
+                        tier=data.get('tier', 'unauthenticated'),
+                        ip_address=data.get('ip_address'),
+                        requests_today=int(data.get('requests_today', 0)),
+                        remaining_requests=int(data.get('remaining_requests', 5000)),
+                        hashed_password=None
+                    )
+                    db.add(new_user)
+                    await db.flush()  # Flush to get the ID but don't commit yet
+                    logger.debug(f"Created new user: {user_id}")
+                    return user_id
+
+                return user.id
+
+            except Exception as e:
+                logger.error(f"Error ensuring user exists: {e}", exc_info=True)
+                return None
+
+        def create_usage_record(data: dict, user_id: str) -> Optional[Usage]:
+            """Create Usage record"""
+            try:
+                current_time = datetime.now(pytz.utc)
+
+                return Usage(
+                    user_id=user_id,
+                    ip_address=data.get('ip_address'),
+                    requests_today=int(data.get('requests_today', 0)),
+                    last_reset=datetime.fromisoformat(data.get('last_reset', current_time.isoformat())),
+                    last_request=datetime.fromisoformat(data.get('last_request', current_time.isoformat())),
+                    tier=data.get('tier', 'unauthenticated')
+                )
+            except Exception as e:
+                logger.error(f"Error creating usage record: {e}", exc_info=True)
+                return None
 
         try:
             logger.debug("Retrieving all user data from Redis.")
             all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0)
             logger.debug(f"Retrieved {len(all_user_data)} user data records from Redis.")
 
-            # Process records in batches for better performance
+            # Track processed users to avoid duplicates
+            processed_users = set()
+
+            # Process records in batches
             BATCH_SIZE = 100
             async with db.begin():
                 for batch_start in range(0, len(all_user_data), BATCH_SIZE):
@@ -1241,26 +1247,29 @@ class RedisManager:
                             key_type, key_id = data[0], data[1]
                             logger.debug(f"Processing record {index + 1}: key_type={key_type}, key_id={key_id}")
 
+                            # Skip IP mapping records and already processed users
+                            if key_type == 'ip' or key_id in processed_users:
+                                continue
+
                             # Process field-value pairs
                             user_data_dict = {}
                             for field_data in data[2:]:
                                 field, value = field_data
                                 logger.debug(f"Field: {field}, Value: {value}")
-                                user_data_dict[field] = convert_value(field, value)
+                                user_data_dict[field] = value
 
-                            # Validate required fields
-                            missing_fields = TYPE_MAPPINGS['required_fields'] - user_data_dict.keys()
-                            if missing_fields:
-                                logger.warning(f"Missing required fields for record {index + 1}: {missing_fields}")
-                                continue
-
-                            # Create and add Usage record
-                            usage = create_usage_record(user_data_dict)
-                            db.add(usage)
-                            logger.debug(f"Added Usage record for user_id={usage.user_id}")
+                            # Ensure user exists (creates if needed)
+                            user_id = await ensure_user_exists(user_data_dict)
+                            if user_id:
+                                processed_users.add(key_id)
+                                # Create usage record
+                                usage = create_usage_record(user_data_dict, user_id)
+                                if usage:
+                                    db.add(usage)
+                                    logger.debug(f"Added Usage record for user_id={user_id}")
 
                         except Exception as ex:
-                            logger.error(f"Error processing record {index + 1}: {ex}", exc_info=True)
+                            logger.error(f"Error processing record {index + 1}: {ex}")
                             continue
 
                     # Commit each batch
@@ -1277,6 +1286,12 @@ class RedisManager:
         except Exception as ex:
             logger.error(f"Error syncing Redis data to database: {str(ex)}", exc_info=True)
             raise
+
+        finally:
+            try:
+                await db.close()
+            except Exception:
+                pass
 
     async def sync_all_username_mappings(self, db: AsyncSession):
         """Synchronize all username mappings into Redis"""
