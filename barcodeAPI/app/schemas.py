@@ -211,14 +211,14 @@ class BarcodeRequest(BaseModel):
     data: str = Field(
         ...,
         description="Content to encode in the barcode",
-        example="123456789012",
-        min_length=1
-    )  # Remove trailing comma
+        min_length=1,
+        json_schema_extra={"example": "123456789012"}
+    )
     format: BarcodeFormatEnum = Field(
         ...,
         description="Barcode format type",
-        example="ean13"
-    )  # Remove trailing comma
+        json_schema_extra={"example": "ean13"}
+    )
     width: int = Field(
         default=200,
         ge=50,
@@ -294,7 +294,7 @@ class BarcodeRequest(BaseModel):
         description="Add guardbar to the barcode image"
     )
 
-    def get_writer_options(self) -> Dict[str, any]:
+    def get_writer_options(self) -> Dict[str, Any]:
         """Get options for the barcode writer"""
         # Start with basic options
         options = {
@@ -329,8 +329,8 @@ class BarcodeRequest(BaseModel):
         # Remove None values
         return {k: v for k, v in options.items() if v is not None}
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "data": "123456789012",
                 "format": "ean13",
@@ -341,6 +341,7 @@ class BarcodeRequest(BaseModel):
                 "quiet_zone": 6.5
             }
         }
+    }
 
     @model_validator(mode='before')
     @classmethod
@@ -442,11 +443,12 @@ class UserData(BaseModel):
     last_request: Optional[datetime] = None
     last_reset: Optional[datetime] = None
 
-    class Config:
-        json_encoders = {
+    model_config = {
+        "json_encoders": {
             datetime: lambda v: v.isoformat()
+        },
+        "from_attributes": True
         }
-        from_attributes = True
 
     @classmethod
     def parse_obj(cls, obj):
@@ -456,11 +458,10 @@ class UserData(BaseModel):
         for field in ['last_reset', 'last_request']:
             if isinstance(obj.get(field), str):
                 obj[field] = datetime.fromisoformat(obj[field].rstrip('Z'))
-        return super().parse_obj(obj)
+        return super().model_validate(obj)
 
-    @classmethod
     def to_json(self):
-        return json.dumps(self.dict(), default=str)
+        return json.dumps(self.model_dump(), default=str)
 
     @classmethod
     def from_json(cls, json_str):

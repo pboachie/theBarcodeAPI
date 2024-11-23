@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI):
                 # Stop batch processors
                 logger.info("Stopping batch processors...")
                 for priority, processor in redis_manager.batch_processor.processors.items():
-                    logger.info(f"Stopping {priority.name} priority batch processor...")
+                    logger.info(f"Stopping {priority} priority batch processor...")
                     await processor.stop()
 
                 # Sync data to database
@@ -330,7 +330,7 @@ async def barcode_generation_exception_handler(exc: BarcodeGenerationError):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(exc: RequestValidationError):
     logger.error(f"Validation error: {exc}")
-    error_messages = [f"{'.'.join(err['loc'])}: {err['msg']}" for err in exc.errors()]
+    error_messages = [f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in exc.errors()]
     return JSONResponse(
         status_code=400,
         content={"message": error_messages[0], "error_type": "ValidationError"}
@@ -339,7 +339,7 @@ async def validation_exception_handler(exc: RequestValidationError):
 @app.exception_handler(ValidationError)
 async def pydantic_validation_exception_handler(exc: ValidationError):
     logger.error(f"Pydantic validation error: {exc}")
-    error_messages = [f"{'.'.join(err['loc'])}: {err['msg']}" for err in exc.errors()]
+    error_messages = [f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in exc.errors()]
     return JSONResponse(
         status_code=400,
         content={"message": error_messages[0], "error_type": "ValidationError"}
