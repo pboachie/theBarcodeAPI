@@ -105,7 +105,6 @@ class Usage(Base):
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
-
     @classmethod
     async def get_usage_by_id(cls, db: AsyncSession, usage_id: int) -> 'Usage':
         result = await db.execute(select(cls).filter(cls.id == usage_id))
