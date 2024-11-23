@@ -144,7 +144,7 @@ async def lifespan(app: FastAPI):
                 # Sync data to database
                 logger.info("Syncing data to database...")
                 async for db in get_db():
-                    await redis_manager.sync_to_database(db)
+                    await redis_manager.sync_redis_to_db(db)
                     break
 
                 # Stop services
@@ -285,7 +285,7 @@ async def log_pool_status():
 #         for priority, processor in redis_manager.batch_processor.processors.items():
 #             logger.info(f"Stopping {priority.name} priority batch processor...")
 #             await processor.stop()
-#         await redis_manager.sync_to_database(db)
+#         await redis_manager.sync_redis_to_db(db)
 #         await redis_manager.stop()
 #         await close_redis_connection()
 #         await close_db_connection()

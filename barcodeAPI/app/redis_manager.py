@@ -1163,7 +1163,7 @@ class RedisManager:
         except Exception as ex:
             logger.error(f"Error resetting daily usage: {str(ex)}")
 
-    async def sync_to_database(self, db: AsyncSession):
+    async def sync_redis_to_db(self, db: AsyncSession):
         """
         Synchronize Redis data to database with proper type handling.
 
@@ -1173,7 +1173,7 @@ class RedisManager:
         Raises:
             Exception: If synchronization fails
         """
-        logger.debug("Starting sync_to_database process.")
+        logger.debug("Starting sync_redis_to_db process.")
 
         # Field type definitions
         TYPE_MAPPINGS = {
@@ -1225,7 +1225,7 @@ class RedisManager:
             )
 
         try:
-            # Get all user data from Redis
+            logger.debug("Retrieving all user data from Redis.")
             all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0)
             logger.debug(f"Retrieved {len(all_user_data)} user data records from Redis.")
 
@@ -1234,6 +1234,7 @@ class RedisManager:
             async with db.begin():
                 for batch_start in range(0, len(all_user_data), BATCH_SIZE):
                     batch = all_user_data[batch_start:batch_start + BATCH_SIZE]
+                    logger.debug(f"Processing batch {batch_start // BATCH_SIZE + 1} with {len(batch)} records.")
 
                     for index, data in enumerate(batch, start=batch_start):
                         try:
@@ -1277,13 +1278,14 @@ class RedisManager:
             logger.error(f"Error syncing Redis data to database: {str(ex)}", exc_info=True)
             raise
 
-
     async def sync_all_username_mappings(self, db: AsyncSession):
         """Synchronize all username mappings into Redis"""
         try:
+            logger.debug("Starting sync_all_username_mappings")
             async with db as session:
                 result = await session.execute(select(User))
                 users = result.scalars().all()
+                logger.debug(f"Retrieved {len(users)} users from the database.")
 
             async with self.get_pipeline() as pipe:
                 for user in users:
@@ -1300,6 +1302,7 @@ class RedisManager:
                     #     mapping["api_key"] = user.api_key
 
                     if mapping:
+                        logger.debug(f"Syncing user: {user.username} with ID: {user.id}")
                         await pipe.hmset(key, mapping)
                     else:
                         logger.warning(f"No valid data to sync for user with ID {user.id}")

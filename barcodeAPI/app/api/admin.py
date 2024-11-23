@@ -20,8 +20,10 @@ import logging
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+def include_in_schema() -> bool:
+    return settings.ENVIRONMENT != "production"
 
-@router.get("/admin/users", response_model=UsersResponse, include_in_schema=False)
+@router.get("/admin/users", response_model=UsersResponse, include_in_schema=include_in_schema())
 @rate_limit(times=75, interval=15, period="minutes")
 async def get_users(
     db: AsyncSession = Depends(get_db),
@@ -135,7 +137,7 @@ async def get_users(
     finally:
         await db.close()
 
-@router.post("/admin/users", response_model=UserCreatedResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
+@router.post("/admin/users", response_model=UserCreatedResponse, status_code=status.HTTP_201_CREATED, include_in_schema=include_in_schema())
 @rate_limit(times=10, interval=15, period="minutes")
 async def create_user(
     user: UserCreate,
@@ -211,7 +213,7 @@ async def create_user(
             detail=str(e)
         )
 
-@router.post("/admin/sync-db", status_code=status.HTTP_202_ACCEPTED, include_in_schema=False)
+@router.post("/admin/sync-db", status_code=status.HTTP_202_ACCEPTED, include_in_schema=include_in_schema())
 @rate_limit(times=10, interval=5, period="minutes")
 async def sync_database(
     db: AsyncSession = Depends(get_db),
@@ -233,7 +235,7 @@ async def sync_database(
         HTTPException: If there is an error during the synchronization process.
     """
     try:
-        await redis_manager.sync_to_database(db)
+        await redis_manager.sync_redis_to_db(db)
         return JSONResponse(content={"message": "Database sync completed successfully"}, status_code=status.HTTP_200_OK)
     except Exception as e:
         logger.error(f"Error syncing database: {e}")
