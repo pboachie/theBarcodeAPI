@@ -3,6 +3,7 @@
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from app.database import get_db
@@ -25,10 +26,11 @@ def include_in_schema() -> bool:
 @router.get("/admin/users", response_model=UsersResponse, include_in_schema=include_in_schema())
 @rate_limit(times=75, interval=15, period="minutes")
 async def get_users(
+    request: Request,
+    redis_manager: RedisManager = Depends(get_redis_manager),
     db: AsyncSession = Depends(get_db),
     current_user: UserData = Depends(get_current_user),
-    _: None = Depends(verify_master_key),
-    redis_manager: RedisManager = Depends(get_redis_manager)
+    _: None = Depends(verify_master_key)
 ):
     """
     Endpoint to retrieve a list of users.
@@ -50,6 +52,10 @@ async def get_users(
     redis_batch_tasks = []
 
     try:
+
+        # Log the user and IP attempting to get users
+        logger.info(f"User data requested by {current_user.username} from {current_user.ip_address}")
+
         async with db.begin():
             result = await db.execute(select(User))
             db_users = result.scalars().all()
@@ -59,7 +65,7 @@ async def get_users(
                 # Get user data from Redis using batch processor
                 user_data = await redis_manager.batch_processor.add_to_batch(
                     "get_user_data",
-                    {"user_id": user.id},  # Pass as dict for clearer unpacking
+                    {"user_id": user.id},
                     priority=BatchPriority.HIGH
                 )
 
@@ -84,7 +90,7 @@ async def get_users(
                         "username": user.username,
                         "tier": user.tier,
                         "ip_address": user.ip_address,
-                        "remaining_requests": settings.RateLimit.get_limit(user.tier),
+                        "remaining_requests": settings.RateLimit.get_limit(str(user.tier)),
                         "requests_today": 0,
                         "last_request": current_time.isoformat(),
                         "last_reset": current_time.isoformat()
@@ -93,10 +99,10 @@ async def get_users(
                     # Create UserData for Redis
                     default_data = UserData(
                         id=str(user.id),
-                        username=user.username,
-                        tier=user.tier,
-                        ip_address=user.ip_address,
-                        remaining_requests=settings.RateLimit.get_limit(user.tier),
+                        username=str(user.username),
+                        tier=str(user.tier),
+                        ip_address=str(user.ip_address),
+                        remaining_requests=settings.RateLimit.get_limit(str(user.tier)),
                         requests_today=0,
                         last_request=current_time,
                         last_reset=current_time
@@ -106,7 +112,7 @@ async def get_users(
                     redis_batch_tasks.append(
                         redis_manager.batch_processor.add_to_batch(
                             "set_user_data",
-                            {"user_data": default_data},  # Pass as dict for clearer unpacking
+                            {"user_data": default_data},
                             priority=BatchPriority.MEDIUM
                         )
                     )
@@ -119,14 +125,24 @@ async def get_users(
 
         # Wait for all batch operations to complete if there are any
         if redis_batch_tasks:
-            try:
-                await asyncio.gather(*redis_batch_tasks, return_exceptions=True)
-            except Exception as e:
-                logger.error(f"Error in batch processing: {e}", exc_info=True)
-
-        # Return response with proper structure
-        return UsersResponse(users=users_data)
-
+            results = await asyncio.gather(*redis_batch_tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    logger.error(f"Error in batch processing: {result}", exc_info=True)
+        try:
+            return UsersResponse(users=users_data)
+        except ValidationError as e:
+            logger.error(f"Validation error when creating UsersResponse: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Data validation error"
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error: {e}", exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Internal Server Error"
+            )
     except Exception as e:
         logger.error(f"Error getting users: {e}", exc_info=True)
         raise HTTPException(
@@ -134,16 +150,20 @@ async def get_users(
             detail=str(e)
         )
     finally:
-        await db.close()
+        try:
+            await db.close()
+        except Exception as e:
+            logger.error(f"Error closing the database session: {e}", exc_info=True)
 
 @router.post("/admin/users", response_model=UserCreatedResponse, status_code=status.HTTP_201_CREATED, include_in_schema=include_in_schema())
 @rate_limit(times=10, interval=15, period="minutes")
 async def create_user(
+    request: Request,
     user: UserCreate,
+    redis_manager: RedisManager = Depends(get_redis_manager),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    _: None = Depends(verify_master_key),
-    redis_manager: RedisManager = Depends(get_redis_manager)
+    _: None = Depends(verify_master_key)
 ):
     """
     Create a new user.
@@ -171,6 +191,10 @@ async def create_user(
         HTTPException: If the username is already registered or if there is an error during user creation.
     """
     try:
+
+        # Log the user and IP attempting the creation
+        logger.info(f"User creation requested by {current_user.username} from {current_user.ip_address}")
+
         async with db.begin():
             # Check if user already exists
             result = await db.execute(select(User).filter(User.username == user.username))
@@ -189,19 +213,26 @@ async def create_user(
             await db.refresh(new_user) # Refresh the user object to get the ID
 
         # Initialize user data in Redis
+        current_time = datetime.now()
         user_data = UserData(
-            id=new_user.id,
-            username=new_user.username,
+            id=str(new_user.id),
+            username=str(new_user.username),
             ip_address=None,
-            tier=new_user.tier,
-            remaining_requests=settings.RateLimit.get_limit(new_user.tier),
+            tier=str(new_user.tier),
+            remaining_requests=settings.RateLimit.get_limit(str(new_user.tier)),
             requests_today=0,
-            last_reset=datetime.now()
+            last_reset=current_time,
+            last_request=current_time
         )
         await redis_manager.set_user_data(user_data)
-        await redis_manager.set_username_to_id_mapping(new_user.username, new_user.id)
+        await redis_manager.set_username_to_id_mapping(str(new_user.username), str(new_user.id))
 
-        return UserCreatedResponse(message="User created successfully", user_id=new_user.id, tier=new_user.tier, username=new_user.username)
+        return UserCreatedResponse(
+            message="User created successfully",
+            user_id=str(new_user.id),
+            tier=str(new_user.tier),
+            username=str(new_user.username)
+        )
 
     except HTTPException as http_exc:
         raise http_exc
