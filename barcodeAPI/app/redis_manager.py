@@ -1268,7 +1268,7 @@ class RedisManager:
                     new_user.remaining_requests = max(user_data['remaining_requests'], new_user.remaining_requests or 0)
                     new_user.last_request = data_time
                     logger.debug(f"Prepared to create new user: {new_user.id}")
-                    
+
             # Prepare usages for bulk upsert
             usages_to_update = []
             usages_to_create = []
