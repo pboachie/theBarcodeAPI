@@ -2,6 +2,7 @@
 
 # Script to increment the usage of a user or client, updating remaining requests and today's usage count
 INCREMENT_USAGE_SCRIPT = """
+local key = KEYS[1]
 local user_id = ARGV[1]
 local ip_address = ARGV[2]
 local rate_limit = tonumber(ARGV[3])
@@ -15,57 +16,54 @@ if not rate_limit then
     return redis.error_reply("Rate limit is required")
 end
 
--- First check IP mapping
-local ip_key = "ip:" .. ip_address
-local user_key = nil
-
--- Check if we have user data for this IP
-local ip_data = redis.call("HGETALL", ip_key)
-if #ip_data > 0 then
-    -- Use existing ID if found
-    for i = 1, #ip_data, 2 do
-        if ip_data[i] == "id" then
-            user_id = ip_data[i + 1]
-            break
-        end
-    end
-    user_key = "user_data:" .. user_id
-else
-    user_key = user_id and "user_data:" .. user_id or ip_key
-end
-
-local user_exists = redis.call("EXISTS", user_key)
+-- Check if we have user data for this key
+local user_exists = redis.call("EXISTS", key)
 
 if user_exists == 1 then
     -- Get current values with proper defaults
-    local requests_today = tonumber(redis.call("HGET", user_key, "requests_today")) or 0
-    local remaining = tonumber(redis.call("HGET", user_key, "remaining_requests")) or rate_limit
+    local requests_today = tonumber(redis.call("HGET", key, "requests_today")) or 0
+    local remaining = tonumber(redis.call("HGET", key, "remaining_requests")) or rate_limit
 
     -- Ensure we don't go below zero remaining requests
     local new_remaining = math.max(0, remaining - 1)
 
-    -- Create field-value table for HSET
+    -- Update hash fields
     local updates = {
-        requests_today = requests_today + 1,
-        remaining_requests = new_remaining,
-        last_request = current_time,
-        ip_address = ip_address
+        "id", user_id,
+        "requests_today", requests_today + 1,
+        "remaining_requests", new_remaining,
+        "last_request", current_time
     }
 
-    -- Add tier if not exists
-    local user_type = redis.call("HGET", user_key, "tier")
+    -- Preserve existing fields
+    local user_type = redis.call("HGET", key, "tier")
     if not user_type then
-        updates.tier = "unauthenticated"
+        table.insert(updates, "tier")
+        table.insert(updates, "unauthenticated")
     end
 
-    -- Use HSET with field-value pairs
-    redis.call("HSET", user_key, unpack(updates))
-    redis.call("EXPIRE", user_key, 86400)
+    -- Ensure IP address is always set
+    table.insert(updates, "ip_address")
+    table.insert(updates, ip_address)
+
+    redis.call("HMSET", key, unpack(updates))
+    redis.call("EXPIRE", key, 86400)
 
     -- Return all fields
-    return redis.call("HGETALL", user_key)
+    return redis.call("HGETALL", key)
 else
-    return redis.error_reply("User does not exist")
+    -- Initialize new user data
+    redis.call("HMSET", key,
+        "id", user_id,
+        "ip_address", ip_address,
+        "tier", "unauthenticated",
+        "requests_today", 1,
+        "remaining_requests", rate_limit - 1,
+        "last_request", current_time,
+        "last_reset", current_time
+    )
+    redis.call("EXPIRE", key, 86400)
+    return redis.call("HGETALL", key)
 end
 """
 
