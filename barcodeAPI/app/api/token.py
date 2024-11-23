@@ -11,7 +11,7 @@ from app.rate_limiter import rate_limit
 from app.schemas import Token
 from app.dependencies import get_redis_manager
 from app.redis_manager import RedisManager
-import logging
+import asyncio.log as logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/token", tags=["Authentication"])

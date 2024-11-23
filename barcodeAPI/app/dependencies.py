@@ -9,7 +9,7 @@ from app.config import settings
 from app.redis_manager import RedisManager
 from app.schemas import UserData
 
-import logging
+import asyncio.log as logging
 
 logger = logging.getLogger(__name__)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)

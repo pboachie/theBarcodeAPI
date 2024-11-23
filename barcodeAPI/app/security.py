@@ -7,7 +7,7 @@ from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from fastapi import HTTPException, status, Header
-import logging
+import asyncio.log as logging
 
 from app.models import ActiveToken, User
 from app.redis_manager import RedisManager

@@ -15,7 +15,7 @@ from pydantic import ValidationError
 from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 
-import logging
+import asyncio.log as logging
 import asyncio
 
 from app.api import barcode, usage, health, token, admin

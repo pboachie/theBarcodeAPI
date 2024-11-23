@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple, Union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-import logging
+import asyncio.log as logging
 import pytz
 import asyncio
 import ipaddress

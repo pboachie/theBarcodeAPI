@@ -11,7 +11,7 @@ from app.schemas import BarcodeRequest, UserData, BarcodeFormatEnum, BarcodeImag
 from app.config import settings
 from datetime import datetime, timedelta
 import pytz
-import logging
+import asyncio.log as logging
 from typing import Optional
 
 logger = logging.getLogger(__name__)

@@ -9,7 +9,7 @@ from app.security import verify_master_key
 from datetime import datetime, timedelta
 import pytz
 from typing import Dict, Any
-import logging
+import asyncio.log as logging
 from functools import lru_cache
 
 logger = logging.getLogger(__name__)

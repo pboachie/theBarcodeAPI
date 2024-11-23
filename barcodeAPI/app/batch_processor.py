@@ -1,7 +1,8 @@
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
-import logging
+import asyncio.log as logging
+
 from typing import Any, Dict, List, Optional
 import time
 from contextlib import asynccontextmanager

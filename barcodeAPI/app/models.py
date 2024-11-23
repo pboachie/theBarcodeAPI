@@ -1,14 +1,21 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, DateTime, func, update, ForeignKey, select
-from app.database import Base
-from sqlalchemy.orm import relationship
 from datetime import datetime
 import pytz
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import relationship
+
+from app.database import Base
+from app.utils import IDGenerator
+
+import asyncio.log as logging
+
+logger = logging.getLogger(__name__)
 
 class User(Base):
     __tablename__ = "users"
-    id = Column(String, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True, default=IDGenerator.generate_id)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String)
     tier = Column(String)
