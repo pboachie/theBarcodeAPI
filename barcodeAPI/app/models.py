@@ -2,7 +2,7 @@
 from datetime import datetime
 import pytz
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func, select, update
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import relationship
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(String, primary_key=True, index=True, default=IDGenerator.generate_id)
+    id = Column(String, primary_key=True, index=True, unique=True)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String, nullable=True)
     tier = Column(String, nullable=False, default='unauthenticated')
@@ -27,6 +27,11 @@ class User(Base):
     last_reset = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('username', name='uq_users_username'),
+        UniqueConstraint('id', name='uq_users_id'),
+    )
 
     # Relationships
     active_token = relationship("ActiveToken", back_populates="user", uselist=False)
