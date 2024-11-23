@@ -44,25 +44,22 @@ if user_exists == 1 then
     -- Ensure we don't go below zero remaining requests
     local new_remaining = math.max(0, remaining - 1)
 
-    -- Update hash fields
+    -- Create field-value table for HSET
     local updates = {
-        "requests_today", requests_today + 1,
-        "remaining_requests", new_remaining,
-        "last_request", current_time
+        requests_today = requests_today + 1,
+        remaining_requests = new_remaining,
+        last_request = current_time,
+        ip_address = ip_address
     }
 
-    -- Preserve existing fields
+    -- Add tier if not exists
     local user_type = redis.call("HGET", user_key, "tier")
     if not user_type then
-        table.insert(updates, "tier")
-        table.insert(updates, "unauthenticated")
+        updates.tier = "unauthenticated"
     end
 
-    -- Ensure IP address is always set
-    table.insert(updates, "ip_address")
-    table.insert(updates, ip_address)
-
-    redis.call("HMSET", user_key, unpack(updates))
+    -- Use HSET with field-value pairs
+    redis.call("HSET", user_key, unpack(updates))
     redis.call("EXPIRE", user_key, 86400)
 
     -- Return all fields

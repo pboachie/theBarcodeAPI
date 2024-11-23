@@ -46,7 +46,7 @@ class RedisManager:
     @asynccontextmanager
     async def get_pipeline(self):
         """Context manager for Redis pipeline operations"""
-        pipe = self.redis.pipeline()
+        pipe = await self.redis.pipeline()
         try:
             yield pipe
             await pipe.execute()
