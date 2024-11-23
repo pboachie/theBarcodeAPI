@@ -1234,168 +1234,174 @@ class RedisManager:
 
     async def sync_redis_to_db(self, db: AsyncSession):
         """
-        Synchronize Redis data to database with proper type handling.
+        Synchronize Redis data to database with improved error handling.
 
         Args:
             db (AsyncSession): Database session for storing data
-
-        Raises:
-            Exception: If synchronization fails
         """
         logger.debug("Starting sync_redis_to_db process.")
 
         try:
             logger.debug("Retrieving all user data from Redis.")
-            all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0) # type: ignore
-            logger.debug(f"Retrieved {len(all_user_data)} user data records from Redis.")
+            all_user_data = await self.redis.evalsha(self.get_all_user_data_sha, 0) # type: ignore
+            logger.debug(f"Retrieved {len(all_user_data)} records from Redis.")
 
             # Prepare data for batch operations
             user_records = {}
             usage_records = {}
             processed_user_ids = set()
 
-            for data in all_user_data:
+            for entry in all_user_data:
                 try:
-                    key_type, key_id = data[0], data[1]
-                    if key_type == 'ip':
+                    if not entry or len(entry) < 2:
                         continue
 
-                    user_data_dict = {}
-                    for field_data in data[2:]:
-                        field, value = field_data
-                        user_data_dict[field] = value
+                    entry_type = entry[0]  # 'user_data' or 'ip'
+                    identifier = entry[1]  # user_id or ip address
 
-                    username = user_data_dict.get('username', f"ip:{user_data_dict.get('ip_address')}")
+                    if not identifier:
+                        continue
+
+                    # Convert entry data to dictionary
+                    data_dict = {}
+                    for field_data in entry[2:]:
+                        if isinstance(field_data, (list, tuple)) and len(field_data) == 2:
+                            key, value = field_data
+                            data_dict[key] = value
+
+                    # Skip if no data
+                    if not data_dict:
+                        continue
+
                     current_time = datetime.now(pytz.utc)
-                    data_time = datetime.fromisoformat(user_data_dict.get('last_request', current_time.isoformat()))
 
-                    user_dict = {
-                        'id': key_id,
-                        'username': username,
-                        'tier': user_data_dict.get('tier', 'unauthenticated'),
-                        'ip_address': user_data_dict.get('ip_address'),
-                        'requests_today': int(user_data_dict.get('requests_today', 0)),
-                        'remaining_requests': int(user_data_dict.get('remaining_requests', 5000)),
-                        'last_request': data_time,
-                        'hashed_password': None
-                    }
+                    # Process based on entry type
+                    if entry_type == "user_data":
+                        user_id = identifier
+                        processed_user_ids.add(user_id)
 
-                    usage_dict = {
-                        'user_id': key_id,
-                        'ip_address': user_data_dict.get('ip_address'),
-                        'requests_today': int(user_data_dict.get('requests_today', 0)),
-                        'remaining_requests': int(user_data_dict.get('remaining_requests', 5000)),
-                        'last_reset': data_time,
-                        'last_request': data_time,
-                        'tier': user_data_dict.get('tier', 'unauthenticated')
-                    }
+                        user_dict = {
+                            'id': user_id,
+                            'username': data_dict.get('username', f"user_{user_id}"),
+                            'tier': data_dict.get('tier', 'unauthenticated'),
+                            'ip_address': data_dict.get('ip_address'),
+                            'requests_today': int(data_dict.get('requests_today', 0)),
+                            'remaining_requests': int(data_dict.get('remaining_requests', settings.RateLimit.get_limit("unauthenticated"))),
+                            'last_request': datetime.fromisoformat(data_dict.get('last_request', current_time.isoformat())),
+                            'hashed_password': None
+                        }
 
-                    user_records[key_id] = user_dict
-                    usage_records[key_id] = usage_dict
-                    processed_user_ids.add(key_id)
+                        usage_dict = {
+                            'user_id': user_id,
+                            'ip_address': data_dict.get('ip_address'),
+                            'requests_today': int(data_dict.get('requests_today', 0)),
+                            'remaining_requests': int(data_dict.get('remaining_requests', settings.RateLimit.get_limit("unauthenticated"))),
+                            'last_reset': datetime.fromisoformat(data_dict.get('last_reset', current_time.isoformat())),
+                            'last_request': datetime.fromisoformat(data_dict.get('last_request', current_time.isoformat())),
+                            'tier': data_dict.get('tier', 'unauthenticated')
+                        }
+
+                        user_records[user_id] = user_dict
+                        usage_records[user_id] = usage_dict
+
+                    elif entry_type == "ip":
+                        # Handle IP-based entries if needed
+                        ip_address = identifier
+                        if 'id' in data_dict:  # If IP entry has a user ID mapping
+                            user_id = data_dict['id']
+                            processed_user_ids.add(user_id)
+                            # Update existing records or create new ones
+                            if user_id not in user_records:
+                                user_records[user_id] = {
+                                    'id': user_id,
+                                    'username': data_dict.get('username', f"ip_{ip_address}"),
+                                    'tier': 'unauthenticated',
+                                    'ip_address': ip_address,
+                                    'requests_today': int(data_dict.get('requests_today', 0)),
+                                    'remaining_requests': int(data_dict.get('remaining_requests', settings.RateLimit.get_limit("unauthenticated"))),
+                                    'last_request': datetime.fromisoformat(data_dict.get('last_request', current_time.isoformat())),
+                                    'hashed_password': None
+                                }
+
+                                usage_records[user_id] = {
+                                    'user_id': user_id,
+                                    'ip_address': ip_address,
+                                    'requests_today': int(data_dict.get('requests_today', 0)),
+                                    'remaining_requests': int(data_dict.get('remaining_requests', settings.RateLimit.get_limit("unauthenticated"))),
+                                    'last_reset': datetime.fromisoformat(data_dict.get('last_reset', current_time.isoformat())),
+                                    'last_request': datetime.fromisoformat(data_dict.get('last_request', current_time.isoformat())),
+                                    'tier': 'unauthenticated'
+                                }
 
                 except Exception as ex:
-                    logger.error(f"Error processing user record: {ex}")
+                    logger.error(f"Error processing entry {entry}: {ex}")
                     continue
 
-            # Fetch existing users and usages
-            existing_users = {}
-            existing_usages = {}
-
+            # Fetch existing users and usages for batch update
             if processed_user_ids:
+                existing_users = {}
+                existing_usages = {}
+
                 user_result = await db.execute(select(User).filter(User.id.in_(processed_user_ids)))
-                existing_users_list = user_result.scalars().all()
-                existing_users = {user.id: user for user in existing_users_list}
+                existing_users = {user.id: user for user in user_result.scalars().all()}
 
                 usage_result = await db.execute(select(Usage).filter(Usage.user_id.in_(processed_user_ids)))
-                existing_usages_list = usage_result.scalars().all()
-                existing_usages = {usage.user_id: usage for usage in existing_usages_list}
+                existing_usages = {usage.user_id: usage for usage in usage_result.scalars().all()}
 
-            # Prepare users for bulk upsert
-            users_to_update = []
-            users_to_create = []
-            for user_id, user_data in user_records.items():
-                if user_id in existing_users:
-                    user = existing_users[user_id]
-                    data_time = user_data['last_request']
-                    if (user.last_request is None or
-                        data_time > user.last_request or
-                        user_data['remaining_requests'] > user.remaining_requests):
+                # Prepare updates and creates
+                users_to_update = []
+                users_to_create = []
+                usages_to_update = []
+                usages_to_create = []
 
-                        user.username = user_data['username']
-                        user.tier = user_data['tier']
-                        user.ip_address = user_data['ip_address']
-                        current_requests = getattr(user, 'requests_today', 0) or 0
-                        current_remaining = getattr(user, 'remaining_requests', 0) or 0
-                        setattr(user, 'requests_today', min(int(user_data['requests_today']), int(current_requests)))
-                        setattr(user, 'remaining_requests', max(int(user_data['remaining_requests']), int(current_remaining)))
-                        setattr(user, 'last_request', data_time)
+                for user_id, user_data in user_records.items():
+                    if user_id in existing_users:
+                        user = existing_users[user_id]
+                        # Update existing user
+                        for key, value in user_data.items():
+                            setattr(user, key, value)
                         users_to_update.append(user)
-                        logger.debug(f"Prepared to update existing user: {user.id}")
-                else:
-                    new_user = User(**user_data)
-                    users_to_create.append(new_user)
-                    remaining_requests = getattr(new_user, 'remaining_requests', None)
-                    setattr(new_user, 'remaining_requests', max(user_data['remaining_requests'], int(remaining_requests) if remaining_requests is not None else 0))
-                    setattr(new_user, 'last_request', data_time)
-                    logger.debug(f"Prepared to create new user: {new_user.id}")
+                    else:
+                        # Create new user
+                        users_to_create.append(User(**user_data))
 
-            # Prepare usages for bulk upsert
-            usages_to_update = []
-            usages_to_create = []
-            for user_id, usage_data in usage_records.items():
-                if user_id in existing_usages:
-                    usage = existing_usages[user_id]
-                    current_requests = getattr(usage, 'requests_today', 0) or 0
-                    new_requests = min(int(usage_data['requests_today']), int(current_requests))
-                    setattr(usage, 'requests_today', new_requests)
+                for user_id, usage_data in usage_records.items():
+                    if user_id in existing_usages:
+                        usage = existing_usages[user_id]
+                        # Update existing usage
+                        for key, value in usage_data.items():
+                            setattr(usage, key, value)
+                        usages_to_update.append(usage)
+                    else:
+                        # Create new usage
+                        usages_to_create.append(Usage(**usage_data))
 
-                    current_remaining = getattr(usage, 'remaining_requests', 0) or 0
-                    new_remaining = max(int(usage_data['remaining_requests']), int(current_remaining))
-                    setattr(usage, 'remaining_requests', new_remaining)
+                # Perform database operations
+                if users_to_create:
+                    db.add_all(users_to_create)
+                if users_to_update:
+                    for user in users_to_update:
+                        db.add(user)
 
-                    setattr(usage, 'last_reset', usage_data['last_reset'])
-                    usage.last_request = usage_data['last_request']
-                    usage.tier = usage_data['tier']
-                    usage.ip_address = usage_data['ip_address']
-                    usages_to_update.append(usage)
-                    logger.debug(f"Prepared to update existing usage for user_id={user_id}")
-                else:
-                    new_usage = Usage(**usage_data)
-                    usages_to_create.append(new_usage)
-                    logger.debug(f"Prepared to create new usage for user_id={new_usage.user_id}")
+                if usages_to_create:
+                    db.add_all(usages_to_create)
+                if usages_to_update:
+                    for usage in usages_to_update:
+                        db.add(usage)
 
-            # Bulk save users and usages
-            if users_to_create:
-                db.add_all(users_to_create)
-                logger.debug(f"Added {len(users_to_create)} new users.")
-            if users_to_update:
-                for user in users_to_update:
-                    db.add(user)
-                logger.debug(f"Updated {len(users_to_update)} existing users.")
-
-            if usages_to_create:
-                db.add_all(usages_to_create)
-                logger.debug(f"Added {len(usages_to_create)} new usages.")
-            if usages_to_update:
-                for usage in usages_to_update:
-                    db.add(usage)
-                logger.debug(f"Updated {len(usages_to_update)} existing usages.")
-
-            await db.commit()
-            logger.debug("Committed user and usage records.")
-
-            logger.info("Redis data synced to database successfully")
+                await db.commit()
+                logger.info(f"Synced {len(users_to_create)} new users, {len(users_to_update)} updated users")
+                logger.info(f"Synced {len(usages_to_create)} new usages, {len(usages_to_update)} updated usages")
 
         except Exception as ex:
             logger.error(f"Error syncing Redis data to database: {str(ex)}", exc_info=True)
             raise
-
         finally:
             try:
                 await db.close()
             except Exception:
                 pass
+
 
     async def sync_all_username_mappings(self, db: AsyncSession):
         """Synchronize all username mappings into Redis"""

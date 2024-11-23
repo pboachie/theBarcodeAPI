@@ -80,10 +80,65 @@ return list_to_table(data)
 """
 
 GET_ALL_USER_DATA_SCRIPT = """
--- Lua script to retrieve all user data
-local user_id = ARGV[1]
--- Add your Lua logic here to fetch user data
-return redis.call('GET', 'user_data:' .. user_id)
+-- Get all user data from Redis
+local function get_all_user_data()
+    local result = {}
+    local cursor = "0"
+    local pattern = "user_data:*"
+
+    repeat
+        -- Scan for user data keys
+        local scan_result = redis.call("SCAN", cursor, "MATCH", pattern, "COUNT", 100)
+        cursor = scan_result[1]
+        local keys = scan_result[2]
+
+        -- Process each key
+        for _, key in ipairs(keys) do
+            -- Extract user_id from key
+            local user_id = string.match(key, "user_data:(.+)")
+            if user_id then
+                local data = redis.call("HGETALL", key)
+                if #data > 0 then
+                    -- Convert hash to array format expected by Python
+                    local user_entry = {"user_data", user_id}
+                    for i = 1, #data, 2 do
+                        table.insert(user_entry, {data[i], data[i + 1]})
+                    end
+                    table.insert(result, user_entry)
+                end
+            end
+        end
+    until cursor == "0"
+
+    -- Get IP-based data
+    cursor = "0"
+    pattern = "ip:*"
+
+    repeat
+        local scan_result = redis.call("SCAN", cursor, "MATCH", pattern, "COUNT", 100)
+        cursor = scan_result[1]
+        local keys = scan_result[2]
+
+        for _, key in ipairs(keys) do
+            local ip = string.match(key, "ip:(.+)")
+            if ip then
+                local data = redis.call("HGETALL", key)
+                if #data > 0 then
+                    local ip_entry = {"ip", ip}
+                    for i = 1, #data, 2 do
+                        table.insert(ip_entry, {data[i], data[i + 1]})
+                    end
+                    table.insert(result, ip_entry)
+                end
+            end
+        end
+    until cursor == "0"
+
+    return result
+end
+
+-- Execute and return results
+return get_all_user_data()
 """
 
 RATE_LIMIT_SCRIPT = """
