@@ -428,10 +428,10 @@ class UsersResponse(BaseModel):
     users: List[UserResponse]
 
 class UserCreatedResponse(BaseModel):
-    message: str
-    user_id: int
-    username: str
-    tier: str
+    message: str = Field(..., description="Message indicating the user was created")
+    user_id: str = Field(..., description="Unique user ID generated using nanoid")
+    username: str = Field(..., description="Username of the new user")
+    tier: str = Field(..., description="Tier of the new user")
 
 class UserData(BaseModel):
     id: str

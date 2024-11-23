@@ -88,7 +88,7 @@ async def lifespan(app: FastAPI):
                 if not processor.running:
                     logger.error(f"{priority} processor not running")
                     raise RuntimeError(f"{priority} processor failed to start")
-                logger.info(f"{priority} processor running")
+                logger.debug(f"{priority} processor running")
 
             # Initialize other services
             logger.info("Initializing database...")

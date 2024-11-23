@@ -32,7 +32,7 @@ class RedisManager:
         self.rate_limit_sha = None
         self.ip_cache = {}
         self.current_batch_id = 0
-        
+
         # Initialize batch processor
         self.batch_processor = MultiLevelBatchProcessor(self)
         self._batch_lock = asyncio.Lock()
@@ -1205,7 +1205,7 @@ class RedisManager:
 
         try:
             logger.debug("Retrieving all user data from Redis.")
-            all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0)
+            all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0) # type: ignore
             logger.debug(f"Retrieved {len(all_user_data)} user data records from Redis.")
 
             # Prepare data for batch operations
@@ -1455,7 +1455,7 @@ class RedisManager:
     async def is_token_active(self, user_id: int, token: str) -> bool:
         return await self.token_management(user_id, "check", token)
 
-    async def set_username_to_id_mapping(self, username: str, user_id: int) -> bool:
+    async def set_username_to_id_mapping(self, username: str, user_id: str) -> bool:
         """Set username to ID mapping with batch processing"""
         try:
             return await self.batch_processor.add_to_batch(
