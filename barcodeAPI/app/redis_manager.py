@@ -1181,125 +1181,132 @@ class RedisManager:
             all_user_data = await self.redis.eval(GET_ALL_USER_DATA_SCRIPT, 0)
             logger.debug(f"Retrieved {len(all_user_data)} user data records from Redis.")
 
-            # Track processed usernames to avoid duplicates
-            processed_usernames = set()
+            # Prepare data for batch operations
+            user_records = {}
+            usage_records = {}
+            processed_user_ids = set()
 
-            # Create/Update Users
-            async with db.begin():
-                for data in all_user_data:
-                    try:
-                        key_type, key_id = data[0], data[1]
-                        if key_type == 'ip':
-                            continue
-
-                        user_data_dict = {}
-                        for field_data in data[2:]:
-                            field, value = field_data
-                            user_data_dict[field] = value
-
-                        username = user_data_dict.get('username', f"ip:{user_data_dict.get('ip_address')}")
-
-                        # Skip if we've already processed this username
-                        if username in processed_usernames:
-                            continue
-
-                        # Check if user exists by username
-                        result = await db.execute(
-                            select(User).filter(User.username == username)
-                        )
-                        user = result.scalar_one_or_none()
-
-                        current_time = datetime.now(pytz.utc)
-                        data_time = datetime.fromisoformat(user_data_dict.get('last_request', current_time.isoformat()))
-
-                        if user:
-                            # Update existing user if new data is more recent
-                            if (not user.last_request or
-                                data_time > user.last_request or
-                                int(user_data_dict.get('remaining_requests', 0)) > user.remaining_requests):
-
-                                user.username = username
-                                user.tier = user_data_dict.get('tier', 'unauthenticated')
-                                user.ip_address = user_data_dict.get('ip_address')
-                                user.requests_today = min(int(user_data_dict.get('requests_today', 0)), user.requests_today or 0)
-                                user.remaining_requests = max(int(user_data_dict.get('remaining_requests', 5000)), user.remaining_requests or 0)
-                                user.last_request = data_time
-                                logger.debug(f"Updated existing user: {user.id} with newer data")
-                        else:
-                            # Create new user with the provided key_id
-                            user = User(
-                                id=key_id,
-                                username=username,
-                                tier=user_data_dict.get('tier', 'unauthenticated'),
-                                ip_address=user_data_dict.get('ip_address'),
-                                requests_today=int(user_data_dict.get('requests_today', 0)),
-                                remaining_requests=int(user_data_dict.get('remaining_requests', 5000)),
-                                last_request=data_time,
-                                hashed_password=None
-                            )
-                            db.add(user)
-                            logger.debug(f"Created new user: {key_id}")
-
-                        processed_usernames.add(username)
-
-                    except Exception as ex:
-                        logger.error(f"Error processing user record: {ex}")
+            for data in all_user_data:
+                try:
+                    key_type, key_id = data[0], data[1]
+                    if key_type == 'ip':
                         continue
 
-                # Commit users
-                await db.commit()
-                logger.debug("Committed user records")
+                    user_data_dict = {}
+                    for field_data in data[2:]:
+                        field, value = field_data
+                        user_data_dict[field] = value
 
-            # Create/Update Usage records
-            async with db.begin():
-                for key_id in processed_usernames:
-                    try:
-                        # Verify user exists after commit
-                        result = await db.execute(
-                            select(User).filter(User.id == key_id)
-                        )
-                        user = result.scalar_one_or_none()
+                    username = user_data_dict.get('username', f"ip:{user_data_dict.get('ip_address')}")
+                    current_time = datetime.now(pytz.utc)
+                    data_time = datetime.fromisoformat(user_data_dict.get('last_request', current_time.isoformat()))
 
-                        if not user:
-                            logger.error(f"User {key_id} not found after commit")
-                            continue
+                    user_dict = {
+                        'id': key_id,
+                        'username': username,
+                        'tier': user_data_dict.get('tier', 'unauthenticated'),
+                        'ip_address': user_data_dict.get('ip_address'),
+                        'requests_today': int(user_data_dict.get('requests_today', 0)),
+                        'remaining_requests': int(user_data_dict.get('remaining_requests', 5000)),
+                        'last_request': data_time,
+                        'hashed_password': None
+                    }
 
-                        # Get usage record
-                        usage_result = await db.execute(
-                            select(Usage).filter(Usage.user_id == key_id)
-                        )
-                        usage = usage_result.scalar_one_or_none()
+                    usage_dict = {
+                        'user_id': key_id,
+                        'ip_address': user_data_dict.get('ip_address'),
+                        'requests_today': int(user_data_dict.get('requests_today', 0)),
+                        'remaining_requests': int(user_data_dict.get('remaining_requests', 5000)),
+                        'last_reset': data_time,
+                        'last_request': data_time,
+                        'tier': user_data_dict.get('tier', 'unauthenticated')
+                    }
 
-                        if usage:
-                            # Update usage
-                            usage.requests_today = min(user.requests_today, usage.requests_today)
-                            usage.remaining_requests = max(user.remaining_requests, usage.remaining_requests)
-                            usage.last_reset = user.last_reset
-                            usage.last_request = user.last_request
-                            usage.tier = user.tier
-                            usage.ip_address = user.ip_address
-                            logger.debug(f"Updated Usage record for user_id={key_id}")
-                        else:
-                            # Create new usage record
-                            new_usage = Usage(
-                                user_id=key_id,
-                                ip_address=user.ip_address,
-                                requests_today=user.requests_today,
-                                remaining_requests=user.remaining_requests,
-                                last_reset=user.last_reset,
-                                last_request=user.last_request,
-                                tier=user.tier
-                            )
-                            db.add(new_usage)
-                            logger.debug(f"Created new Usage record for user_id={key_id}")
+                    user_records[key_id] = user_dict
+                    usage_records[key_id] = usage_dict
+                    processed_user_ids.add(key_id)
 
-                    except Exception as ex:
-                        logger.error(f"Error processing usage record for {key_id}: {ex}")
-                        continue
+                except Exception as ex:
+                    logger.error(f"Error processing user record: {ex}")
+                    continue
 
-                # Commit usage records
-                await db.commit()
-                logger.debug("Committed usage records")
+            # Fetch existing users and usages
+            existing_users = {}
+            existing_usages = {}
+
+            if processed_user_ids:
+                user_result = await db.execute(select(User).filter(User.id.in_(processed_user_ids)))
+                existing_users_list = user_result.scalars().all()
+                existing_users = {user.id: user for user in existing_users_list}
+
+                usage_result = await db.execute(select(Usage).filter(Usage.user_id.in_(processed_user_ids)))
+                existing_usages_list = usage_result.scalars().all()
+                existing_usages = {usage.user_id: usage for usage in existing_usages_list}
+
+            # Prepare users for bulk upsert
+            users_to_update = []
+            users_to_create = []
+            for user_id, user_data in user_records.items():
+                if user_id in existing_users:
+                    user = existing_users[user_id]
+                    data_time = user_data['last_request']
+                    if (not user.last_request or
+                        data_time > user.last_request or
+                        user_data['remaining_requests'] > user.remaining_requests):
+
+                        user.username = user_data['username']
+                        user.tier = user_data['tier']
+                        user.ip_address = user_data['ip_address']
+                        user.requests_today = min(user_data['requests_today'], user.requests_today or 0)
+                        user.remaining_requests = max(user_data['remaining_requests'], user.remaining_requests or 0)
+                        user.last_request = data_time
+                        users_to_update.append(user)
+                        logger.debug(f"Prepared to update existing user: {user.id}")
+                else:
+                    new_user = User(**user_data)
+                    users_to_create.append(new_user)
+                    new_user.remaining_requests = max(user_data['remaining_requests'], new_user.remaining_requests or 0)
+                    new_user.last_request = data_time
+                    logger.debug(f"Prepared to create new user: {new_user.id}")
+                    
+            # Prepare usages for bulk upsert
+            usages_to_update = []
+            usages_to_create = []
+            for user_id, usage_data in usage_records.items():
+                if user_id in existing_usages:
+                    usage = existing_usages[user_id]
+                    usage.requests_today = min(usage_data['requests_today'], usage.requests_today)
+                    usage.remaining_requests = max(usage_data['remaining_requests'], usage.remaining_requests)
+                    usage.last_reset = usage_data['last_reset']
+                    usage.last_request = usage_data['last_request']
+                    usage.tier = usage_data['tier']
+                    usage.ip_address = usage_data['ip_address']
+                    usages_to_update.append(usage)
+                    logger.debug(f"Prepared to update existing usage for user_id={user_id}")
+                else:
+                    new_usage = Usage(**usage_data)
+                    usages_to_create.append(new_usage)
+                    logger.debug(f"Prepared to create new usage for user_id={new_usage.user_id}")
+
+            # Bulk save users and usages
+            if users_to_create:
+                db.add_all(users_to_create)
+                logger.debug(f"Added {len(users_to_create)} new users.")
+            if users_to_update:
+                for user in users_to_update:
+                    db.add(user)
+                logger.debug(f"Updated {len(users_to_update)} existing users.")
+
+            if usages_to_create:
+                db.add_all(usages_to_create)
+                logger.debug(f"Added {len(usages_to_create)} new usages.")
+            if usages_to_update:
+                for usage in usages_to_update:
+                    db.add(usage)
+                logger.debug(f"Updated {len(usages_to_update)} existing usages.")
+
+            await db.commit()
+            logger.debug("Committed user and usage records.")
 
             logger.info("Redis data synced to database successfully")
 

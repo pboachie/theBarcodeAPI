@@ -310,13 +310,15 @@ app.include_router(token.router)
 app.include_router(admin.router)
 
 @app.exception_handler(Exception)
-async def global_exception_handler(exc: Exception):
+async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"message": "An unexpected error occurred. Please try again later.", "error_type": "InternalServerError"}
+        content={
+            "message": "An unexpected error occurred. Please try again later.",
+            "error_type": "InternalServerError"
+        }
     )
-
 @app.exception_handler(BarcodeGenerationError)
 async def barcode_generation_exception_handler(exc: BarcodeGenerationError):
     logger.error(f"Barcode generation error: {exc}")
