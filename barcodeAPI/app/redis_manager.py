@@ -82,10 +82,22 @@ class RedisManager:
         try:
             await self.cleanup_redis_keys()
             await self.load_lua_scripts()
+
+            # Verify Lua scripts were loaded
+            if not self.increment_usage_sha:
+                raise RuntimeError("Failed to load INCREMENT_USAGE_SCRIPT")
+
             # Make sure batch processor is started
             if self.batch_processor:
                 await self.batch_processor.start()
                 logger.info("Batch processor started successfully")
+
+            # Verify batch processor state
+            for priority, processor in self.batch_processor.processors.items():
+                if not processor.running:
+                    raise RuntimeError(f"{priority} batch processor failed to start")
+                logger.debug(f"{priority} batch processor running")
+
             logger.info("Redis manager started successfully")
         except Exception as e:
             logger.error(f"Error starting Redis manager: {e}")
@@ -348,42 +360,67 @@ class RedisManager:
     async def _process_increment_usage(self, items: List[Tuple[Any, str]], pipe, pending_results):
         """Process batch of increment usage operations"""
         try:
+            current_time = datetime.now(pytz.utc).isoformat()
+            rate_limit = settings.RateLimit.get_limit("unauthenticated")
+
             for (user_id, ip_address), batch_id in items:
+                key = f"user_data:{user_id if user_id else ''}"
+
+                # Add pipeline operations
                 pipe.evalsha(
                     self.increment_usage_sha,
-                    1,
-                    f"user_data:{user_id}",
-                    user_id,
-                    ip_address,
-                    settings.RateLimit.get_limit("unauthenticated"),
-                    datetime.now(pytz.utc).isoformat()
+                    1,  # number of keys
+                    key,  # key
+                    user_id if user_id else -1,  # user_id
+                    str(ip_address),  # ip_address
+                    str(rate_limit),  # rate limit
+                    current_time  # current time
                 )
+
+            # Execute pipeline
             results = await pipe.execute()
 
-            if len(results) != len(items):
-                logger.error(f"Unexpected number of results from pipeline: expected {len(items)}, got {len(results)}")
-                # Set default values for missing results
-                for (_, batch_id) in items:
-                    user_data = await self.get_default_value("increment_usage")
-                    self._cleanup_future(batch_id, user_data)
+            if not results:
+                logger.error("No results returned from Redis pipeline")
+                for _, batch_id in items:
+                    await self._cleanup_future(batch_id, await self.create_default_user_data(items[0][1]))
                 return
 
-            for result, (_, batch_id) in zip(results, items):
-                if result and isinstance(result, dict):
-                    user_data = self._decode_redis_hash(
-                        result,
-                        (await self.get_default_value("increment_usage")).__dict__
-                    )
-                    self._cleanup_future(batch_id, user_data)
-                else:
-                    logger.error(f"Invalid result type from increment: {type(result)}")
-                    user_data = await self.get_default_value("increment_usage")
-                    self._cleanup_future(batch_id, user_data)
+            # Process results
+            for i, ((_, ip_address), batch_id) in enumerate(items):
+                future = pending_results.get(batch_id)
+                if not future or future.done():
+                    continue
+
+                try:
+                    if results[i]:
+                        # Convert Redis response to UserData
+                        data = dict(zip(results[i][::2], results[i][1::2]))
+                        user_data_dict = {
+                            "id": data[b"id"].decode(),
+                            "ip_address": data[b"ip_address"].decode(),
+                            "username": data[b"username"].decode() if b"username" in data else f"ip:{ip_address}",
+                            "tier": data[b"tier"].decode() if b"tier" in data else "unauthenticated",
+                            "requests_today": int(data[b"requests_today"].decode()),
+                            "remaining_requests": int(data[b"remaining_requests"].decode()),
+                            "last_request": datetime.fromisoformat(data[b"last_request"].decode()),
+                            "last_reset": datetime.fromisoformat(data[b"last_reset"].decode())
+                        }
+                        user_data = UserData(**user_data_dict)
+                        future.set_result(user_data)
+                    else:
+                        default_data = await self.create_default_user_data(ip_address)
+                        future.set_result(default_data)
+                except Exception as ex:
+                    logger.error(f"Error processing increment result: {ex}", exc_info=True)
+                    default_data = await self.create_default_user_data(ip_address)
+                    future.set_result(default_data)
+
         except Exception as ex:
-            logger.error(f"Error in _process_increment_usage: {ex}")
-            for (_, batch_id) in items:
-                user_data = await self.get_default_value("increment_usage")
-                self._cleanup_future(batch_id, user_data)
+            logger.error(f"Error in _process_increment_usage: {ex}", exc_info=True)
+            for (_, ip_address), batch_id in items:
+                default_data = await self.create_default_user_data(ip_address)
+                self._cleanup_future(batch_id, default_data)
 
     def _convert_list_to_dict(self, data: List[Any]) -> Dict[bytes, bytes]:
         """Convert list to dict converting strings to bytes"""
