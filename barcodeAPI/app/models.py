@@ -35,7 +35,7 @@ class User(Base):
 
     # Relationships
     active_token = relationship("ActiveToken", back_populates="user", uselist=False)
-    usage = relationship("Usage", back_populates="user", uselist=False)
+    usage = relationship("Usage", back_populates="user")
 
 
     @classmethod
