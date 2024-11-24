@@ -145,7 +145,13 @@ async def lifespan(app: FastAPI):
                 # Sync data to database
                 logger.info("Syncing data to database...")
                 async for db in get_db():
-                    await redis_manager.sync_redis_to_db(db)
+                    try:
+                        await redis_manager.sync_redis_to_db(db)
+                        await db.commit()
+                    except Exception as e:
+                        logger.error(f"Sync error: {e}")
+                        await db.rollback()
+                        raise
                     break
 
                 # Stop services
