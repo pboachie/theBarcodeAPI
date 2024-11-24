@@ -3,7 +3,8 @@ from redis.asyncio import Redis
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple, Union
-from sqlalchemy import or_
+from sqlalchemy import or_, update, select as sa_select
+from sqlalchemy.dialects.postgresql import insert as pg_insert, Insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import logging
@@ -1234,16 +1235,16 @@ class RedisManager:
 
     async def sync_redis_to_db(self, db: AsyncSession):
         """
-        Synchronize Redis data to database with improved error handling.
+        Synchronize Redis data to database with improved error handling and upsert functionality.
 
         Args:
-            db (AsyncSession): Database session for storing data
+            db (AsyncSession): Database session for storing data.
         """
         logger.debug("Starting sync_redis_to_db process.")
 
         try:
             logger.debug("Retrieving all user data from Redis.")
-            all_user_data = await self.redis.evalsha(self.get_all_user_data_sha, 0) # type: ignore
+            all_user_data = await self.redis.evalsha(self.get_all_user_data_sha, 0)  # type: ignore
             logger.debug(f"Retrieved {len(all_user_data)} records from Redis.")
 
             # Prepare data for batch operations
@@ -1304,95 +1305,43 @@ class RedisManager:
                         user_records[user_id] = user_dict
                         usage_records[user_id] = usage_dict
 
-                    elif entry_type == "ip":
-                        # Handle IP-based entries if needed
-                        ip_address = identifier
-                        if 'id' in data_dict:  # If IP entry has a user ID mapping
-                            user_id = data_dict['id']
-                            processed_user_ids.add(user_id)
-                            # Update existing records or create new ones
-                            if user_id not in user_records:
-                                user_records[user_id] = {
-                                    'id': user_id,
-                                    'username': data_dict.get('username', f"ip_{ip_address}"),
-                                    'tier': 'unauthenticated',
-                                    'ip_address': ip_address,
-                                    'requests_today': int(data_dict.get('requests_today', 0)),
-                                    'remaining_requests': int(data_dict.get('remaining_requests', settings.RateLimit.get_limit("unauthenticated"))),
-                                    'last_request': datetime.fromisoformat(data_dict.get('last_request', current_time.isoformat())),
-                                    'hashed_password': None
-                                }
-
-                                usage_records[user_id] = {
-                                    'user_id': user_id,
-                                    'ip_address': ip_address,
-                                    'requests_today': int(data_dict.get('requests_today', 0)),
-                                    'remaining_requests': int(data_dict.get('remaining_requests', settings.RateLimit.get_limit("unauthenticated"))),
-                                    'last_reset': datetime.fromisoformat(data_dict.get('last_reset', current_time.isoformat())),
-                                    'last_request': datetime.fromisoformat(data_dict.get('last_request', current_time.isoformat())),
-                                    'tier': 'unauthenticated'
-                                }
-
                 except Exception as ex:
                     logger.error(f"Error processing entry {entry}: {ex}")
                     continue
+            # Upsert user and usage data
+            if user_records:
+                user_values = list(user_records.values())
+                stmt = pg_insert(User).values(user_values)
+                user_upsert_stmt = stmt.on_conflict_do_update(
+                    index_elements=['id'],
+                    set_={
+                        'tier': stmt.excluded.tier,
+                        'ip_address': stmt.excluded.ip_address,
+                        'requests_today': stmt.excluded.requests_today,
+                        'remaining_requests': stmt.excluded.remaining_requests,
+                        'last_request': stmt.excluded.last_request
+                    }
+                )
+                await db.execute(user_upsert_stmt)
+                await db.execute(user_upsert_stmt)
 
-            # Fetch existing users and usages for batch update
-            if processed_user_ids:
-                existing_users = {}
-                existing_usages = {}
+            if usage_records:
+                usage_values = list(usage_records.values())
+                usage_insert_stmt = pg_insert(Usage).values(usage_values)
+                usage_upsert_stmt = usage_insert_stmt.on_conflict_do_update(
+                    index_elements=["user_id"],  # Unique constraint column(s)
+                    set_={
+                        "requests_today": usage_insert_stmt.excluded.requests_today,
+                        "remaining_requests": usage_insert_stmt.excluded.remaining_requests,
+                        "last_request": usage_insert_stmt.excluded.last_request,
+                        "last_reset": usage_insert_stmt.excluded.last_reset,
+                        "tier": usage_insert_stmt.excluded.tier,
+                    },
+                )
+                await db.execute(usage_upsert_stmt)
 
-                user_result = await db.execute(select(User).filter(User.id.in_(processed_user_ids)))
-                existing_users = {user.id: user for user in user_result.scalars().all()}
-
-                usage_result = await db.execute(select(Usage).filter(Usage.user_id.in_(processed_user_ids)))
-                existing_usages = {usage.user_id: usage for usage in usage_result.scalars().all()}
-
-                # Prepare updates and creates
-                users_to_update = []
-                users_to_create = []
-                usages_to_update = []
-                usages_to_create = []
-
-                for user_id, user_data in user_records.items():
-                    if user_id in existing_users:
-                        user = existing_users[user_id]
-                        # Update existing user
-                        for key, value in user_data.items():
-                            setattr(user, key, value)
-                        users_to_update.append(user)
-                    else:
-                        # Create new user
-                        users_to_create.append(User(**user_data))
-
-                for user_id, usage_data in usage_records.items():
-                    if user_id in existing_usages:
-                        usage = existing_usages[user_id]
-                        # Update existing usage
-                        for key, value in usage_data.items():
-                            setattr(usage, key, value)
-                        usages_to_update.append(usage)
-                    else:
-                        # Create new usage
-                        usages_to_create.append(Usage(**usage_data))
-
-                # Perform database operations
-                if users_to_create:
-                    db.add_all(users_to_create)
-                if users_to_update:
-                    for user in users_to_update:
-                        db.add(user)
-
-                if usages_to_create:
-                    db.add_all(usages_to_create)
-                if usages_to_update:
-                    for usage in usages_to_update:
-                        db.add(usage)
-
-                await db.commit()
-                logger.info(f"Synced {len(users_to_create)} new users, {len(users_to_update)} updated users")
-                logger.info(f"Synced {len(usages_to_create)} new usages, {len(usages_to_update)} updated usages")
-
+            await db.commit()
+            logger.info(f"Synced {len(user_records)} users and {len(usage_records)} usages.")
         except Exception as ex:
             logger.error(f"Error syncing Redis data to database: {str(ex)}", exc_info=True)
             raise
@@ -1401,7 +1350,6 @@ class RedisManager:
                 await db.close()
             except Exception:
                 pass
-
 
     async def sync_all_username_mappings(self, db: AsyncSession):
         """Synchronize all username mappings into Redis"""
