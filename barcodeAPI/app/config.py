@@ -1,7 +1,9 @@
 # app/config.py
 import os
-from app.schemas import BatchPriority
+
+from pydantic import ConfigDict
 from pydantic_settings import BaseSettings
+from app.schemas import BatchPriority
 from sqlalchemy import engine_from_config, pool
 from alembic.config import Config
 from alembic import context
@@ -13,9 +15,9 @@ class Settings(BaseSettings):
     MASTER_API_KEY: str = os.getenv("MASTER_API_KEY", "")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "")
-    REDIS_URL: str = os.getenv("REDIS_URL", "")
-    API_VERSION: str = os.getenv("API_VERSION", "")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/barcodeapi")
+    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost")
+    API_VERSION: str = os.getenv("API_VERSION", "0.1.0")
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     LOG_DIRECTORY: str = os.getenv("LOG_DIRECTORY", "logs")
     ROOT_PATH: str = os.getenv("ROOT_PATH", "/api/v1")
@@ -28,16 +30,16 @@ class Settings(BaseSettings):
         "*.thebarcodeapi.com"
     ]
 
+    class Config:
+        env_file = ".env"
+        extra = "allow"
+
     @property
     def SYNC_DATABASE_URL(self) -> str:
         """Return a synchronous database URL for Alembic migrations"""
         if self.DATABASE_URL.startswith('postgresql+asyncpg'):
             return self.DATABASE_URL.replace('postgresql+asyncpg', 'postgresql')
         return self.DATABASE_URL
-
-    class Config:
-        env_file = ".env"
-        extra = "allow"
 
     class RateLimit:
         unauthenticated: int = 5000

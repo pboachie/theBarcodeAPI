@@ -1,5 +1,5 @@
 # app/schemas.py
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_serializer, model_validator
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from datetime import datetime
@@ -442,6 +442,10 @@ class UserData(BaseModel):
     requests_today: int
     last_request: Optional[datetime] = None
     last_reset: Optional[datetime] = None
+
+    @field_serializer('last_request', 'last_reset')
+    def serialize_datetime(cls, v: Optional[datetime]) -> Optional[str]:
+        return v.isoformat() if v else None
 
     model_config = {
         "json_encoders": {
