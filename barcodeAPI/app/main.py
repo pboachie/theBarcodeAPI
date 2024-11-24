@@ -146,12 +146,11 @@ async def lifespan(app: FastAPI):
                 logger.info("Syncing data to database...")
                 async for db in get_db():
                     try:
-                        await redis_manager.sync_redis_to_db(db)
-                        await db.commit()
+                        await redis_manager.perform_final_sync(db)
                     except Exception as e:
-                        logger.error(f"Sync error: {e}")
-                        await db.rollback()
-                        raise
+                        logger.error(f"Final sync error: {e}")
+                    finally:
+                        await db.close()
                     break
 
                 # Stop services
@@ -295,6 +294,7 @@ async def global_exception_handler(request: Request, exc: Exception):
             "error_type": "InternalServerError"
         }
     )
+
 @app.exception_handler(BarcodeGenerationError)
 async def barcode_generation_exception_handler(exc: BarcodeGenerationError):
     logger.error(f"Barcode generation error: {exc}")
@@ -355,5 +355,6 @@ async def add_rate_limit_headers(request: Request, call_next):
             response.headers[header] = value
 
     return response
+
 
 
