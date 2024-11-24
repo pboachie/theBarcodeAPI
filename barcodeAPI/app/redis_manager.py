@@ -3,8 +3,7 @@ from redis.asyncio import Redis
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple, Union
-from sqlalchemy import or_, update, select as sa_select
-from sqlalchemy.dialects.postgresql import insert as pg_insert, Insert
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import logging
@@ -57,11 +56,11 @@ class RedisManager:
     @asynccontextmanager
     async def get_pipeline(self):
         """Context manager for Redis pipeline operations"""
-        pipe = self.redis.pipeline()
+        pipe = await self.redis.pipeline()
         try:
-            yield await pipe
+            yield pipe
         finally:
-            await (await pipe).reset()
+            await pipe.reset()
 
     async def load_lua_scripts(self):
         """Load Lua scripts into Redis and store their SHAs"""
@@ -1235,14 +1234,12 @@ class RedisManager:
 
     async def sync_redis_to_db(self, db: AsyncSession):
         """
-        Synchronize Redis data to database with improved error handling and upsert functionality.
-
-        Args:
-            db (AsyncSession): Database session for storing data.
+        Synchronize Redis data to the database with improved error handling and upsert functionality.
         """
         logger.debug("Starting sync_redis_to_db process.")
 
         try:
+            # Retrieve all user data from Redis
             logger.debug("Retrieving all user data from Redis.")
             all_user_data = await self.redis.evalsha(self.get_all_user_data_sha, 0)  # type: ignore
             logger.debug(f"Retrieved {len(all_user_data)} records from Redis.")
@@ -1250,7 +1247,6 @@ class RedisManager:
             # Prepare data for batch operations
             user_records = {}
             usage_records = {}
-            processed_user_ids = set()
 
             for entry in all_user_data:
                 try:
@@ -1264,11 +1260,9 @@ class RedisManager:
                         continue
 
                     # Convert entry data to dictionary
-                    data_dict = {}
-                    for field_data in entry[2:]:
-                        if isinstance(field_data, (list, tuple)) and len(field_data) == 2:
-                            key, value = field_data
-                            data_dict[key] = value
+                    data_dict = {
+                        key: value for key, value in (field_data for field_data in entry[2:] if isinstance(field_data, (list, tuple)) and len(field_data) == 2)
+                    }
 
                     # Skip if no data
                     if not data_dict:
@@ -1276,11 +1270,9 @@ class RedisManager:
 
                     current_time = datetime.now(pytz.utc)
 
-                    # Process based on entry type
+                    # Process 'user_data' type
                     if entry_type == "user_data":
                         user_id = identifier
-                        processed_user_ids.add(user_id)
-
                         user_dict = {
                             'id': user_id,
                             'username': data_dict.get('username', f"user_{user_id}"),
@@ -1289,8 +1281,9 @@ class RedisManager:
                             'requests_today': int(data_dict.get('requests_today', 0)),
                             'remaining_requests': int(data_dict.get('remaining_requests', settings.RateLimit.get_limit("unauthenticated"))),
                             'last_request': datetime.fromisoformat(data_dict.get('last_request', current_time.isoformat())),
-                            'hashed_password': None
+                            'hashed_password': None,
                         }
+                        user_records[user_id] = user_dict
 
                         usage_dict = {
                             'user_id': user_id,
@@ -1299,57 +1292,54 @@ class RedisManager:
                             'remaining_requests': int(data_dict.get('remaining_requests', settings.RateLimit.get_limit("unauthenticated"))),
                             'last_reset': datetime.fromisoformat(data_dict.get('last_reset', current_time.isoformat())),
                             'last_request': datetime.fromisoformat(data_dict.get('last_request', current_time.isoformat())),
-                            'tier': data_dict.get('tier', 'unauthenticated')
+                            'tier': data_dict.get('tier', 'unauthenticated'),
                         }
-
-                        user_records[user_id] = user_dict
                         usage_records[user_id] = usage_dict
 
                 except Exception as ex:
                     logger.error(f"Error processing entry {entry}: {ex}")
                     continue
-            # Upsert user and usage data
+
+            # Upsert user data into the database
             if user_records:
                 user_values = list(user_records.values())
-                stmt = pg_insert(User).values(user_values)
-                user_upsert_stmt = stmt.on_conflict_do_update(
+                user_stmt = insert(User).values(user_values)
+                user_stmt = user_stmt.on_conflict_do_update(
                     index_elements=['id'],
                     set_={
-                        'tier': stmt.excluded.tier,
-                        'ip_address': stmt.excluded.ip_address,
-                        'requests_today': stmt.excluded.requests_today,
-                        'remaining_requests': stmt.excluded.remaining_requests,
-                        'last_request': stmt.excluded.last_request
+                        'username': user_stmt.excluded.username,
+                        'tier': user_stmt.excluded.tier,
+                        'ip_address': user_stmt.excluded.ip_address,
+                        'requests_today': user_stmt.excluded.requests_today,
+                        'remaining_requests': user_stmt.excluded.remaining_requests,
+                        'last_request': user_stmt.excluded.last_request,
                     }
                 )
-                await db.execute(user_upsert_stmt)
-                await db.execute(user_upsert_stmt)
+                await db.execute(user_stmt)
 
+            # Upsert usage data into the database
             if usage_records:
                 usage_values = list(usage_records.values())
-                usage_insert_stmt = pg_insert(Usage).values(usage_values)
-                usage_upsert_stmt = usage_insert_stmt.on_conflict_do_update(
-                    index_elements=["user_id"],  # Unique constraint column(s)
+                usage_stmt = insert(Usage).values(usage_values)
+                usage_stmt = usage_stmt.on_conflict_do_update(
+                    index_elements=["user_id"],
                     set_={
-                        "requests_today": usage_insert_stmt.excluded.requests_today,
-                        "remaining_requests": usage_insert_stmt.excluded.remaining_requests,
-                        "last_request": usage_insert_stmt.excluded.last_request,
-                        "last_reset": usage_insert_stmt.excluded.last_reset,
-                        "tier": usage_insert_stmt.excluded.tier,
-                    },
+                        "requests_today": usage_stmt.excluded.requests_today,
+                        "remaining_requests": usage_stmt.excluded.remaining_requests,
+                        "last_request": usage_stmt.excluded.last_request,
+                        "last_reset": usage_stmt.excluded.last_reset,
+                        "tier": usage_stmt.excluded.tier,
+                    }
                 )
-                await db.execute(usage_upsert_stmt)
+                await db.execute(usage_stmt)
 
             await db.commit()
-            logger.info(f"Synced {len(user_records)} users and {len(usage_records)} usages.")
+            logger.info(f"Synced {len(user_records)} users and {len(usage_records)} usages successfully.")
         except Exception as ex:
             logger.error(f"Error syncing Redis data to database: {str(ex)}", exc_info=True)
             raise
         finally:
-            try:
-                await db.close()
-            except Exception:
-                pass
+            await db.close()
 
     async def sync_all_username_mappings(self, db: AsyncSession):
         """Synchronize all username mappings into Redis"""

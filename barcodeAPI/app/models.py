@@ -1,10 +1,12 @@
 # app/models.py
 from datetime import datetime
+from typing import Optional, Union
 import pytz
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, func, select, update
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import relationship
+from enum import Enum
 
 from app.database import Base
 from app.utils import IDGenerator
@@ -13,13 +15,18 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+class UserTier(str, Enum):
+    UNAUTHENTICATED = str('unauthenticated')
+    BASIC = str('basic')
+    PREMIUM = str('premium')
+
 class User(Base):
     __tablename__ = "users"
 
     id = Column(String, primary_key=True, index=True, unique=True)
     username = Column(String, unique=True, index=True)
     hashed_password = Column(String, nullable=True)
-    tier = Column(String, nullable=False, default='unauthenticated')
+    tier = Column(String, nullable=False, default=UserTier.UNAUTHENTICATED)
     ip_address = Column(String, nullable=True)
     remaining_requests = Column(Integer, default=0)
     requests_today = Column(Integer, default=0)
@@ -37,6 +44,21 @@ class User(Base):
     active_token = relationship("ActiveToken", back_populates="user", uselist=False)
     usage = relationship("Usage", back_populates="user")
 
+    @classmethod
+    async def update_request_count(cls, db: AsyncSession):
+        current_time = datetime.now(pytz.utc)
+        cls.requests_today += 1
+        cls.last_request = current_time
+        current_remaining = cls.remaining_requests if isinstance(cls.remaining_requests, int) else 0
+        cls.remaining_requests = max(0, current_remaining - 1)
+        await db.commit()
+
+    @classmethod
+    async def reset_daily_counts(cls, db: AsyncSession):
+        current_time = datetime.now(pytz.utc)
+        cls.requests_today = 0
+        cls.last_reset = current_time
+        await db.commit()
 
     @classmethod
     async def get_user_by_id(cls, db: AsyncSession, user_id: str):
@@ -119,7 +141,12 @@ class Usage(Base):
         return usage
 
     @classmethod
-    async def get_usage(cls, db: AsyncSession, user_id: str = None, ip_address: str = None) -> 'Usage':
+    async def get_usage(
+        cls,
+        db: AsyncSession,
+        user_id: Optional[str] = None,
+        ip_address: Optional[str] = None
+    ) -> Union['Usage', None]:
         if user_id:
             stmt = select(cls).filter(cls.user_id == user_id)
         elif ip_address:
@@ -128,9 +155,9 @@ class Usage(Base):
             return None
 
         result = await db.execute(stmt)
-        return result.scalar_one_or_none()
+        return result.scalar()
 
     @classmethod
-    async def get_usage_by_id(cls, db: AsyncSession, usage_id: int) -> 'Usage':
+    async def get_usage_by_id(cls, db: AsyncSession, usage_id: int) -> 'Usage | None':
         result = await db.execute(select(cls).filter(cls.id == usage_id))
         return result.scalar_one_or_none()
