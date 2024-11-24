@@ -8,6 +8,7 @@ from barcode.errors import BarcodeError
 from app.schemas import BarcodeRequest, BarcodeGenerationError
 from typing import Dict
 import logging
+
 import PIL.Image
 from PIL import Image
 

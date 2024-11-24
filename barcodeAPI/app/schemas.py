@@ -1,5 +1,5 @@
 # app/schemas.py
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_serializer, model_validator
 from typing import List, Optional, Dict, Any
 from enum import Enum
 from datetime import datetime
@@ -211,14 +211,14 @@ class BarcodeRequest(BaseModel):
     data: str = Field(
         ...,
         description="Content to encode in the barcode",
-        example="123456789012",
-        min_length=1
-    )  # Remove trailing comma
+        min_length=1,
+        json_schema_extra={"example": "123456789012"}
+    )
     format: BarcodeFormatEnum = Field(
         ...,
         description="Barcode format type",
-        example="ean13"
-    )  # Remove trailing comma
+        json_schema_extra={"example": "ean13"}
+    )
     width: int = Field(
         default=200,
         ge=50,
@@ -294,7 +294,7 @@ class BarcodeRequest(BaseModel):
         description="Add guardbar to the barcode image"
     )
 
-    def get_writer_options(self) -> Dict[str, any]:
+    def get_writer_options(self) -> Dict[str, Any]:
         """Get options for the barcode writer"""
         # Start with basic options
         options = {
@@ -329,8 +329,8 @@ class BarcodeRequest(BaseModel):
         # Remove None values
         return {k: v for k, v in options.items() if v is not None}
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "data": "123456789012",
                 "format": "ean13",
@@ -341,6 +341,7 @@ class BarcodeRequest(BaseModel):
                 "quiet_zone": 6.5
             }
         }
+    }
 
     @model_validator(mode='before')
     @classmethod
@@ -416,21 +417,21 @@ class UserCreate(BaseModel):
 class UserResponse(BaseModel):
     id: str
     username: str
-    tier: str
     ip_address: Optional[str] = None
+    tier: str
     remaining_requests: int
     requests_today: int
-    last_request: Optional[str] = None
-    last_reset: Optional[str] = None
+    last_request: Optional[datetime] = None
+    last_reset: Optional[datetime] = None
 
 class UsersResponse(BaseModel):
     users: List[UserResponse]
 
 class UserCreatedResponse(BaseModel):
-    message: str
-    user_id: int
-    username: str
-    tier: str
+    message: str = Field(..., description="Message indicating the user was created")
+    user_id: str = Field(..., description="Unique user ID generated using nanoid")
+    username: str = Field(..., description="Username of the new user")
+    tier: str = Field(..., description="Tier of the new user")
 
 class UserData(BaseModel):
     id: str
@@ -442,11 +443,16 @@ class UserData(BaseModel):
     last_request: Optional[datetime] = None
     last_reset: Optional[datetime] = None
 
-    class Config:
-        json_encoders = {
+    @field_serializer('last_request', 'last_reset')
+    def serialize_datetime(cls, v: Optional[datetime]) -> Optional[str]:
+        return v.isoformat() if v else None
+
+    model_config = {
+        "json_encoders": {
             datetime: lambda v: v.isoformat()
+        },
+        "from_attributes": True
         }
-        from_attributes = True
 
     @classmethod
     def parse_obj(cls, obj):
@@ -456,11 +462,10 @@ class UserData(BaseModel):
         for field in ['last_reset', 'last_request']:
             if isinstance(obj.get(field), str):
                 obj[field] = datetime.fromisoformat(obj[field].rstrip('Z'))
-        return super().parse_obj(obj)
+        return super().model_validate(obj)
 
-    @classmethod
     def to_json(self):
-        return json.dumps(self.dict(), default=str)
+        return json.dumps(self.model_dump(), default=str)
 
     @classmethod
     def from_json(cls, json_str):
@@ -476,6 +481,8 @@ class RedisConnectionStats(BaseModel):
     connected_clients: int
     blocked_clients: int
     tracking_clients: int
+    total_connections: int
+    in_use_connections: int
 
 class DetailedHealthResponse(BaseModel):
     status: str

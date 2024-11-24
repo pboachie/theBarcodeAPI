@@ -6,7 +6,7 @@ from sqlalchemy import text
 from app.schemas import HealthResponse, DetailedHealthResponse
 from app.config import settings
 from app.database import get_db, AsyncSessionLocal
-from app.redis import get_redis_manager
+from app.dependencies import get_redis_manager
 from app.redis_manager import RedisManager
 from app.rate_limiter import rate_limit
 from app.security import verify_master_key
@@ -102,7 +102,8 @@ async def detailed_health_check(redis_manager: RedisManager) -> None:
                 "redis_details": {
                     "connected_clients": redis_details.connected_clients,
                     "blocked_clients": redis_details.blocked_clients,
-                    "tracking_clients": redis_details.tracking_clients
+                    "tracking_clients": redis_details.tracking_clients,
+                    "total_connections": redis_details.total_connections
                 }
             }
 

@@ -2,6 +2,7 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+
 from typing import Any, Dict, List, Optional
 import time
 from contextlib import asynccontextmanager
@@ -17,12 +18,13 @@ class BatchOperation:
     future: asyncio.Future
 
 class BatchProcessor:
-    def __init__(self, redis_manager, batch_size=100, max_wait_time=0.5):
+    def __init__(self, redis_manager, batch_size=100, max_wait_time=0.5, interval=0.1):
         self.redis_manager = redis_manager
         self.batch_size = batch_size
         self.max_wait_time = max_wait_time
         self.operations: List[BatchOperation] = []
         self.processing = False
+        self.interval = interval
         self.running = False
         self.last_process_time = time.time()
         self._lock = asyncio.Lock()
@@ -33,13 +35,8 @@ class BatchProcessor:
         """Start the batch processor"""
         logger.info(f"Starting batch processor with batch size {self.batch_size}")
         if self.running:
-            logger.warning("Batch processor already running")
+            logger.warning("Batch processor is already running.")
             return
-
-        self.running = True
-        self._task = asyncio.create_task(self._process_loop())
-        logger.info("Batch processor started and processing loop initialized")
-
         self.running = True
         self._task = asyncio.create_task(self._process_loop())
         logger.info("Batch processor started")
@@ -47,19 +44,12 @@ class BatchProcessor:
     async def stop(self):
         """Stop the batch processor"""
         if not self.running:
+            logger.warning("Batch processor is not running.")
             return
-
         self.running = False
         self._process_event.set()  # Wake up the process loop
         if self._task:
-            try:
-                await asyncio.wait_for(self._task, timeout=self.max_wait_time)
-            except asyncio.TimeoutError:
-                self._task.cancel()
-                try:
-                    await self._task
-                except asyncio.CancelledError:
-                    pass
+            await self._task
         logger.info("Batch processor stopped")
 
     async def add_operation(self, operation: str, item: Any, priority: str) -> Any:
@@ -193,7 +183,6 @@ class BatchProcessor:
                 op.future.cancel()
         self.operations.clear()
 
-
 class MultiLevelBatchProcessor:
     def __init__(self, redis_manager):
         self.processors = {
@@ -220,3 +209,42 @@ class MultiLevelBatchProcessor:
             raise ValueError(f"Invalid priority: {priority}")
 
         return await processor.add_operation(operation, item, priority)
+
+    async def _cleanup_pending_results(self, pending_results: Dict[str, List[Any]]) -> None:
+        """Clean up pending results from batch operations.
+
+        Args:
+            pending_results: Dictionary mapping operation types to lists of results
+        """
+        try:
+            logger.debug("Starting cleanup of pending batch results")
+            for operation_type, results in pending_results.items():
+                if not results:
+                    continue
+
+                logger.debug(f"Cleaning up {len(results)} {operation_type} results")
+
+                if operation_type == "get":
+                    # Clean up get operation results
+                    for result in results:
+                        if hasattr(result, "close"):
+                            await result.close()
+
+                elif operation_type == "set":
+                    # Clean up set operation results if necessary
+                    for result in results:
+                        # Perform any required cleanup for 'set' results
+                        pass  # No specific cleanup needed for set operations in this case
+
+                elif operation_type == "delete":
+                    # Clean up delete operation results if necessary
+                    for result in results:
+                        # Perform any required cleanup for 'delete' results
+                        pass  # No specific cleanup needed for delete operations in this case
+
+                else:
+                    logger.warning(f"Unknown operation type: {operation_type}")
+
+            logger.debug("Finished cleanup of pending batch results")
+        except Exception as e:
+            logger.error(f"Error during cleanup of pending results: {e}")

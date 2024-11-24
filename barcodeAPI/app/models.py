@@ -1,21 +1,64 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, DateTime, func, update, ForeignKey, select
-from app.database import Base
-from sqlalchemy.orm import relationship
 from datetime import datetime
+from typing import Optional, Union
 import pytz
+
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, UniqueConstraint, and_, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import relationship
+from enum import Enum
+
+from app.database import Base
+from app.utils import IDGenerator
+
+import logging
+
+logger = logging.getLogger(__name__)
+
+class UserTier(str, Enum):
+    UNAUTHENTICATED = str('unauthenticated')
+    BASIC = str('basic')
+    PREMIUM = str('premium')
 
 class User(Base):
     __tablename__ = "users"
-    id = Column(String, primary_key=True, index=True)
+
+    id = Column(String, primary_key=True, index=True, unique=True)
     username = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    tier = Column(String)
+    hashed_password = Column(String, nullable=True)
+    tier = Column(String, nullable=False, default=UserTier.UNAUTHENTICATED)
     ip_address = Column(String, nullable=True)
     remaining_requests = Column(Integer, default=0)
-    active_token = relationship("ActiveToken", back_populates="user", uselist=False)
     requests_today = Column(Integer, default=0)
+    last_request = Column(DateTime(timezone=True), nullable=True)
+    last_reset = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('username', name='uq_users_username'),
+        UniqueConstraint('id', name='uq_users_id'),
+    )
+
+    # Relationships
+    active_token = relationship("ActiveToken", back_populates="user", uselist=False)
+    usage = relationship("Usage", back_populates="user")
+
+    @classmethod
+    async def update_request_count(cls, db: AsyncSession):
+        current_time = datetime.now(pytz.utc)
+        cls.requests_today += 1
+        cls.last_request = current_time
+        current_remaining = cls.remaining_requests if isinstance(cls.remaining_requests, int) else 0
+        cls.remaining_requests = max(0, current_remaining - 1)
+        await db.commit()
+
+    @classmethod
+    async def reset_daily_counts(cls, db: AsyncSession):
+        current_time = datetime.now(pytz.utc)
+        cls.requests_today = 0
+        cls.last_reset = current_time
+        await db.commit()
 
     @classmethod
     async def get_user_by_id(cls, db: AsyncSession, user_id: str):
@@ -33,24 +76,32 @@ class User(Base):
 
 class ActiveToken(Base):
     __tablename__ = "active_tokens"
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, ForeignKey("users.id"), unique=True)
     token = Column(String, unique=True)
-    created_at = Column(DateTime)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+
+    # Relationship
     user = relationship("User", back_populates="active_token")
 
 class Usage(Base):
     __tablename__ = "usage"
 
     id = Column(Integer, primary_key=True, index=True)
-    tier = Column(String, nullable=True)
     user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+    tier = Column(String, nullable=True, default='unauthenticated')
     ip_address = Column(String, index=True, nullable=True)
     requests_today = Column(Integer, default=0)
+    remaining_requests = Column(Integer, default=0)
     last_request = Column(DateTime(timezone=True), server_default=func.now())
     last_reset = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    user = relationship("User", backref="usage")
+    # Relationship
+    user = relationship("User", back_populates="usage")
 
     @classmethod
     async def check_and_reset_usage(cls, db: AsyncSession, usage: 'Usage') -> 'Usage':
@@ -63,7 +114,11 @@ class Usage(Base):
             stmt = (
                 update(cls)
                 .where(cls.id == usage.id)
-                .values(requests_today=0, last_reset=current_time_utc)
+                .values(
+                    requests_today=0,
+                    last_reset=current_time_utc,
+                    remaining_requests=0
+                )
             )
             await db.execute(stmt)
             await db.refresh(usage)
@@ -83,11 +138,15 @@ class Usage(Base):
         )
         await db.execute(stmt)
         await db.refresh(usage)
-        logger.debug(f"Incremented usage for user_id={usage.user_id}: requests_today={usage.requests_today}, remaining_requests={usage.remaining_requests}")
         return usage
 
     @classmethod
-    async def get_usage(cls, db: AsyncSession, user_id: str = None, ip_address: str = None) -> 'Usage':
+    async def get_usage(
+        cls,
+        db: AsyncSession,
+        user_id: Optional[str] = None,
+        ip_address: Optional[str] = None
+    ) -> Union['Usage', None]:
         if user_id:
             stmt = select(cls).filter(cls.user_id == user_id)
         elif ip_address:
@@ -96,10 +155,9 @@ class Usage(Base):
             return None
 
         result = await db.execute(stmt)
-        return result.scalar_one_or_none()
-
+        return result.scalar()
 
     @classmethod
-    async def get_usage_by_id(cls, db: AsyncSession, usage_id: int) -> 'Usage':
+    async def get_usage_by_id(cls, db: AsyncSession, usage_id: int) -> 'Usage | None':
         result = await db.execute(select(cls).filter(cls.id == usage_id))
         return result.scalar_one_or_none()

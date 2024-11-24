@@ -44,7 +44,7 @@ export function SupportPageClient() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle>Contact Us</CardTitle>
-              <CardDescription>We'll get back to you within 24 hours</CardDescription>
+              <CardDescription>We&apos;ll get back to you within 24 hours</CardDescription>
             </CardHeader>
             <CardContent>
               <SupportForm />

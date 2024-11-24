@@ -7,7 +7,6 @@ from fastapi import Request, HTTPException, Depends
 from starlette.status import HTTP_429_TOO_MANY_REQUESTS, HTTP_500_INTERNAL_SERVER_ERROR
 from app.redis_manager import RedisManager
 from app.dependencies import get_client_ip
-from app.redis import get_redis_manager
 from app.lua_scripts import RATE_LIMIT_SCRIPT
 
 logger = logging.getLogger(__name__)

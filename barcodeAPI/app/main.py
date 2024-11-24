@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
             #     gc.set_debug(gc.DEBUG_LEAK)
 
             await initialize_redis_manager()
+            app.state.redis_manager = redis_manager
 
             # Store batch processor reference in app state
             app.state.batch_processor = redis_manager.batch_processor
@@ -87,7 +88,7 @@ async def lifespan(app: FastAPI):
                 if not processor.running:
                     logger.error(f"{priority} processor not running")
                     raise RuntimeError(f"{priority} processor failed to start")
-                logger.info(f"{priority} processor running")
+                logger.debug(f"{priority} processor running")
 
             # Initialize other services
             logger.info("Initializing database...")
@@ -138,13 +139,13 @@ async def lifespan(app: FastAPI):
                 # Stop batch processors
                 logger.info("Stopping batch processors...")
                 for priority, processor in redis_manager.batch_processor.processors.items():
-                    logger.info(f"Stopping {priority.name} priority batch processor...")
+                    logger.info(f"Stopping {priority} priority batch processor...")
                     await processor.stop()
 
                 # Sync data to database
                 logger.info("Syncing data to database...")
                 async for db in get_db():
-                    await redis_manager.sync_to_database(db)
+                    await redis_manager.sync_redis_to_db(db)
                     break
 
                 # Stop services
@@ -189,6 +190,7 @@ def custom_openapi():
     return app.openapi_schema
 
 app = FastAPI(
+    debug=settings.ENVIRONMENT == "development",
     title="the Barcode API",
     description="""
     The Barcode API allows you to generate various types of barcodes programmatically.
@@ -257,43 +259,12 @@ async def log_pool_status():
     while True:
         try:
             pool = redis_manager.redis.connection_pool
-            logger.info(f"Redis Pool Status - Max Connections: {pool.max_connections}, In Use: {len(pool._in_use_connections)}, Available: {len(pool._available_connections)}")
+            in_use = len(pool._available_connections)
+            available = pool.max_connections - in_use
+            logger.info(f"Redis Pool Status - Max Connections: {pool.max_connections}, In Use: {in_use}, Available: {available}")
         except Exception as e:
             logger.error(f"Error logging pool status: {e}")
         await asyncio.sleep(60)
-
-# Remove or comment out the startup and shutdown event handlers to prevent duplicate initialization
-# @app.on_event("startup")
-# async def startup():
-#     logger.info("Starting up...")
-#     try:
-#         if settings.ENVIRONMENT == "development":
-#             gc.set_debug(gc.DEBUG_LEAK)
-#         await initialize_redis_manager()
-#         await init_db()
-#         await FastAPILimiter.init(redis_manager.redis)
-#         await redis_manager.start()
-#         # ...other startup tasks...
-#     except Exception as e:
-#         logger.error(f"Error during startup: {e}", exc_info=True)
-#         raise
-
-# @app.on_event("shutdown")
-# async def shutdown_event():
-#     logger.info("Starting shutdown process...")
-#     try:
-#         for priority, processor in redis_manager.batch_processor.processors.items():
-#             logger.info(f"Stopping {priority.name} priority batch processor...")
-#             await processor.stop()
-#         await redis_manager.sync_to_database(db)
-#         await redis_manager.stop()
-#         await close_redis_connection()
-#         await close_db_connection()
-#         gc.collect()
-#         logger.info("Shutdown complete")
-#     except Exception as e:
-#         logger.error(f"Error during shutdown: {e}", exc_info=True)
-#         raise
 
 async def log_memory_usage():
     while True:
@@ -309,11 +280,14 @@ app.include_router(token.router)
 app.include_router(admin.router)
 
 @app.exception_handler(Exception)
-async def global_exception_handler(exc: Exception):
+async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"message": "An unexpected error occurred. Please try again later.", "error_type": "InternalServerError"}
+        content={
+            "message": "An unexpected error occurred. Please try again later.",
+            "error_type": "InternalServerError"
+        }
     )
 
 @app.exception_handler(BarcodeGenerationError)
@@ -327,7 +301,7 @@ async def barcode_generation_exception_handler(exc: BarcodeGenerationError):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(exc: RequestValidationError):
     logger.error(f"Validation error: {exc}")
-    error_messages = [f"{'.'.join(err['loc'])}: {err['msg']}" for err in exc.errors()]
+    error_messages = [f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in exc.errors()]
     return JSONResponse(
         status_code=400,
         content={"message": error_messages[0], "error_type": "ValidationError"}
@@ -336,7 +310,7 @@ async def validation_exception_handler(exc: RequestValidationError):
 @app.exception_handler(ValidationError)
 async def pydantic_validation_exception_handler(exc: ValidationError):
     logger.error(f"Pydantic validation error: {exc}")
-    error_messages = [f"{'.'.join(err['loc'])}: {err['msg']}" for err in exc.errors()]
+    error_messages = [f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in exc.errors()]
     return JSONResponse(
         status_code=400,
         content={"message": error_messages[0], "error_type": "ValidationError"}
@@ -345,8 +319,26 @@ async def pydantic_validation_exception_handler(exc: ValidationError):
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     logger.info(f"Request: {request.method} {request.url}")
+    try:
+        response = await call_next(request)
+        logger.info(f"Response status: {response.status_code}")
+        # Add logging for Redis connection stats
+        redis_stats = await app.state.redis_manager.get_connection_stats()
+        logger.debug(f"Redis Stats - Total Connections: {redis_stats.total_connections}, In Use: {redis_stats.in_use_connections}")
+        return response
+    except Exception as ex:
+        logger.error(f"Error processing request: {ex}", exc_info=True)
+        raise
+
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
     response = await call_next(request)
-    logger.info(f"Response status: {response.status_code}")
+    origin = request.headers.get("origin")
+
+    if origin in app.state.cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+
     return response
 
 async def add_rate_limit_headers(request: Request, call_next):
@@ -359,14 +351,5 @@ async def add_rate_limit_headers(request: Request, call_next):
 
     return response
 
-# Add a custom middleware to ensure CORS headers are always present
-@app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-    response = await call_next(request)
-    origin = request.headers.get("origin")
 
-    if origin in app.state.cors_origins:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
 
-    return response
