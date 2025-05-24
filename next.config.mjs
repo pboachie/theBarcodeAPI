@@ -6,7 +6,7 @@ const nextConfig = {
     },
     async rewrites() {
     const isDevelopment = process.env.NODE_ENV === 'development';
-    const apiUrl = isDevelopment ? 'http://localhost:3000/api' : 'https://thebarcodeapi.com/api';
+    const apiUrl = isDevelopment ? 'http://localhost:3000/api' : 'https://api.thebarcodeapi.com/api';
 
     return [
       {

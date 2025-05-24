@@ -1,6 +1,6 @@
 // barcodeService.ts
 
-const apiDomain = process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com';
+const apiDomain = process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://api.thebarcodeapi.com';
 
 export const generateBarcode = async (
   type: string,

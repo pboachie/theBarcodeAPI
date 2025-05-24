@@ -15,7 +15,7 @@ import { getBarcodeText } from './barcodeConfig';
 
 const apiDomain =
   process.env.NEXT_PUBLIC_API_DOMAIN ||
-  (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://thebarcodeapi.com');
+  (process.env.NODE_ENV === 'development' ? 'http://localhost:8000' : 'https://api.thebarcodeapi.com');
 
 const BarcodeGenerator: React.FC = () => {
   const [barcodeType, setBarcodeType] = useState<BarcodeType>('code128');

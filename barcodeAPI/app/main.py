@@ -26,9 +26,13 @@ from app.redis import redis_manager, close_redis_connection, initialize_redis_ma
 from app.schemas import SecurityScheme
 
 log_directory = settings.LOG_DIRECTORY
+if not os.path.isabs(log_directory):
+    # Make relative paths absolute based on application root
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    log_directory = os.path.join(base_dir, log_directory)
+
 os.makedirs(log_directory, exist_ok=True)
 
-# log_level = logging.INFO if settings.ENVIRONMENT == "production" else logging.DEBUG
 log_level = logging.DEBUG
 logging.basicConfig(
     level=log_level,
