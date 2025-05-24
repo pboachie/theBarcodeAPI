@@ -3,7 +3,7 @@
 export const siteConfig = {
   name: "The Barcode API",
   title: 'Free Barcode API - Generate EAN, GS1, UPC Barcodes Online',
-  description: 'Use our free barcode API to generate EAN, GS1, UPC, and other barcodes online. Fast, reliable, and easy to use.',
+  description: 'Use our free barcode API and MCP server to generate EAN, GS1, UPC, and other barcodes online. Fast, reliable, easy to use, and now with Model Context Protocol (MCP) support for AI integrations.',
   url: 'https://www.thebarcodeapi.com',
   type: 'website',
   locale: 'en_US',
@@ -129,6 +129,15 @@ export const siteConfig = {
     'Print Barcodes',
     'Download Barcodes',
     'Custom Barcodes',
-    'Digital Barcodes'
+    'Digital Barcodes',
+
+    // MCP & AI Keywords
+    "MCP",
+    "MCP Support",
+    "Model Context Protocol",
+    "AI Barcode Generation",
+    "LLM Barcode Tool",
+    "Claude Tool",
+    "AI Integration"
   ]
   } as const;

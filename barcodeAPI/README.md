@@ -114,3 +114,60 @@ The project is containerized and can be deployed using Docker and Docker Compose
 ## License
 
 This project is licensed under the MIT License - see the `LICENSE` file for details.
+
+## MCP Server for Barcode Generation
+
+The file `barcodeAPI/app/mcp_server.py` provides Model Context Protocol (MCP) tools for barcode generation. This allows compatible MCP clients to interface with the barcode generation capabilities of this application.
+
+### Running the Server Directly
+
+You can run the MCP server directly from the root directory of the project (the directory containing the `barcodeAPI` folder) using the following command:
+
+```bash
+python -m barcodeAPI.app.mcp_server
+```
+
+The server communicates over `stdio` (standard input/output).
+
+### Client Configuration Example
+
+A generic MCP client might be configured to launch this server using a JSON configuration similar to the following:
+
+```json
+{
+    "mcpServers": {
+        "barcode_generator_mcp": {
+            "command": "python",
+            "args": [
+                "-m",
+                "barcodeAPI.app.mcp_server"
+            ],
+            "working_directory": "/path/to/your/project/root"
+        }
+    }
+}
+```
+
+**Notes:**
+- `"barcode_generator_mcp"` is the name provided during `FastMCP` initialization in `mcp_server.py`.
+- Replace `"/path/to/your/project/root"` with the actual absolute path to the root directory of this project (i.e., the directory where the `barcodeAPI` folder is located).
+
+### Testing the MCP Server
+
+Unit tests for the MCP server are located in `barcodeAPI/app/tests/test_mcp_server.py`. You can run these tests from the project root directory using pytest:
+
+```bash
+pytest barcodeAPI/app/tests/test_mcp_server.py
+```
+
+Alternatively, if pytest is configured to discover tests (e.g., via `pyproject.toml` or `pytest.ini`), you might be able to run all tests, including MCP server tests, with a simple:
+
+```bash
+pytest
+```
+
+To test the MCP server with a real MCP client, you would:
+1. Ensure the server can be run, e.g., `python -m barcodeAPI.app.mcp_server` from the project root.
+2. Configure your MCP client to connect to this server, using the details provided in the "Client Configuration Example" section above.
+3. Invoke the `generate_barcode_mcp` tool through your MCP client's interface, providing the necessary arguments (data, format, etc.).
+4. Observe the output in your client, which should be a base64 encoded image string on success, or an error message on failure.

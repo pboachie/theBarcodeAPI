@@ -162,6 +162,9 @@ const BarcodeGenerator: React.FC = () => {
                                 <span className="text-green-500">*</span>
                             )}
                         </CardTitle>
+                        <p className="text-center text-muted-foreground text-sm mt-1">
+                            The first free barcode generator with MCP (Model Context Protocol) support.
+                        </p>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-6">
                         <div className="flex flex-col lg:flex-row gap-6">
