@@ -9,8 +9,6 @@ import json
 
 # Initialize logger
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO) # Basic config for logging
-
 # Initialize FastMCP
 mcp = FastMCP("barcode_generator_mcp")
 
