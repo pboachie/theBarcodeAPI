@@ -6,6 +6,8 @@ Welcome to theBarcodeAPI - Your go-to solution for barcode generation and proces
 
 theBarcodeAPI is a powerful and flexible showcase website designed to demonstrate various barcode-related operations. Whether you need to generate barcodes, decode existing ones, or integrate barcode functionality into your applications, theBarcodeAPI has got you covered.
 
+**Try it live at: [https://thebarcodeapi.com/](https://thebarcodeapi.com/)**
+
 ## Features
 
 - Generate multiple barcode formats (e.g., QR, Code128, EAN-13)
