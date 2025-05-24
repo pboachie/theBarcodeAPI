@@ -133,7 +133,9 @@ const structuredData: StructuredData = {
     "RESTful API",
     "No registration required",
     "High resolution output",
-    "Customizable options"
+    "Customizable options",
+    "Model Context Protocol (MCP) Support",
+    "AI Tool Integration"
   ],
   "mainEntityOfPage": {
     "@type": "WebPage",
