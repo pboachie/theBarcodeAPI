@@ -5,6 +5,7 @@ from barcodeAPI.app.schemas import BarcodeFormatEnum, BarcodeImageFormatEnum
 from barcodeAPI.app.mcp_server import generate_barcode_mcp
 from barcodeAPI.app.barcode_generator import BarcodeGenerationError # Ensure this is the correct path
 import base64
+import json
 
 @pytest.mark.asyncio
 async def test_generate_barcode_mcp_success():
@@ -43,16 +44,21 @@ async def test_generate_barcode_mcp_generation_error():
     with patch('barcodeAPI.app.mcp_server.generate_barcode_image', new_callable=MagicMock) as mock_generate_image:
         # Configure the mock to be an async function that raises the error
         async def async_mock_raise_error(*args, **kwargs):
-            raise BarcodeGenerationError("Test generation error", "test_error_type")
+            # Using the specific error message and type as per instructions
+            raise BarcodeGenerationError("Test error", "TestBarcodeErrorType")
         mock_generate_image.side_effect = async_mock_raise_error
 
         result = await generate_barcode_mcp(
             data="error_test",
             format=BarcodeFormatEnum.ean13
         )
-
-        assert result.startswith("Error generating barcode:")
-        assert "Test generation error" in result
+        
+        error_response = json.loads(result)
+        
+        assert "error_type" in error_response
+        assert error_response["error_type"] == "TestBarcodeErrorType"
+        assert "message" in error_response
+        assert error_response["message"] == "Test error"
         mock_generate_image.assert_called_once()
 
 @pytest.mark.asyncio
@@ -63,7 +69,8 @@ async def test_generate_barcode_mcp_unexpected_error():
     """
     with patch('barcodeAPI.app.mcp_server.generate_barcode_image', new_callable=MagicMock) as mock_generate_image:
         async def async_mock_raise_unexpected_error(*args, **kwargs):
-            raise Exception("Unexpected test error")
+            # Using the specific error message as per instructions
+            raise Exception("Test unexpected error")
         mock_generate_image.side_effect = async_mock_raise_unexpected_error
 
         result = await generate_barcode_mcp(
@@ -71,6 +78,11 @@ async def test_generate_barcode_mcp_unexpected_error():
             format=BarcodeFormatEnum.upca
         )
         
-        assert result.startswith("Unexpected error:")
-        assert "Unexpected test error" in result
+        error_response = json.loads(result)
+
+        assert "error_type" in error_response
+        assert error_response["error_type"] == "UnexpectedError"
+        assert "message" in error_response
+        # Ensuring the message matches the format from mcp_server.py
+        assert error_response["message"] == "An unexpected error occurred: Test unexpected error"
         mock_generate_image.assert_called_once()

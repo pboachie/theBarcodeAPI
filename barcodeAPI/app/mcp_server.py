@@ -5,6 +5,7 @@ from io import BytesIO
 from .schemas import BarcodeFormatEnum, BarcodeImageFormatEnum, BarcodeRequest
 from .barcode_generator import generate_barcode_image, BarcodeGenerationError
 import logging
+import json
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -118,10 +119,10 @@ async def generate_barcode_mcp(
 
     except BarcodeGenerationError as e:
         logger.error(f"MCP Tool: Barcode generation error for data='{data}': {str(e)}")
-        return f"Error generating barcode: {str(e)}"
+        return json.dumps({"error_type": e.error_type, "message": e.message})
     except Exception as e:
         logger.error(f"MCP Tool: Unexpected error for data='{data}': {str(e)}")
-        return f"Unexpected error: {str(e)}"
+        return json.dumps({"error_type": "UnexpectedError", "message": f"An unexpected error occurred: {str(e)}"})
 
 if __name__ == "__main__":
     logger.info("Starting MCP server for barcode generation...")
