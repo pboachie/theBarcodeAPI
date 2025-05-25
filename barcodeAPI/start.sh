@@ -37,10 +37,13 @@ fi
 
 if [ ! -d "/app/logs" ]; then
     mkdir -p /app/logs
-    chown -R appuser:appuser /app/logs
-    chmod -R 775 /app/logs
 fi
-
+# Ensure the log file exists and is owned by appuser
+if [ ! -f "/app/logs/app.log" ]; then
+    touch /app/logs/app.log
+fi
+chown -R appuser:appuser /app/logs
+chmod -R 775 /app/logs
 # Wait for the database to be ready
 print_header "Database Check"
 if check_db_connection; then

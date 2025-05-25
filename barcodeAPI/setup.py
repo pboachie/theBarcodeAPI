@@ -26,5 +26,7 @@ setup(
         'aiohttp==3.10.10',
         'fastnanoid==0.4.1',
         'httpx==0.27.2',
+        'mcp[cli]==1.9.1',
+        'sse-starlette==2.3.5',
     ],
 )

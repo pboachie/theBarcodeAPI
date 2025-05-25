@@ -3,7 +3,7 @@ import asyncio
 from unittest.mock import patch, MagicMock
 from barcodeAPI.app.schemas import BarcodeFormatEnum, BarcodeImageFormatEnum
 from barcodeAPI.app.mcp_server import generate_barcode_mcp
-from barcodeAPI.app.barcode_generator import BarcodeGenerationError # Ensure this is the correct path
+from barcodeAPI.app.barcode_generator import BarcodeGenerationError
 import base64
 import json
 
@@ -14,7 +14,7 @@ async def test_generate_barcode_mcp_success():
     Mocks generate_barcode_image to return sample image bytes.
     """
     mock_image_bytes = b'fakeimagedata'
-    
+
     # Path to the function to be mocked is within mcp_server where it's called
     with patch('barcodeAPI.app.mcp_server.generate_barcode_image', new_callable=MagicMock) as mock_generate_image:
         # Configure the mock to be an async function that returns our fake image bytes
@@ -25,7 +25,7 @@ async def test_generate_barcode_mcp_success():
         result = await generate_barcode_mcp(
             data="test12345",
             format=BarcodeFormatEnum.code128,
-            image_format=BarcodeImageFormatEnum.PNG # Ensure this is passed for the data URI
+            image_format=BarcodeImageFormatEnum.PNG
         )
 
         assert result.startswith("data:image/png;base64,")
@@ -52,9 +52,9 @@ async def test_generate_barcode_mcp_generation_error():
             data="error_test",
             format=BarcodeFormatEnum.ean13
         )
-        
+
         error_response = json.loads(result)
-        
+
         assert "error_type" in error_response
         assert error_response["error_type"] == "TestBarcodeErrorType"
         assert "message" in error_response
@@ -77,7 +77,7 @@ async def test_generate_barcode_mcp_unexpected_error():
             data="unexpected_error_test",
             format=BarcodeFormatEnum.upca
         )
-        
+
         error_response = json.loads(result)
 
         assert "error_type" in error_response
