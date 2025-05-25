@@ -1,5 +1,5 @@
-from barcodeAPI.app import __version__, __title__
-from barcodeAPI.app.config import settings
+from app import __version__, __title__
+from app.config import settings
 from dotenv import load_dotenv
 
 load_dotenv()

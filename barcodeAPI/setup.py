@@ -8,7 +8,7 @@ setup(
     install_requires=[
         'fastapi==0.115.4',
         'uvicorn==0.32.0',
-        'starlette==0.41.2',
+        'starlette==0.41.3',
         'pydantic==2.9.2',
         'pydantic-settings==2.6.1',
         'SQLAlchemy[asyncio]==2.0.36',
@@ -20,7 +20,7 @@ setup(
         'fastapi-limiter==0.1.6',
         'redis[hiredis]==5.2.0',
         'python-barcode==0.15.1',
-        'Pillow-SIMD>=9.0.0.post0',
+        'Pillow>=10.0.0',
         'python-multipart==0.0.17',
         'pytz==2024.2',
         'aiohttp==3.10.10',

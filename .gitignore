@@ -30,9 +30,15 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Python cache and compiled files
 *.pyc
-/__pycache__/*
+**/__pycache__/
 
+# Test & Coverage artifacts
+**/pytest_cache/
+.coverage*
+
+# Log files
 *.log
 *.env
 *.db
