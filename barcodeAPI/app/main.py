@@ -16,9 +16,12 @@ from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 
 import logging
-from app.api import barcode, usage, health, token, admin, mcp
+from app.api import barcode, usage, health, token, admin, mcp as mcp_router # renamed to avoid conflict
 from app.config import settings
 from app.barcode_generator import BarcodeGenerationError
+from app.sse_transport import SseTransport # Added
+from app.mcp_server import generate_barcode_mcp, handle_initialize # Added
+from mcp.server.fastmcp import FastMCP # Added
 from app.database import close_db_connection, init_db, get_db
 from app.redis import redis_manager, close_redis_connection, initialize_redis_manager
 from app.schemas import SecurityScheme
@@ -95,6 +98,23 @@ async def lifespan(app: FastAPI):
             # Initialize other services
             logger.info("Initializing database...")
             await init_db()
+
+            # MCP Server and SSE Transport setup
+            logger.info("Initializing SSE Transport and FastMCP server...")
+            sse_transport = SseTransport()
+            mcp_instance = FastMCP(
+                name="barcode_generator_mcp_main", # Different name for clarity
+                transport=sse_transport,
+                title="Barcode Generator MCP Service (Main App)",
+                description="Handles barcode generation requests via MCP.",
+                version="1.0"
+            )
+            mcp_instance.add_tool(generate_barcode_mcp, name="generate_barcode_mcp")
+            mcp_instance.on_initialize = handle_initialize
+            
+            app.state.sse_transport = sse_transport
+            app.state.mcp_instance = mcp_instance
+            logger.info("SSE Transport and FastMCP server initialized and stored in app.state.")
 
             logger.info("Initializing rate limiter...")
             await FastAPILimiter.init(redis_manager.redis)
@@ -280,7 +300,7 @@ app.include_router(barcode.router)
 app.include_router(usage.router)
 app.include_router(token.router)
 app.include_router(admin.router)
-app.include_router(mcp.router)
+app.include_router(mcp_router.router) # Use renamed mcp_router
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
