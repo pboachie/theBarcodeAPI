@@ -4,8 +4,11 @@ import asyncio
 from unittest.mock import MagicMock, AsyncMock, patch
 import uuid
 import json # For SSE data parsing
+from contextlib import asynccontextmanager # Added
 
 from fastapi import FastAPI, status # status will be used for explicit status codes
+from fastapi_limiter import FastAPILimiter # Added
+# from redis.asyncio import Redis as AsyncRedisClient # For a real mock, but MagicMock is simpler here
 from app.api.mcp import router as mcp_api_router # The router from your API file
 from app.sse_transport import SseTransport # For spec in MagicMock
 from mcp.server.fastmcp import FastMCP # For spec in MagicMock
@@ -27,23 +30,27 @@ def mock_mcp_instance():
     mock.process_request = AsyncMock()
     return mock
 
+# Removed mock_fastapi_limiter_redis fixture
+
 @pytest.fixture
-def test_app(mock_sse_transport, mock_mcp_instance):
+def test_app(mock_sse_transport, mock_mcp_instance): # Remains not async
     app = FastAPI()
+    # No FastAPILimiter.init here or lifespan for it, autouse fixture handles it globally
     app.include_router(mcp_api_router)
     app.state.sse_transport = mock_sse_transport
     app.state.mcp_instance = mock_mcp_instance
     return app
 
 @pytest.fixture
-async def client(test_app):
+async def client(test_app): 
+    # app from non-async fixture test_app is used directly
     async with httpx.AsyncClient(app=test_app, base_url="http://test") as ac:
         yield ac
 
 # --- Test Cases for GET /sse ---
 
-@pytest.mark.asyncio
-async def test_sse_connect_successful(client: httpx.AsyncClient, mock_sse_transport: MagicMock):
+@patch('app.api.mcp.rate_limit', new_callable=MagicMock)
+async def test_sse_connect_successful(mock_rate_limit_decorator, client: httpx.AsyncClient, mock_sse_transport: MagicMock):
     """Test successful SSE connection and client_id event."""
     # Patch uuid.uuid4 to return a predictable client_id
     with patch('app.api.mcp.uuid.uuid4', return_value=MagicMock(hex=TEST_CLIENT_ID)):
@@ -72,7 +79,8 @@ async def test_sse_connect_successful(client: httpx.AsyncClient, mock_sse_transp
     # remove_client will be tested in test_sse_client_disconnect_removes_client
 
 @pytest.mark.asyncio
-async def test_sse_connect_missing_app_state_sse_transport(test_app: FastAPI, mock_mcp_instance: MagicMock):
+@patch('app.api.mcp.rate_limit', new_callable=MagicMock)
+async def test_sse_connect_missing_app_state_sse_transport(mock_rate_limit_decorator, test_app: FastAPI, mock_mcp_instance: MagicMock):
     """Test SSE connection failure when sse_transport is missing in app.state."""
     # Remove sse_transport from a fresh app instance for this specific test
     app_no_sse = FastAPI()
@@ -101,7 +109,8 @@ async def test_sse_connect_missing_app_state_sse_transport(test_app: FastAPI, mo
 
 
 @pytest.mark.asyncio
-async def test_sse_client_disconnect_removes_client(client: httpx.AsyncClient, mock_sse_transport: MagicMock):
+@patch('app.api.mcp.rate_limit', new_callable=MagicMock)
+async def test_sse_client_disconnect_removes_client(mock_rate_limit_decorator, client: httpx.AsyncClient, mock_sse_transport: MagicMock):
     """Test that a client disconnecting triggers remove_client."""
     with patch('app.api.mcp.uuid.uuid4', return_value=MagicMock(hex=TEST_CLIENT_ID)):
         async with client.stream("GET", "/sse") as response:
@@ -123,7 +132,8 @@ async def test_sse_client_disconnect_removes_client(client: httpx.AsyncClient, m
 # --- Test Cases for POST /mcp/cmd ---
 
 @pytest.mark.asyncio
-async def test_mcp_cmd_successful(client: httpx.AsyncClient, mock_sse_transport: MagicMock, mock_mcp_instance: MagicMock):
+@patch('app.api.mcp.rate_limit', new_callable=MagicMock)
+async def test_mcp_cmd_successful(mock_rate_limit_decorator, client: httpx.AsyncClient, mock_sse_transport: MagicMock, mock_mcp_instance: MagicMock):
     """Test successful MCP command submission."""
     request_body = {"jsonrpc": "2.0", "method": "test_method", "params": {}, "id": 1}
     headers = {"X-Client-ID": TEST_CLIENT_ID}
@@ -140,7 +150,8 @@ async def test_mcp_cmd_successful(client: httpx.AsyncClient, mock_sse_transport:
     assert mock_mcp_instance.process_request.call_args[0][1] == TEST_CLIENT_ID
 
 @pytest.mark.asyncio
-async def test_mcp_cmd_missing_header(client: httpx.AsyncClient, mock_mcp_instance: MagicMock):
+@patch('app.api.mcp.rate_limit', new_callable=MagicMock)
+async def test_mcp_cmd_missing_header(mock_rate_limit_decorator, client: httpx.AsyncClient, mock_mcp_instance: MagicMock):
     """Test MCP command submission without X-Client-ID header."""
     request_body = {"jsonrpc": "2.0", "method": "test_method"}
     
@@ -150,7 +161,8 @@ async def test_mcp_cmd_missing_header(client: httpx.AsyncClient, mock_mcp_instan
     mock_mcp_instance.process_request.assert_not_awaited()
 
 @pytest.mark.asyncio
-async def test_mcp_cmd_client_not_connected(client: httpx.AsyncClient, mock_sse_transport: MagicMock, mock_mcp_instance: MagicMock):
+@patch('app.api.mcp.rate_limit', new_callable=MagicMock)
+async def test_mcp_cmd_client_not_connected(mock_rate_limit_decorator, client: httpx.AsyncClient, mock_sse_transport: MagicMock, mock_mcp_instance: MagicMock):
     """Test MCP command submission when client is not connected (is_client_connected returns False)."""
     mock_sse_transport.is_client_connected.return_value = False
     request_body = {"jsonrpc": "2.0", "method": "test_method"}
@@ -163,7 +175,8 @@ async def test_mcp_cmd_client_not_connected(client: httpx.AsyncClient, mock_sse_
     mock_mcp_instance.process_request.assert_not_awaited()
 
 @pytest.mark.asyncio
-async def test_mcp_cmd_missing_app_state_mcp_instance(test_app: FastAPI, mock_sse_transport: MagicMock):
+@patch('app.api.mcp.rate_limit', new_callable=MagicMock)
+async def test_mcp_cmd_missing_app_state_mcp_instance(mock_rate_limit_decorator, test_app: FastAPI, mock_sse_transport: MagicMock):
     """Test MCP command when mcp_instance is missing in app.state."""
     app_no_mcp = FastAPI()
     app_no_mcp.include_router(mcp_api_router)
@@ -184,8 +197,9 @@ async def test_mcp_cmd_missing_app_state_mcp_instance(test_app: FastAPI, mock_ss
     # So, if sse_transport is present, is_client_connected *might* be called if mcp_instance is checked later
     # Let's check the current implementation: mcp_instance is retrieved first.
 
+@patch('app.api.mcp.rate_limit', new_callable=MagicMock)
 @pytest.mark.asyncio
-async def test_mcp_cmd_missing_app_state_sse_transport_for_check(test_app: FastAPI, mock_mcp_instance: MagicMock):
+async def test_mcp_cmd_missing_app_state_sse_transport_for_check(mock_rate_limit, test_app: FastAPI, mock_mcp_instance: MagicMock):
     """Test MCP command when sse_transport is missing (for is_client_connected call)."""
     app_no_sse_for_cmd = FastAPI()
     app_no_sse_for_cmd.include_router(mcp_api_router)
@@ -204,7 +218,8 @@ async def test_mcp_cmd_missing_app_state_sse_transport_for_check(test_app: FastA
     mock_mcp_instance.process_request.assert_not_awaited()
     
 @pytest.mark.asyncio
-async def test_sse_connect_add_client_failure(client: httpx.AsyncClient, mock_sse_transport: MagicMock):
+@patch('app.api.mcp.rate_limit', new_callable=MagicMock)
+async def test_sse_connect_add_client_failure(mock_rate_limit_decorator, client: httpx.AsyncClient, mock_sse_transport: MagicMock):
     """Test SSE connection when sse_transport.add_client fails."""
     mock_sse_transport.add_client.side_effect = Exception("Failed to add client")
     
@@ -228,7 +243,8 @@ async def test_sse_connect_add_client_failure(client: httpx.AsyncClient, mock_ss
 
 
 @pytest.mark.asyncio
-async def test_mcp_cmd_process_request_failure(client: httpx.AsyncClient, mock_sse_transport: MagicMock, mock_mcp_instance: MagicMock):
+@patch('app.api.mcp.rate_limit', new_callable=MagicMock)
+async def test_mcp_cmd_process_request_failure(mock_rate_limit_decorator, client: httpx.AsyncClient, mock_sse_transport: MagicMock, mock_mcp_instance: MagicMock):
     """Test MCP command when mcp_instance.process_request fails."""
     mock_mcp_instance.process_request.side_effect = Exception("Processing error")
     
