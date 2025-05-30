@@ -83,26 +83,6 @@ services:
         limits:
           memory: 1G
 
-  mcp:
-    build:
-      context: .
-      dockerfile: ./Dockerfile
-      args:
-        - PYTHON_ENV=${ENVIRONMENT}
-    command: python -m app.mcp_server --transport tcp --host 0.0.0.0 --port 9000
-    ports:
-      - "9000:9000"
-    env_file:
-      - .env
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - default
-
 networks:
   default:
     name: barcodeapi_network

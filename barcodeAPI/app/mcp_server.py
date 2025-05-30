@@ -1,24 +1,18 @@
-from typing import Optional # RpcError import removed
+from typing import Optional
 import base64
-# from io import BytesIO # Not used directly in the new version
-from mcp.shared.exceptions import McpError # Added
-from mcp.types import ErrorData # Added
+from mcp.shared.exceptions import McpError
+from mcp.types import ErrorData
 from .schemas import BarcodeFormatEnum, BarcodeImageFormatEnum, BarcodeRequest
 from .barcode_generator import generate_barcode_image, BarcodeGenerationError
 import logging
-# import json # Not used directly
-# import argparse # Not used directly
-# from app.api import mcp as mcp_api_router # Not used directly
-# from fastapi import FastAPI # Not used directly
-# from app.sse_transport import SseTransport # SseTransport is not instantiated here
 
-# Configure basic logging (can be kept or moved to main)
+# Configure basic logging (todo: move to main)
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     force=True
 )
-# Explicitly set mcp library loggers to DEBUG (can be kept or moved to main)
+# Explicitly set mcp library loggers to DEBUG (todo: move to main)
 logging.getLogger("mcp").setLevel(logging.DEBUG)
 logging.getLogger("mcp.server").setLevel(logging.DEBUG)
 logging.getLogger("mcp.shared").setLevel(logging.DEBUG)
@@ -27,15 +21,13 @@ logging.getLogger("mcp.shared").setLevel(logging.DEBUG)
 # Initialize logger for this module
 logger = logging.getLogger(__name__)
 
-# This function can be imported and registered with an MCP instance in main.py
+# todo: move to main registered with an MCP instance in main.py
 async def handle_initialize(params, client_info, session):
     """Custom handler for MCP initialize event."""
     logger.info(f"MCP Server: on_initialize triggered. ClientInfo: {client_info}, Params: {params}")
-    # You can store client_info or session-specific data here if needed
     # For SSE, client_info will contain the client_id passed to process_request
     return {}
 
-# The tool function, no longer decorated here. Will be registered in main.py.
 async def generate_barcode_mcp(
     data: str,
     format: BarcodeFormatEnum,
@@ -98,10 +90,9 @@ async def generate_barcode_mcp(
             'image_format': image_format.value,
             'dpi': dpi
         }
-        if show_text and text_content: # Only add text_content to writer_options if show_text is True and text_content is provided
+        if show_text and text_content:
             writer_options['text_content'] = text_content
-        
-        # Remove None values from writer_options as generate_barcode_image expects them to be absent if not set
+
         writer_options = {k: v for k, v in writer_options.items() if v is not None}
 
 
@@ -118,6 +109,3 @@ async def generate_barcode_mcp(
         logger.error(f"MCP Tool: Unexpected error for data='{data}': {str(e)}", exc_info=True)
         error_payload = ErrorData(code=-32001, message=f"An unexpected error occurred: {str(e)}", data={"type": "UnexpectedError"})
         raise McpError(error_payload)
-
-# The if __name__ == "__main__": block has been removed.
-# This file now primarily defines the tool logic and can be imported by main.py.

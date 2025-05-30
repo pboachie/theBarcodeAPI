@@ -28,7 +28,7 @@ async def get_client_id_from_sse(client: httpx.AsyncClient, sse_response: httpx.
             break
         elif event.event == "error": # Handle server config error during SSE setup
             print_assertion(f"SSE connection failed with server error: {event.data}", False)
-            
+
     if client_id is None:
         print_assertion("Failed to receive client_id from SSE stream.", False)
     return client_id
@@ -42,7 +42,7 @@ async def scenario_1_successful_barcode_generation():
                 if sse_response.status_code != 200:
                     raw_content = await sse_response.aread()
                     print_assertion(f"SSE connection failed with status {sse_response.status_code}. Response: {raw_content.decode()}", False)
-                
+
                 client_id = await get_client_id_from_sse(client, sse_response)
 
                 print_step(f"Sending POST request to CMD endpoint: {CMD_URL}")
@@ -59,7 +59,7 @@ async def scenario_1_successful_barcode_generation():
                     "id": request_id
                 }
                 headers = {"X-Client-ID": client_id, "Content-Type": "application/json"}
-                
+
                 cmd_response = await client.post(CMD_URL, json=mcp_request, headers=headers)
                 print_assertion(f"CMD endpoint response status is 202", cmd_response.status_code == 202)
                 if cmd_response.status_code != 202:
@@ -81,12 +81,12 @@ async def scenario_1_successful_barcode_generation():
                                 print_assertion("Result starts with 'data:image/png;base64,'", result_value.startswith("data:image/png;base64,"))
                                 print(f"Received base64 image string (first 50 chars): {result_value[:50]}...")
                             mcp_response_received = True
-                            break 
+                            break
                         except json.JSONDecodeError:
                             print_assertion("Failed to decode JSON from mcp_response data", False)
                         except Exception as e:
                             print_assertion(f"Error processing mcp_response: {e}", False)
-                
+
                 print_assertion("MCP response was received via SSE", mcp_response_received)
                 print_step("Closing SSE connection for Scenario 1.")
             # SSE connection closed automatically here
@@ -118,7 +118,7 @@ async def scenario_2_client_disconnects():
                 "id": str(uuid.uuid4())
             }
             headers = {"X-Client-ID": client_id, "Content-Type": "application/json"}
-            
+
             cmd_response = await client.post(CMD_URL, json=mcp_request, headers=headers)
             print_assertion(f"CMD endpoint response status is 404 (Client not connected)", cmd_response.status_code == 404)
             if cmd_response.status_code != 404:
@@ -150,7 +150,7 @@ async def scenario_3_invalid_mcp_command():
                     "id": request_id
                 }
                 headers = {"X-Client-ID": client_id, "Content-Type": "application/json"}
-                
+
                 cmd_response = await client.post(CMD_URL, json=mcp_request, headers=headers)
                 print_assertion(f"CMD endpoint response status is 202", cmd_response.status_code == 202)
                 if cmd_response.status_code != 202:
@@ -175,7 +175,7 @@ async def scenario_3_invalid_mcp_command():
                             print_assertion("Failed to decode JSON from mcp_response data for error", False)
                         except Exception as e:
                             print_assertion(f"Error processing mcp_response for error: {e}", False)
-                
+
                 print_assertion("MCP error response was received via SSE", error_response_received)
                 print_step("Closing SSE connection for Scenario 3.")
             # SSE connection closed automatically here
@@ -186,11 +186,11 @@ async def scenario_3_invalid_mcp_command():
 
 async def main():
     print_step("Starting MCP Endpoint Integration Tests")
-    
+
     await scenario_1_successful_barcode_generation()
     await scenario_2_client_disconnects()
     await scenario_3_invalid_mcp_command()
-    
+
     print("\n[INFO] All scenarios completed.")
 
 if __name__ == "__main__":
@@ -200,4 +200,3 @@ if __name__ == "__main__":
     except Exception as e: # Should not happen if print_assertion exits
         print(f"[FATAL_ERROR] An unexpected error occurred at the top level: {e}")
         sys.exit(1)
-```
