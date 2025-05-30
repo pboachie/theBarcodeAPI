@@ -1,22 +1,8 @@
 // app/page.tsx
 
 import React from 'react';
-import dynamic from 'next/dynamic';
 import { Metadata } from 'next';
-
-const BarcodeGenerator = dynamic(
-  () => import('@/components/barcode/BarcodeGenerator'),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="container mx-auto p-4">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <p>Loading...</p>
-        </div>
-      </div>
-    ),
-  }
-);
+import BarcodePageClient from '@/components/barcode/BarcodePageClient';
 
 export const metadata: Metadata = {
   title: 'the Barcode API',
@@ -28,5 +14,5 @@ export const metadata: Metadata = {
 };
 
 export default function BarcodePage() {
-  return <BarcodeGenerator />;
+  return <BarcodePageClient />;
 }

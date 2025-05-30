@@ -33,48 +33,132 @@ class BatchPriority(str, Enum):
 
 class BarcodeFormatEnum(str, Enum):
     """
-    Supported barcode format types.
+    Comprehensive enumeration of supported barcode format types.
 
-    Each format has specific requirements and use cases:
-    - code128: General-purpose format supporting all 128 ASCII characters
-    - ean13: European Article Number (13 digits)
-    - code39: Alphanumeric format widely used in logistics
+    This enum defines all barcode formats supported by theBarcodeAPI, each with
+    specific requirements, constraints, and industry use cases.
+
+    Format Categories:
+    - **Linear Barcodes**: CODE128, CODE39, UPC, EAN series
+    - **Publishing Standards**: ISBN, ISSN for books and serials
+    - **Retail Standards**: UPC, EAN for product identification
+    - **Logistics Standards**: ITF, GS1 for supply chain management
+    - **Pharmaceutical**: PZN for German pharmaceutical products
+    - **Regional Standards**: JAN for Japanese markets
+
+    Data Length Requirements:
+    - Most formats have strict length requirements (see BarcodeFormats for details)
+    - Check digit calculation is automatic for applicable formats
+    - Some formats support variable length data (CODE128, GS1-128)
+
+    Performance Notes:
+    - CODE128 and CODE39 offer fastest generation times
+    - EAN/UPC formats include built-in validation
+    - GS1 formats support rich data encoding
     """
-    code128 = "code128"
-    code39 = "code39"
-    ean = "ean"
-    ean13 = "ean13"
-    ean14 = "ean14"
-    ean8 = "ean8"
-    gs1 = "gs1"
-    gs1_128 = "gs1_128"
-    gtin = "gtin"
-    isbn = "isbn"
-    isbn10 = "isbn10"
-    isbn13 = "isbn13"
-    issn = "issn"
-    itf = "itf"
-    jan = "jan"
-    pzn = "pzn"
-    upc = "upc"
-    upca = "upca"
+
+    # General purpose linear formats
+    code128 = "code128"  # Variable length, alphanumeric + symbols, fastest generation
+    code39 = "code39"    # Fixed length, alphanumeric only, widely compatible
+
+    # European Article Number (EAN) formats for retail
+    ean = "ean"          # Alias for EAN-13, most common retail format
+    ean13 = "ean13"      # 13-digit European retail standard
+    ean14 = "ean14"      # 14-digit shipping container identification
+    ean8 = "ean8"        # 8-digit compact retail format for small packages
+
+    # GS1 standards for supply chain and logistics
+    gs1 = "gs1"          # General GS1 format with application identifiers
+    gs1_128 = "gs1_128"  # GS1-128 shipping and logistics standard
+    gtin = "gtin"        # Global Trade Item Number (8, 12, 13, or 14 digits)
+
+    # Publishing industry standards
+    isbn = "isbn"        # International Standard Book Number (13-digit)
+    isbn10 = "isbn10"    # Legacy 10-digit ISBN format
+    isbn13 = "isbn13"    # Modern 13-digit ISBN format
+    issn = "issn"        # International Standard Serial Number for periodicals
+
+    # Specialized formats
+    itf = "itf"          # Interleaved 2 of 5, commonly for GTIN-14
+    jan = "jan"          # Japanese Article Number (equivalent to EAN-13)
+    pzn = "pzn"          # Pharmazentralnummer for German pharmaceutical products
+
+    # Universal Product Code (UPC) formats for North American retail
+    upc = "upc"          # Universal Product Code (12-digit)
+    upca = "upca"        # UPC-A standard format (12-digit with check digit)
 
 class BarcodeImageFormatEnum(str, Enum):
-    BMP = "BMP"
-    GIF = "GIF"
-    JPEG = "JPEG"
-    # MSP = "MSP"
-    PCX = "PCX"
-    PNG = "PNG"
-    TIFF = "TIFF"
-    # XBM = "XBM"
+    """
+    Supported image output formats for barcode generation.
+
+    Each format offers different benefits:
+    - **PNG**: Best for web use, supports transparency, lossless compression
+    - **JPEG**: Smaller file sizes, good for high-resolution prints, lossy compression
+    - **BMP**: Uncompressed format, largest file size, excellent quality
+    - **GIF**: Legacy format, limited colors, supports animation
+    - **TIFF**: Professional printing standard, excellent quality, lossless
+    - **PCX**: Legacy format, rarely used in modern applications
+
+    Recommended formats:
+    - Web display: PNG (default)
+    - Print applications: TIFF or PNG
+    - Small file sizes: JPEG
+    - Legacy systems: BMP
+    """
+    BMP = "BMP"    # Windows Bitmap - uncompressed, large file size, excellent quality
+    GIF = "GIF"    # Graphics Interchange Format - legacy, limited colors
+    JPEG = "JPEG"  # Joint Photographic Experts Group - compressed, smaller files
+    PCX = "PCX"    # Picture Exchange - legacy DOS format, rarely used
+    PNG = "PNG"    # Portable Network Graphics - lossless, web standard, supports transparency
+    TIFF = "TIFF"  # Tagged Image File Format - professional printing standard
+    # MSP = "MSP"  # Microsoft Paint format - deprecated
+    # XBM = "XBM"  # X11 Bitmap format - deprecated
 
 class BarcodeFormat(BaseModel):
-    name: str
-    code: str
-    description: str
-    options: Dict[str, str] = {}
-    max_length: Optional[str] = None
+    """
+    Detailed specification for a barcode format type.
+
+    This model provides comprehensive information about each supported
+    barcode format including technical specifications, options, and constraints.
+    """
+    name: str = Field(
+        ...,
+        description="Human-readable name of the barcode format",
+        min_length=1,
+        max_length=100,
+        json_schema_extra={"example": "Code 128"}
+    )
+    code: str = Field(
+        ...,
+        description="Machine-readable code identifier for the format",
+        min_length=1,
+        max_length=50,
+        pattern=r"^[a-z0-9_]+$",
+        json_schema_extra={"example": "code128"}
+    )
+    description: str = Field(
+        ...,
+        description="Detailed description of the format's purpose and characteristics",
+        min_length=1,
+        max_length=500,
+        json_schema_extra={"example": "Variable-length linear barcode supporting full ASCII character set"}
+    )
+    options: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Format-specific configuration options and their descriptions",
+        json_schema_extra={
+            "example": {
+                "add_checksum": "Add checksum digit for error detection (default: True)",
+                "text_below": "Display human-readable text below barcode (default: True)"
+            }
+        }
+    )
+    max_length: Optional[str] = Field(
+        None,
+        description="Maximum data length specification for this format",
+        max_length=200,
+        json_schema_extra={"example": "Variable (up to 48 characters in practice)"}
+    )
 
 class BarcodeFormats(BaseModel):
     formats: Dict[BarcodeFormatEnum, BarcodeFormat] = {
@@ -338,7 +422,11 @@ class BarcodeRequest(BaseModel):
                 "height": 100,
                 "show_text": True,
                 "module_width": 0.2,
-                "quiet_zone": 6.5
+                "quiet_zone": 6.5,
+                "image_format": "PNG",
+                "dpi": 200,
+                "background": "white",
+                "foreground": "black"
             }
         }
     }
@@ -377,71 +465,283 @@ class BarcodeRequest(BaseModel):
         return BarcodeFormats().formats[self.format].max_length
 
 class WriterOptions(BaseModel):
-    module_width: float = Field(default=0.2, description="The width of one barcode module in mm")
-    module_height: float = Field(default=15.0, description="The height of the barcode modules in mm")
-    quiet_zone: float = Field(default=6.5, description="Distance on the left and right from the border to the first/last barcode module in mm")
+    """
+    Configuration options for barcode writers.
+
+    This model defines the standard parameters that control barcode appearance
+    and formatting across different output formats.
+    """
+    module_width: float = Field(
+        default=0.2,
+        ge=0.1,
+        le=5.0,
+        description="The width of one barcode module in mm. Controls barcode thickness and readability."
+    )
+    module_height: float = Field(
+        default=15.0,
+        ge=5.0,
+        le=50.0,
+        description="The height of the barcode modules in mm. Affects scanning reliability."
+    )
+    quiet_zone: float = Field(
+        default=6.5,
+        ge=0.0,
+        le=20.0,
+        description="Distance on the left and right from the border to the first/last barcode module in mm"
+    )
     # font_path: str = Field(default="DejaVuSansMono", description="Path to the font file to be used")
-    font_size: int = Field(default=10, description="Font size of the text under the barcode in pt")
-    text_distance: float = Field(default=5.0, description="Distance between the barcode and the text under it in mm")
-    background: str = Field(default="white", description="The background color of the created barcode")
-    foreground: str = Field(default="black", description="The foreground and text color of the created barcode")
-    center_text: bool = Field(default=True, description="If true, the text is centered under the barcode; else left aligned")
+    font_size: int = Field(
+        default=10,
+        ge=6,
+        le=24,
+        description="Font size of the text under the barcode in pt"
+    )
+    text_distance: float = Field(
+        default=5.0,
+        ge=0.0,
+        le=15.0,
+        description="Distance between the barcode and the text under it in mm"
+    )
+    background: str = Field(
+        default="white",
+        max_length=50,
+        description="The background color of the created barcode (CSS color name or hex code)"
+    )
+    foreground: str = Field(
+        default="black",
+        max_length=50,
+        description="The foreground and text color of the created barcode (CSS color name or hex code)"
+    )
+    center_text: bool = Field(
+        default=True,
+        description="If true, the text is centered under the barcode; else left aligned"
+    )
 
 class SVGWriterOptions(WriterOptions):
-    compress: bool = Field(default=False, description="Boolean value to output a compressed SVG object (.svgz)")
+    """
+    SVG-specific writer options extending base WriterOptions.
+
+    Provides additional configuration for SVG barcode output format.
+    """
+    compress: bool = Field(
+        default=False,
+        description="Boolean value to output a compressed SVG object (.svgz)"
+    )
 
 class ImageWriterOptions(WriterOptions):
-    format: str = Field(default="PNG", description="The image file format (e.g., PNG, JPEG, BMP)")
-    dpi: int = Field(default=200, description="DPI to calculate the image size in pixels")
+    """
+    Image-specific writer options extending base WriterOptions.
+
+    Provides additional configuration for raster image formats (PNG, JPEG, BMP, etc.).
+    """
+    format: str = Field(
+        default="PNG",
+        description="The image file format (e.g., PNG, JPEG, BMP, TIFF, GIF)"
+    )
+    dpi: int = Field(
+        default=200,
+        ge=72,
+        le=600,
+        description="DPI (dots per inch) to calculate the image size in pixels. Higher DPI = better quality"
+    )
 
 class UsageResponse(BaseModel):
-    requests_today: int
-    requests_limit: int
-    remaining_requests: int
-    reset_time: datetime
+    """
+    API usage statistics response model.
+
+    Provides current usage information for rate limiting and quota management.
+    """
+    requests_today: int = Field(
+        ...,
+        ge=0,
+        description="Number of API requests made today"
+    )
+    requests_limit: int = Field(
+        ...,
+        ge=0,
+        description="Maximum number of requests allowed per day for this user tier"
+    )
+    remaining_requests: int = Field(
+        ...,
+        ge=0,
+        description="Number of requests remaining in the current period"
+    )
+    reset_time: datetime = Field(
+        ...,
+        description="UTC datetime when the usage counters will reset"
+    )
 
 class UsageRequest(BaseModel):
-    user_id: int
-    ip_address: str
+    """
+    Request model for tracking API usage.
+
+    Used internally to log and track user API usage for rate limiting.
+    """
+    user_id: int = Field(
+        ...,
+        ge=1,
+        description="Unique identifier for the user making the request"
+    )
+    ip_address: str = Field(
+        ...,
+        min_length=7,
+        max_length=45,  # IPv6 addresses can be up to 45 characters
+        description="IP address of the client making the request"
+    )
 
 class TierEnum(str, Enum):
-    basic = "basic"
-    standard = "standard"
-    premium = "premium"
+    """
+    User subscription tier levels with different API rate limits.
+
+    Tiers determine the daily request limits and feature access:
+    - **basic**: Entry-level tier with limited daily requests
+    - **standard**: Mid-tier with moderate request limits
+    - **premium**: Highest tier with maximum request limits and priority support
+    """
+    basic = "basic"       # Entry-level tier with basic rate limits
+    standard = "standard" # Standard tier with moderate rate limits
+    premium = "premium"   # Premium tier with highest rate limits
 
 class UserCreate(BaseModel):
-    username: str
-    password: str
-    tier: TierEnum = Field(..., description="User tier: basic, standard, or premium")
+    """
+    Model for creating new user accounts.
+
+    Used for user registration with validation for secure account creation.
+    """
+    username: str = Field(
+        ...,
+        min_length=3,
+        max_length=50,
+        pattern=r"^[a-zA-Z0-9_-]+$",
+        description="Unique username (3-50 characters, alphanumeric, underscore, hyphen only)"
+    )
+    password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="Password for the account (minimum 8 characters)"
+    )
+    tier: TierEnum = Field(
+        ...,
+        description="User subscription tier determining API limits and features"
+    )
 
 class UserResponse(BaseModel):
-    id: str
-    username: str
-    ip_address: Optional[str] = None
-    tier: str
-    remaining_requests: int
-    requests_today: int
-    last_request: Optional[datetime] = None
-    last_reset: Optional[datetime] = None
+    """
+    Response model for user information.
+
+    Provides user account details and current usage statistics.
+    """
+    id: str = Field(
+        ...,
+        description="Unique user identifier (nanoid format)"
+    )
+    username: str = Field(
+        ...,
+        description="User's chosen username"
+    )
+    ip_address: Optional[str] = Field(
+        None,
+        description="Last known IP address of the user"
+    )
+    tier: str = Field(
+        ...,
+        description="Current subscription tier (basic, standard, premium)"
+    )
+    remaining_requests: int = Field(
+        ...,
+        ge=0,
+        description="Number of API requests remaining today"
+    )
+    requests_today: int = Field(
+        ...,
+        ge=0,
+        description="Number of API requests made today"
+    )
+    last_request: Optional[datetime] = Field(
+        None,
+        description="Timestamp of the user's last API request"
+    )
+    last_reset: Optional[datetime] = Field(
+        None,
+        description="Timestamp when usage counters were last reset"
+    )
 
 class UsersResponse(BaseModel):
-    users: List[UserResponse]
+    """
+    Response model for listing multiple users.
+
+    Used for admin endpoints that return user collections.
+    """
+    users: List[UserResponse] = Field(
+        ...,
+        description="List of user objects with their details and usage statistics"
+    )
 
 class UserCreatedResponse(BaseModel):
-    message: str = Field(..., description="Message indicating the user was created")
-    user_id: str = Field(..., description="Unique user ID generated using nanoid")
-    username: str = Field(..., description="Username of the new user")
-    tier: str = Field(..., description="Tier of the new user")
+    """
+    Response model for successful user creation.
+
+    Provides confirmation details when a new user account is successfully created.
+    """
+    message: str = Field(
+        ...,
+        description="Confirmation message indicating successful user creation"
+    )
+    user_id: str = Field(
+        ...,
+        description="Unique user identifier generated using nanoid format"
+    )
+    username: str = Field(
+        ...,
+        description="Username of the newly created user account"
+    )
+    tier: str = Field(
+        ...,
+        description="Assigned subscription tier for the new user"
+    )
 
 class UserData(BaseModel):
-    id: str
-    username: str
-    ip_address: Optional[str] = None
-    tier: str
-    remaining_requests: int
-    requests_today: int
-    last_request: Optional[datetime] = None
-    last_reset: Optional[datetime] = None
+    """
+    Comprehensive user data model for internal operations.
+
+    This model handles user information with custom serialization for datetime fields
+    and includes utility methods for JSON conversion.
+    """
+    id: str = Field(
+        ...,
+        description="Unique user identifier in nanoid format"
+    )
+    username: str = Field(
+        ...,
+        description="User's chosen username"
+    )
+    ip_address: Optional[str] = Field(
+        None,
+        description="Last known IP address of the user"
+    )
+    tier: str = Field(
+        ...,
+        description="Current subscription tier determining API limits"
+    )
+    remaining_requests: int = Field(
+        ...,
+        ge=0,
+        description="Number of API requests remaining in current period"
+    )
+    requests_today: int = Field(
+        ...,
+        ge=0,
+        description="Number of API requests made today"
+    )
+    last_request: Optional[datetime] = Field(
+        None,
+        description="Timestamp of the most recent API request"
+    )
+    last_reset: Optional[datetime] = Field(
+        None,
+        description="Timestamp when usage counters were last reset"
+    )
 
     @field_serializer('last_request', 'last_reset')
     def serialize_datetime(cls, v: Optional[datetime]) -> Optional[str]:
@@ -472,43 +772,165 @@ class UserData(BaseModel):
         return cls.parse_obj(json.loads(json_str))
 
 class HealthResponse(BaseModel):
-    status: str
-    version: str
-    database_status: str
-    redis_status: str
+    """
+    Basic health check response model.
+
+    Provides essential system status information for monitoring and alerting.
+    """
+    status: str = Field(
+        ...,
+        description="Overall system health status (healthy, degraded, unhealthy)"
+    )
+    version: str = Field(
+        ...,
+        description="Current API version"
+    )
+    database_status: str = Field(
+        ...,
+        description="Database connection status (connected, disconnected, error)"
+    )
+    redis_status: str = Field(
+        ...,
+        description="Redis cache connection status (connected, disconnected, error)"
+    )
 
 class RedisConnectionStats(BaseModel):
-    connected_clients: int
-    blocked_clients: int
-    tracking_clients: int
-    total_connections: int
-    in_use_connections: int
+    """
+    Redis connection statistics for detailed health monitoring.
+
+    Provides metrics about Redis connection pool usage and client activity.
+    """
+    connected_clients: int = Field(
+        ...,
+        ge=0,
+        description="Number of currently connected Redis clients"
+    )
+    blocked_clients: int = Field(
+        ...,
+        ge=0,
+        description="Number of clients blocked on operations"
+    )
+    tracking_clients: int = Field(
+        ...,
+        ge=0,
+        description="Number of clients being tracked for client-side caching"
+    )
+    total_connections: int = Field(
+        ...,
+        ge=0,
+        description="Total number of connections made since Redis startup"
+    )
+    in_use_connections: int = Field(
+        ...,
+        ge=0,
+        description="Number of connections currently in use by the connection pool"
+    )
 
 class DetailedHealthResponse(BaseModel):
-    status: str
-    message: Optional[str] = None
-    timestamp: Optional[str] = None
-    cpu_usage: Optional[float] = None
-    memory_usage: Optional[float] = None
-    memory_total: Optional[float] = None
-    disk_usage: Optional[float] = None
-    database_status: Optional[str] = None
-    redis_status: Optional[str] = None
-    redis_details: Optional[RedisConnectionStats] = None
+    """
+    Comprehensive health check response with system metrics.
+
+    Provides detailed system information including resource usage,
+    database status, and Redis connection statistics for monitoring dashboards.
+    """
+    status: str = Field(
+        ...,
+        description="Overall system health status (healthy, degraded, unhealthy)"
+    )
+    message: Optional[str] = Field(
+        None,
+        description="Additional status message or error details"
+    )
+    timestamp: Optional[str] = Field(
+        None,
+        description="ISO format timestamp when health check was performed"
+    )
+    cpu_usage: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=100.0,
+        description="Current CPU usage percentage (0-100)"
+    )
+    memory_usage: Optional[float] = Field(
+        None,
+        ge=0.0,
+        description="Current memory usage in MB"
+    )
+    memory_total: Optional[float] = Field(
+        None,
+        ge=0.0,
+        description="Total available memory in MB"
+    )
+    disk_usage: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=100.0,
+        description="Current disk usage percentage (0-100)"
+    )
+    database_status: Optional[str] = Field(
+        None,
+        description="Database connection status with additional details"
+    )
+    redis_status: Optional[str] = Field(
+        None,
+        description="Redis connection status with additional details"
+    )
+    redis_details: Optional[RedisConnectionStats] = Field(
+        None,
+        description="Detailed Redis connection pool statistics"
+    )
 
 class BatchProcessorResponse(BaseModel):
-    """Model for batch processor responses"""
-    result: Optional[Any] = None
-    error: Optional[str] = None
+    """
+    Response model for batch processing operations.
+
+    Indicates the outcome of an asynchronous batch task, returning either
+    the result of the operation or an error message if it failed.
+    """
+    result: Optional[Any] = Field(
+        None,
+        description="Result of the batch operation if successful"
+    )
+    error: Optional[str] = Field(
+        None,
+        description="Error message if the batch operation failed"
+    )
 
 class BarcodeGenerationError(Exception):
-    def __init__(self, message, error_type):
+    """
+    Custom exception for barcode generation failures.
+
+    Used to signal errors during the barcode creation process, providing
+    a specific error type for better error handling and logging.
+    """
+    def __init__(self, message: str, error_type: str):
+        """
+        Initializes the BarcodeGenerationError.
+
+        Args:
+            message: A human-readable error message describing the issue.
+            error_type: A category or code for the type of error (e.g., 'validation', 'generation').
+        """
         self.message = message
         self.error_type = error_type
         super().__init__(self.message)
 
 class SecurityScheme(BaseModel):
-    type: str = "http"
-    scheme: str = "bearer"
-    bearerFormat: str = "JWT"
+    """
+    OpenAPI security scheme definition for JWT authentication.
+
+    Defines the HTTP Bearer authentication method used for securing API endpoints.
+    """
+    type: str = Field(
+        default="http",
+        description="Authentication type (e.g., http, apiKey, oauth2)"
+    )
+    scheme: str = Field(
+        default="bearer",
+        description="Authentication scheme (e.g., bearer, basic)"
+    )
+    bearerFormat: str = Field(
+        default="JWT",
+        description="Format of the bearer token (e.g., JWT)"
+    )
 

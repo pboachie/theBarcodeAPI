@@ -111,7 +111,7 @@ async def lifespan(app: FastAPI):
                 logger.debug("FastMCP instance created successfully")
 
                 logger.debug("Adding tool to MCP instance...")
-                mcp_instance.add_tool(generate_barcode_mcp, name="generate_barcode_mcp")
+                mcp_instance.add_tool(generate_barcode_mcp, name="generate_barcode")
                 logger.debug("Tool added successfully")
 
                 logger.debug("Storing MCP instance in app.state...")
@@ -225,7 +225,7 @@ app = FastAPI(
     debug=settings.ENVIRONMENT == "development",
     title="the Barcode API",
     description="""
-    The Barcode API allows you to generate various types of barcodes programmatically.
+    The Barcode API with MCP support allows you to generate various types of barcodes programmatically.
     Rate limits apply based on authentication status and tier level.
     """,
     version=settings.API_VERSION,
@@ -236,7 +236,7 @@ app = FastAPI(
     root_path=settings.ROOT_PATH,
     servers=[{"url": settings.SERVER_URL}],
     contact={
-        "name": "Barcode API Support",
+        "name": "the Barcode API Support",
         "url": "https://thebarcodeapi.com/support",
         "email": "support@boachiefamily.net",
     },
@@ -311,19 +311,23 @@ app.include_router(usage.router)
 app.include_router(token.router)
 app.include_router(admin.router)
 
-# Mount FastMCP's SSE app for proper MCP protocol support
 def mount_mcp_sse_app():
     """Mount the FastMCP SSE app after startup to ensure mcp_instance is available."""
     try:
-        if hasattr(app.state, 'mcp_instance') and app.state.mcp_instance:
-            app.mount("/mcp/sse", app.state.mcp_instance.sse_app)
-            logger.info("Successfully mounted FastMCP SSE app at /mcp/sse")
-        else:
-            logger.warning("MCP instance not available, SSE app not mounted")
-    except Exception as e:
-        logger.error(f"Failed to mount MCP SSE app: {e}", exc_info=True)
+        logger.info("Attempting to mount FastMCP SSE app.")
+        if not hasattr(app.state, 'mcp_instance') or app.state.mcp_instance is None:
+            logger.error("MCP instance (app.state.mcp_instance) not found. Cannot mount SSE app.")
+            return
 
-# We'll call mount_mcp_sse_app() after startup in the lifespan function
+        mcp_asgi_app = app.state.mcp_instance.sse_app()
+
+        # With root_path="/api/v1", mounting at "/mcp" creates endpoints at "/api/v1/mcp/sse" and "/api/v1/mcp/messages"
+        mount_path = "/mcp"
+        app.mount(mount_path, mcp_asgi_app, name="mcp_sse_app")
+        logger.info(f"FastMCP SSE app mounted at {mount_path} (full path: {settings.ROOT_PATH}{mount_path})")
+
+    except Exception as e:
+        logger.error(f"Failed to mount FastMCP SSE app: {e}", exc_info=True)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

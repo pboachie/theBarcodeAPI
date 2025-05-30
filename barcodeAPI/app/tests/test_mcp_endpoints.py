@@ -86,7 +86,7 @@ async def scenario_1_successful_barcode_generation():
                     return # Exit if no client_id
 
                 request_id = str(uuid.uuid4())
-                method = "generate_barcode_mcp"
+                method = "generate_barcode"
                 params = {
                     "data": "123456789012",
                     "format": "EAN13",
@@ -154,7 +154,7 @@ async def scenario_2_client_disconnects_then_tries_command():
             # as FastMCP usually relies on the active connection.
             # The failure here would be that the server has no active connection to route this request to.
             cmd_response = await client.post(SSE_URL, json={
-                "jsonrpc": "2.0", "method": "generate_barcode_mcp", "params": {}, "id": request_id
+                "jsonrpc": "2.0", "method": "generate_barcode", "params": {}, "id": request_id
             }, headers={"Content-Type": "application/json"})
 
             # Expecting an error because there's no active SSE session for the server to associate this POST with.

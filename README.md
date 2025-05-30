@@ -64,7 +64,7 @@ A production-ready barcode generation service featuring a sleek Next.js frontend
 - **Deployment**: Production-ready with environment configuration
 
 ### **Integrations**
-- **MCP Server**: Model Context Protocol for AI assistant integration
+- **MCP Server**: Model Context Protocol for AI assistant integration via the `/api/v1/mcp/sse` endpoint.
 - **Server-Sent Events**: Real-time communication
 - **Bulk Processing**: Asynchronous batch operations
 
@@ -189,30 +189,34 @@ curl -X POST "https://api.thebarcodeapi.com/api/v1/generate" \
 
 ## 🤖 MCP Server Integration
 
-This project includes a **Model Context Protocol (MCP) server** for seamless AI assistant integration:
+This project includes a **Model Context Protocol (MCP) server** for seamless AI assistant integration. The MCP endpoint is `/api/v1/mcp/sse`.
 
 ### **Connection Details**
-- **Production**: `https://api.thebarcodeapi.com`
-- **Local**: `http://localhost:8000`
+- **Production MCP Endpoint**: `https://api.thebarcodeapi.com/api/v1/mcp/sse`
+- **Local MCP Endpoint**: `http://localhost:8000/api/v1/mcp/sse`
 
 ### **Available MCP Tools**
-- `generate_barcode_mcp`: Full-featured barcode generation with 15+ customization parameters
+- `generate_barcode`: Provides comprehensive barcode generation capabilities. It supports numerous formats and customization options (e.g., data content, barcode type, dimensions, colors, image format, text display, DPI, checksums, etc.). Refer to the tool's schema for a full list of parameters.
 
-### **Usage Example**
+### **Usage Example (Illustrative)**
+The following shows an illustrative example of how an MCP client might request a barcode generation:
 ```json
 {
   "method": "tools/call",
   "params": {
-    "name": "generate_barcode_mcp",
+    "name": "generate_barcode",
     "arguments": {
       "data": "SAMPLE123",
-      "format": "qr",
+      "format": "CODE128",  // Example: Use a valid format from BarcodeFormatEnum (e.g., QRCODE, CODE128, EAN13)
       "width": 300,
-      "height": 300
+      "height": 300,
+      "image_format": "PNG", // Example: PNG, JPEG, SVG, etc.
+      "show_text": true
     }
   }
 }
 ```
+**Note**: The exact structure of the `params` and the specific values for enums like `format` and `image_format` should align with the MCP server's registration and the tool's schema definition. The tool name `generate_barcode` corresponds to the function available to the MCP system.
 
 ## 🧪 Development & Testing
 
