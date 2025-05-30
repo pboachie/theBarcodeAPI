@@ -48,7 +48,6 @@ async def client(test_app):
         yield ac
 
 # --- Test Cases for GET /sse ---
-
 @pytest.mark.asyncio
 @patch('app.api.mcp.rate_limit', new_callable=MagicMock)
 async def test_sse_connect_successful(mock_rate_limit_decorator, client: httpx.AsyncClient, mock_sse_transport: MagicMock):
