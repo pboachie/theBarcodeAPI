@@ -12,21 +12,9 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     force=True
 )
-# Explicitly set mcp library loggers to DEBUG (todo: move to main)
-logging.getLogger("mcp").setLevel(logging.DEBUG)
-logging.getLogger("mcp.server").setLevel(logging.DEBUG)
-logging.getLogger("mcp.shared").setLevel(logging.DEBUG)
-
 
 # Initialize logger for this module
 logger = logging.getLogger(__name__)
-
-# todo: move to main registered with an MCP instance in main.py
-async def handle_initialize(params, client_info, session):
-    """Custom handler for MCP initialize event."""
-    logger.info(f"MCP Server: on_initialize triggered. ClientInfo: {client_info}, Params: {params}")
-    # For SSE, client_info will contain the client_id passed to process_request
-    return {}
 
 async def generate_barcode_mcp(
     data: str,

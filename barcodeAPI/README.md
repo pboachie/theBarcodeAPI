@@ -178,8 +178,7 @@ GET    /api/v1/usage/user/{id} # User-specific usage
 
 ### **MCP Server**
 ```http
-GET    /sse                    # Server-Sent Events endpoint
-POST   /mcp/cmd                # MCP command interface
+GET    /api/v1/mcp/sse                    # Server-Sent Events endpoint for real-time communication and MCP commands
 ```
 
 ### **Example API Calls**
@@ -224,7 +223,7 @@ The backend includes a comprehensive MCP server for AI assistant integration.
 ### **Connection Setup**
 ```bash
 # Start SSE connection
-curl -N "http://localhost:8000/sse"
+curl -N "http://localhost:8000/mcp/sse"
 
 # Send MCP command
 curl -X POST "http://localhost:8000/mcp/cmd" \
@@ -250,6 +249,59 @@ curl -X POST "http://localhost:8000/mcp/cmd" \
   - Supports all 15+ barcode formats
   - 20+ customization parameters
   - Returns base64-encoded image data
+
+## 🔌 MCP Client Configuration
+
+To connect an MCP-compatible client (like a VS Code extension or an AI agent) to this server, you need to configure the client with the server's SSE endpoint. The server uses FastMCP, which handles commands over the same SSE connection.
+
+### **Local Development Example**
+
+If you are running the Barcode API server locally (e.g., via `docker-compose up` or `uvicorn app.main:app --reload`), the MCP SSE endpoint will typically be:
+
+```
+http://localhost:8000/api/v1/mcp/sse
+```
+
+Here's an example of how you might configure this in a client's `settings.json` (e.g., for a VS Code extension):
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "theBarcodeAPI_local": {
+        "type": "sse",
+        "url": "http://localhost:8000/api/v1/mcp/sse",
+        "description": "Local Barcode API MCP Server"
+      }
+    }
+  }
+}
+```
+
+### **Remote/Production Example**
+
+When the Barcode API is deployed to a production environment (e.g., `https://api.thebarcodeapi.com`), the MCP SSE endpoint will be:
+
+```
+https://api.thebarcodeapi.com/api/v1/mcp/sse
+```
+
+The client configuration would look like this:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "theBarcodeAPI_remote": {
+        "type": "sse",
+        "url": "https://api.thebarcodeapi.com/api/v1/mcp/sse",
+        "description": "Remote Barcode API MCP Server"
+      }
+    }
+  }
+}
+```
+**Note**: Ensure your client sends MCP JSON-RPC requests (typically via HTTP POST) to this same SSE URL. FastMCP will route these commands to the appropriate handlers, like `generate_barcode_mcp`.
 
 ## 🧪 Testing
 

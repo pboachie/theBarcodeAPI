@@ -16,12 +16,11 @@ from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 
 import logging
-from app.api import barcode, usage, health, token, admin, mcp as mcp_router # renamed to avoid conflict
+from app.api import barcode, usage, health, token, admin
 from app.config import settings
 from app.barcode_generator import BarcodeGenerationError
-from app.sse_transport import SseTransport # Added
-from app.mcp_server import generate_barcode_mcp, handle_initialize # Added
-from mcp.server.fastmcp import FastMCP # Added
+from app.mcp_server import generate_barcode_mcp
+from mcp.server.fastmcp import FastMCP
 from app.database import close_db_connection, init_db, get_db
 from app.redis import redis_manager, close_redis_connection, initialize_redis_manager
 from app.schemas import SecurityScheme
@@ -99,22 +98,33 @@ async def lifespan(app: FastAPI):
             logger.info("Initializing database...")
             await init_db()
 
-            # MCP Server and SSE Transport setup
-            logger.info("Initializing SSE Transport and FastMCP server...")
-            sse_transport = SseTransport()
-            mcp_instance = FastMCP(
-                name="barcode_generator_mcp_main", # Different name for clarity
-                transport=sse_transport,
-                title="Barcode Generator MCP Service (Main App)",
-                description="Handles barcode generation requests via MCP.",
-                version="1.0"
-            )
-            mcp_instance.add_tool(generate_barcode_mcp, name="generate_barcode_mcp")
-            mcp_instance.on_initialize = handle_initialize
-            
-            app.state.sse_transport = sse_transport
-            app.state.mcp_instance = mcp_instance
-            logger.info("SSE Transport and FastMCP server initialized and stored in app.state.")
+            # MCP Server setup
+            logger.info("Initializing FastMCP server...")
+            try:
+                logger.debug("Creating FastMCP instance...")
+                mcp_instance = FastMCP(
+                    name="barcode_generator_mcp",
+                    title="Barcode Generator MCP Service",
+                    description="Handles barcode generation requests via MCP.",
+                    version="1.0"
+                )
+                logger.debug("FastMCP instance created successfully")
+
+                logger.debug("Adding tool to MCP instance...")
+                mcp_instance.add_tool(generate_barcode_mcp, name="generate_barcode_mcp")
+                logger.debug("Tool added successfully")
+
+                logger.debug("Storing MCP instance in app.state...")
+                app.state.mcp_instance = mcp_instance
+                logger.info("FastMCP server initialized and stored in app.state.")
+
+                # Mount the SSE app now that the instance is ready
+                mount_mcp_sse_app()
+
+            except Exception as mcp_error:
+                logger.error(f"Failed to initialize MCP components: {mcp_error}", exc_info=True)
+                # For now, continue without MCP to see what the specific error is
+                app.state.mcp_instance = None
 
             logger.info("Initializing rate limiter...")
             await FastAPILimiter.init(redis_manager.redis)
@@ -300,7 +310,20 @@ app.include_router(barcode.router)
 app.include_router(usage.router)
 app.include_router(token.router)
 app.include_router(admin.router)
-app.include_router(mcp_router.router) # Use renamed mcp_router
+
+# Mount FastMCP's SSE app for proper MCP protocol support
+def mount_mcp_sse_app():
+    """Mount the FastMCP SSE app after startup to ensure mcp_instance is available."""
+    try:
+        if hasattr(app.state, 'mcp_instance') and app.state.mcp_instance:
+            app.mount("/mcp/sse", app.state.mcp_instance.sse_app)
+            logger.info("Successfully mounted FastMCP SSE app at /mcp/sse")
+        else:
+            logger.warning("MCP instance not available, SSE app not mounted")
+    except Exception as e:
+        logger.error(f"Failed to mount MCP SSE app: {e}", exc_info=True)
+
+# We'll call mount_mcp_sse_app() after startup in the lifespan function
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
