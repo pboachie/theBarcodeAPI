@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   barcodeApi:
     build:
@@ -42,7 +40,7 @@ services:
           cpus: '${API_CPUS:-4.0}'
           memory: ${API_MEMORY:-2G}
 
-  barcodeFrontend:
+  barcodefrontend:
     build:
       context: ./barcodeFrontend
       dockerfile: Dockerfile
