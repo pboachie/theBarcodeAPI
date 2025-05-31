@@ -94,70 +94,80 @@ A production-ready barcode generation service featuring a sleek Next.js frontend
 ### **Project Structure**
 ```
 thebarcodeapi/
-├── 🌐 Frontend (Next.js)
-│   ├── app/                 # App Router pages
-│   ├── components/          # Reusable UI components
-│   └── lib/                 # Utilities and configuration
+├── 🐳 docker-compose.yml  # Main Docker Compose file for all services
 │
-├── 🔧 Backend API (FastAPI)
+├── 🎨 barcodeFrontend/    # Next.js Frontend Application
 │   ├── app/
-│   │   ├── api/            # API route handlers
-│   │   ├── models.py       # Database models
-│   │   ├── schemas.py      # Pydantic schemas
-│   │   ├── barcode_generator.py  # Core barcode logic
-│   │   └── mcp_server.py   # MCP integration
-│   ├── tests/              # Comprehensive test suite
-│   └── alembic/            # Database migrations
+│   ├── components/
+│   ├── public/
+│   ├── Dockerfile          # Frontend Docker configuration
+│   └── README.md           # Frontend specific documentation
 │
-└── 🐳 Infrastructure
-    ├── docker-compose.yml  # Multi-service orchestration
-    ├── Dockerfile          # Container configuration
-    └── requirements.txt    # Python dependencies
+├── 🔧 barcodeApi/        # FastAPI Backend Application
+│   ├── app/
+│   ├── alembic/
+│   ├── Dockerfile          # Backend Docker configuration
+│   └── README.md           # Backend specific documentation
+│
+├── .gitignore
+├── LICENSE
+└── README.md             # This file
 ```
 
 ## 🚀 Quick Start
 
 ### **Prerequisites**
 - Docker & Docker Compose
-- Node.js 18+ (for local frontend development)
 - Git
 
-### **1. Clone & Setup**
+### **1. Clone & Setup Environment**
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/thebarcodeapi.git
+git clone https://github.com/yourusername/thebarcodeapi.git # Replace with actual repo URL
 cd thebarcodeapi
 
-# Copy environment configuration
-cp barcodeAPI/.env.example barcodeAPI/.env
-# Edit .env with your configuration
+# Create a root .env file (if it doesn't exist) for global settings.
+# This file is used by docker-compose.yml.
+# Add the following line, customizing the version as needed:
+echo "PROJECT_VERSION=0.1.8" >> .env
+# (Or manually create/edit .env in the project root with PROJECT_VERSION=0.1.8)
+
+# Setup backend environment (API keys, database credentials, etc.)
+# This .env file is specific to the backend service.
+# Navigate to the backend directory
+cd barcodeApi
+cp .env.example .env
+# Edit barcodeApi/.env with your specific backend configuration
+cd .. # Return to root
+
+# Frontend environment (if needed)
+# Check barcodeFrontend/README.md if specific .env setup is needed there.
+# NEXT_PUBLIC_API_URL for the frontend is typically set in docker-compose.yml.
 ```
 
-### **2. Run with Docker (Recommended)**
+### **2. Run with Docker Compose (Recommended)**
+This is the easiest way to get the entire platform running.
 ```bash
-# Start the complete stack
-cd barcodeAPI
+# From the project root directory (thebarcodeapi/)
 docker-compose up --build
 
-# Backend API available at: http://localhost:8000
-# API Documentation: http://localhost:8000/docs
+# Platform will be available:
+# - Frontend: http://localhost:3000 (or as configured in docker-compose.yml)
+# - Backend API: http://localhost:8000 (or as configured in docker-compose.yml)
+# - API Documentation: http://localhost:8000/docs
 ```
 
-### **3. Frontend Development**
-```bash
-# Install dependencies
-npm install
+### **3. Local Development Details**
+For detailed instructions on running the frontend or backend services independently for development (e.g., without Docker, or for more granular control), please refer to their respective README files:
 
-# Start development server
-npm run dev
-
-# Frontend available at: http://localhost:3000
-```
+- **Frontend Development**: See `barcodeFrontend/README.md`
+- **Backend Development**: See `barcodeApi/README.md`
 
 ### **4. Access the Application**
-- **Frontend**: [http://localhost:3000](http://localhost:3000)
-- **API Documentation**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
+Once running via Docker Compose:
+- **Frontend**: `http://localhost:3000` (default)
+- **API Documentation**: `http://localhost:8000/docs` (default)
+- **API Health Check**: `http://localhost:8000/health` (default)
 
 ## 📚 API Documentation
 
@@ -193,7 +203,7 @@ This project includes a **Model Context Protocol (MCP) server** for seamless AI 
 
 ### **Connection Details**
 - **Production MCP Endpoint**: `https://api.thebarcodeapi.com/api/v1/mcp/sse`
-- **Local MCP Endpoint**: `http://localhost:8000/api/v1/mcp/sse`
+- **Local MCP Endpoint (when running via Docker Compose)**: `http://localhost:8000/api/v1/mcp/sse` (or your configured API port). Refer to `barcodeApi/README.md` for details on MCP if running the backend standalone.
 
 ### **Available MCP Tools**
 - `generate_barcode`: Provides comprehensive barcode generation capabilities. It supports numerous formats and customization options (e.g., data content, barcode type, dimensions, colors, image format, text display, DPI, checksums, etc.). Refer to the tool's schema for a full list of parameters.
@@ -222,12 +232,14 @@ The following shows an illustrative example of how an MCP client might request a
 
 ### **Running Tests**
 ```bash
-# Backend tests
-cd barcodeAPI
-docker-compose run api pytest
+# Backend tests (run from project root)
+docker-compose run barcodeApi pytest
+# Or for local backend dev, see barcodeApi/README.md
 
-# Frontend tests (if available)
-npm test
+# Frontend tests (run from barcodeFrontend directory)
+cd barcodeFrontend
+npm test # Or yarn test, if applicable
+cd ..
 ```
 
 ### **Environment Configuration**

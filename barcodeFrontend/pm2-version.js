@@ -9,7 +9,7 @@ pmx.initModule({
       probes: [
         {
           name: 'Version',
-          value: () => process.env.APP_VERSION || 'N/A'
+          value: () => process.env.NEXT_PUBLIC_APP_VERSION || 'N/A'
         }
       ]
     }

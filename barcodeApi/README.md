@@ -67,7 +67,6 @@ After correctly configuring this in your `settings.json`, your MCP client (like 
 
 ### **Project Structure**
 ```
-barcodeAPI/
 ├── app/
 │   ├── api/                    # API route handlers
 │   │   ├── barcode.py         # Barcode generation endpoints
@@ -106,30 +105,36 @@ barcodeAPI/
 
 ## 🚀 Quick Start
 
-### **Prerequisites**
-- Docker & Docker Compose
-- Python 3.11+ (for local development)
+### Prerequisites
+- Docker & Docker Compose (for running as part of the whole system)
+- Python 3.11+ (for local standalone backend development)
 
-### **1. Environment Setup**
+### 1. Environment Setup (for Backend)
+Ensure you have a `.env` file inside the `barcodeApi` directory. You can copy the example:
 ```bash
-# Copy environment template
+# Make sure you are in the barcodeApi directory
 cp .env.example .env
-
-# Configure required variables
-vim .env
+# Edit ./barcodeApi/.env with your backend-specific configuration
 ```
 
-### **2. Start with Docker (Recommended)**
+### 2. Run with Docker (as part of the full platform)
+The backend is managed by the `docker-compose.yml` file in the project root.
 ```bash
-# Build and start all services
-docker-compose up --build
+# From the project root directory (parent of barcodeApi and barcodeFrontend)
+docker-compose up --build barcodeApi
+# Or to run all services:
+# docker-compose up --build
 
-# API available at: http://localhost:8000
+# API available at: http://localhost:8000 (or as configured in docker-compose.yml)
 # Swagger docs: http://localhost:8000/docs
 ```
 
-### **3. Local Development Setup**
+### 3. Local Standalone Backend Development
+If you want to run only the backend locally, without Docker:
 ```bash
+# Navigate to the barcodeApi directory
+# cd barcodeApi # This line is not needed if already editing barcodeApi/README.md
+
 # Create virtual environment
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
@@ -137,12 +142,16 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Run database migrations
+# Run database migrations (ensure PostgreSQL is running and accessible)
 alembic upgrade head
 
 # Start development server
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+## Versioning
+
+The application version is available within the backend via the `APP_VERSION` environment variable (which populates `settings.API_VERSION` in `app/config.py`). This variable is set during the Docker build process, originating from the `PROJECT_VERSION` defined in the root `.env` file and passed via Docker Compose.
 
 ## 📋 Environment Configuration
 
