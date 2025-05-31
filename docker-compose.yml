@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
-  barcodeApi:
+  barcodeapi:
     build:
       context: ./barcodeApi
       dockerfile: Dockerfile
@@ -42,7 +40,7 @@ services:
           cpus: '${API_CPUS:-4.0}'
           memory: ${API_MEMORY:-2G}
 
-  barcodeFrontend:
+  barcodefrontend:
     build:
       context: ./barcodeFrontend
       dockerfile: Dockerfile
@@ -53,7 +51,7 @@ services:
     environment:
       # Example: Making the backend API URL available to Next.js
       # This needs to be prefixed with NEXT_PUBLIC_ for Next.js to pick it up client-side
-      - NEXT_PUBLIC_API_URL=http://barcodeApi:${API_PORT:-8000}
+      - NEXT_PUBLIC_API_URL=http://barcodeapi:${API_PORT:-8000}
       - NEXT_PUBLIC_APP_VERSION=${PROJECT_VERSION:-0.0.0-default} # Pass version for runtime access
       # Add other necessary frontend environment variables here
     restart: unless-stopped
@@ -68,8 +66,8 @@ services:
           cpus: '${FRONTEND_CPUS:-2.0}' # Allow configuration via .env
           memory: ${FRONTEND_MEMORY:-1G} # Allow configuration via .env
     # If the frontend needs the backend to be up to start (e.g. for some build steps, unlikely for Next.js)
-    # depends_on:
-    #   - barcodeApi
+    depends_on:
+      - barcodeapi
 
   redis:
     image: redislabs/rejson:latest

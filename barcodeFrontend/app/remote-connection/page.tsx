@@ -1,10 +1,4 @@
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = {
-  title: 'Remote Connection Guide | theBarcodeAPI',
-  description: 'Learn how to connect to the MCP server remotely using theBarcodeAPI, with examples for C# (Visual Studio) and Python.',
-  keywords: ['MCP', 'AI', 'barcodes', 'remote connection', 'API', 'theBarcodeAPI', 'C#', 'Python', 'Visual Studio', 'barcode generation'],
-};
+"use client";
 
 export default function RemoteConnectionPage() {
   return (
