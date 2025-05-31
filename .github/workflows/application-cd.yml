@@ -16,20 +16,32 @@ on:
         required: false
 
 env:
+  # Domain name for the application, used by web server configurations (e.g., in Nginx)
   DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+  # Deployment environment (e.g., staging, production)
   ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+  # Sudo password for privileged operations on the self-hosted runner
   SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+  # Database password for the main application user (e.g., barcodeboachiefamily)
   DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  # PostgreSQL superuser (postgres user) password
   POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+  # Secret key used for JWT token generation and other security functions in the API
   API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
+  # Master API key for administrative or high-privilege API access
   API_MASTER_KEY: ${{ secrets.API_MASTER_KEY }}
 
 jobs:
   frontend-deployment:
     runs-on: self-hosted
+    # This job runs if a previous workflow run (e.g., infrastructure setup) completed successfully,
+    # OR if the workflow is manually dispatched.
     if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
     steps:
-    - name: Determine branch
+    # Determines the branch to checkout.
+    # For manual 'workflow_dispatch', it uses the 'branch' input or the current ref_name if input is not provided.
+    # For other events (like a push, though the trigger is currently commented out), it defaults to github.ref_name.
+    - name: Determine branch to deploy
       id: get_branch
       run: |
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -43,37 +55,17 @@ jobs:
         fetch-depth: 0
         ref: ${{ steps.get_branch.outputs.branch }}
 
-    - name: Check for frontend changes
+    # Executes a script to determine if there are changes in the frontend codebase compared to the last deployed commit.
+    # Outputs 'changes=true' or 'changes=false' to GITHUB_OUTPUT, which is used by subsequent steps.
+    - name: Check for frontend code changes
       id: check_frontend_changes
-      run: |
-        if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/current" ]; then
-          echo "First deployment detected"
-          echo "changes=true" >> $GITHUB_OUTPUT
-          exit 0
-        fi
+      run: bash ./scripts/check-frontend-changes.sh
+      env:
+        ENVIRONMENT: ${{ env.ENVIRONMENT }}
+        GITHUB_OUTPUT: ${{ github.outputs.GITHUB_OUTPUT }} # Allows script to set output for other steps
 
-        CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
-        if [ -f "${CURRENT_DIR}/.git-commit" ]; then
-          DEPLOYED_COMMIT=$(cat "${CURRENT_DIR}/.git-commit")
-          if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
-            CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- 'src/' 'public/' 'package.json' 'package-lock.json' 'next.config.js' 'tailwind.config.js' || true)
-          else
-            CHANGES="force_update"
-          fi
-        else
-          CHANGES="force_update"
-        fi
-
-        if [ ! -z "$CHANGES" ]; then
-          echo "Changes detected in:"
-          echo "$CHANGES"
-          echo "changes=true" >> $GITHUB_OUTPUT
-        else
-          echo "No changes detected"
-          echo "changes=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Validate Environment Variables
+    # Validates that essential environment variables are set if frontend changes are detected and a build/deployment is needed.
+    - name: Validate essential environment variables
       if: steps.check_frontend_changes.outputs.changes == 'true'
       run: |
         for var in ENVIRONMENT DB_PASSWORD POSTGRES_PASSWORD API_SECRET_KEY API_MASTER_KEY; do
@@ -90,7 +82,11 @@ jobs:
         node-version: '20.x'
         cache: 'npm'
 
-    - name: Cache Next.js build
+    # Caches Next.js build artifacts (.next/cache) and downloaded dependencies (node_modules)
+    # to speed up subsequent builds if frontend changes are detected.
+    # The cache key is composed of the runner's OS, a hash of package-lock.json, and hashes of all JS/TS(X) files.
+    # A less specific restore key (without source file hashes) is provided as a fallback.
+    - name: Cache Next.js build artifacts and dependencies
       if: steps.check_frontend_changes.outputs.changes == 'true'
       uses: actions/cache@v3
       with:
@@ -101,148 +97,34 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
 
-    - name: Install dependencies and build
+    # Installs npm dependencies using 'npm ci' for a clean, reproducible install from package-lock.json.
+    # Then, it runs linting and the build process for the Next.js application.
+    - name: Install dependencies, lint, and build frontend
       if: steps.check_frontend_changes.outputs.changes == 'true'
       run: |
         npm ci
         npm run lint
         npm run build
 
-    - name: Deploy and Health Check
-      run: |
-          # Store current commit hash
-          git rev-parse HEAD > .git-commit
-
-          # Function for health check
-          check_health() {
-            local url="http://localhost:3000"
-            local max_workers=2
-            local seconds_per_worker=30
-            local max_attempts=$((seconds_per_worker * max_workers / 5))
-
-            echo "Starting health check... Will try $max_attempts times (${seconds_per_worker}s per worker)"
-
-            for i in $(seq 1 $max_attempts); do
-              if curl -s -f -m 5 "$url" > /dev/null; then
-                echo "Health check passed on attempt $i"
-                return 0
-              fi
-              echo "Health check attempt $i/$max_attempts..."
-
-              if [ $((i % 5)) -eq 0 ]; then
-                echo "Current PM2 status:"
-                PM2_HOME="/home/github-runner/.pm2" pm2 list
-                echo "Recent logs:"
-                PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 10 --nostream
-              fi
-
-              sleep 5
-            done
-
-            echo "Health check failed after $max_attempts attempts. Final PM2 status:"
-            PM2_HOME="/home/github-runner/.pm2" pm2 list
-            echo "Recent logs:"
-            PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50 --nostream
-            return 1
-          }
-
-          # Ensure base directories exist with proper permissions
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/{releases,current}
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
-
-          if [ "${{ steps.check_frontend_changes.outputs.changes }}" == "true" ]; then
-            TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            NEW_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/release-${TIMESTAMP}"
-            CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
-            PREVIOUS_RELEASE_LINK="/opt/thebarcodeapi/${ENVIRONMENT}/previous"
-
-            # Create and setup new release directory
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "$NEW_RELEASE"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./.next "$NEW_RELEASE/"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./public "$NEW_RELEASE/"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./package*.json ./.git-commit "$NEW_RELEASE/"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "$NEW_RELEASE"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
-
-            # Install dependencies
-            cd "$NEW_RELEASE"
-            npm ci --omit=dev
-            if [ $? -ne 0 ]; then
-              echo "npm install failed"
-              exit 1
-            fi
-
-            # Handle the current directory symlink
-            if [ -d "$CURRENT_DIR" ] && [ ! -L "$CURRENT_DIR" ]; then
-              echo "Converting existing current directory to symlink..."
-              # Move the content to a new release directory if it exists
-              if [ -d "$CURRENT_DIR/.next" ] || [ -d "$CURRENT_DIR/public" ]; then
-                INITIAL_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/initial-release"
-                echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv "$CURRENT_DIR" "$INITIAL_RELEASE"
-                echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$INITIAL_RELEASE" "$PREVIOUS_RELEASE_LINK"
-              else
-                # If it's empty or not a proper release, just remove it
-                echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf "$CURRENT_DIR"
-              fi
-            elif [ -L "$CURRENT_DIR" ] && [ -e "$CURRENT_DIR" ]; then
-              # Store current as previous before switching
-              CURRENT_RELEASE=$(readlink -f "$CURRENT_DIR")
-              echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$CURRENT_RELEASE" "$PREVIOUS_RELEASE_LINK"
-            fi
-
-            # Update symlinks and set final permissions
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data "$NEW_RELEASE"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$NEW_RELEASE" "$CURRENT_DIR"
-
-            # Cleanup old releases (keep last 3)
-            cd "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'ls -1dt */ | tail -n +4 | xargs -r rm -rf'
-          fi
-
-          # PM2 process management
-          if ! PM2_HOME="/home/github-runner/.pm2" pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
-            echo "PM2 process not found, starting new instance..."
-            cd "/opt/thebarcodeapi/${ENVIRONMENT}/current"
-            PM2_HOME="/home/github-runner/.pm2" pm2 start "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js"
-          fi
-
-          echo "Restarting PM2 process..."
-          PM2_HOME="/home/github-runner/.pm2" pm2 reload "thebarcodeapi-frontend-${ENVIRONMENT}" --update-env
-          PM2_HOME="/home/github-runner/.pm2" pm2 save --force
-
-          # Health check and rollback if needed
-          echo "Starting health checks..."
-          if ! check_health; then
-            echo "Health check failed, attempting rollback..."
-            if [ -L "$PREVIOUS_RELEASE_LINK" ] && [ -e "$PREVIOUS_RELEASE_LINK" ]; then
-              echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
-
-              echo "Restarting PM2 for rollback..."
-              PM2_HOME="/home/github-runner/.pm2" pm2 reload "thebarcodeapi-frontend-${ENVIRONMENT}" --update-env
-              PM2_HOME="/home/github-runner/.pm2" pm2 save --force
-
-              if ! check_health; then
-                echo "CRITICAL: Rollback failed! Site is down!"
-                PM2_HOME="/home/github-runner/.pm2" pm2 list
-                PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 100 --nostream
-                exit 1
-              fi
-              echo "Rollback successful, but original deployment failed"
-              exit 1
-            fi
-            echo "No previous release available for rollback"
-            exit 1
-          fi
-
-          echo "Deployment successful!"
+    # Executes the main frontend deployment script.
+    # This script handles tasks like creating a new release directory, updating symlinks,
+    # managing the PM2 process for the frontend application, and performing health checks with rollback capabilities.
+    - name: Deploy frontend application and perform health check
+      run: bash ./scripts/deploy-frontend.sh
+      env:
+        ENVIRONMENT: ${{ env.ENVIRONMENT }}
+        SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
+        STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES: ${{ steps.check_frontend_changes.outputs.changes }}
 
   backend-deployment:
     runs-on: self-hosted
-    needs: frontend-deployment
+    needs: frontend-deployment # Ensures frontend deployment is attempted first.
     steps:
-    - name: Determine branch
-      id: get_branch
+    # Determines the branch to checkout for the backend deployment.
+    # For manual 'workflow_dispatch', it uses the workflow's own ref (branch or tag).
+    # For other events, it defaults to 'main'.
+    - name: Determine branch for backend deployment
+      id: get_branch # Note: ID is same as in frontend job, but it's a local ID to this job.
       run: |
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           echo "branch=${{ github.ref }}" >> $GITHUB_OUTPUT
@@ -252,81 +134,22 @@ jobs:
 
     - uses: actions/checkout@v3
       with:
-        fetch-depth: 0  # Get all commits
+        fetch-depth: 0  # Fetch all history for all branches and tags, enabling diffs against any prior commit.
         ref: ${{ steps.get_branch.outputs.branch }}
 
-    - name: Check for backend changes
+    # Executes a script to determine if there are changes in the backend codebase.
+    # Outputs 'changes=true' or 'changes=false' to GITHUB_OUTPUT for use in subsequent steps.
+    - name: Check for backend code changes
       id: check_backend_changes
-      run: |
-        # Debug information
-        echo "Current directory: $(pwd)"
-        echo "Event type: ${{ github.event_name }}"
-        echo "Git branch: $(git rev-parse --abbrev-ref HEAD)"
+      run: bash ./scripts/check-backend-changes.sh
+      env:
+        ENVIRONMENT: ${{ env.ENVIRONMENT }}
+        GITHUB_EVENT_NAME: ${{ github.event_name }}
+        GITHUB_OUTPUT: ${{ github.outputs.GITHUB_OUTPUT }} # Allows script to set output
 
-        # Check if this is a first deployment
-        if [ ! -d "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data" ]; then
-          echo "First deployment detected"
-          echo "changes=true" >> $GITHUB_OUTPUT
-          exit 0
-        fi
-
-        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          # For manual triggers, we'll check the current deployment
-          if [ -f "/opt/thebarcodeapi/barcodeAPI/.git-commit" ]; then
-            DEPLOYED_COMMIT=$(cat "/opt/thebarcodeapi/barcodeAPI/.git-commit")
-            echo "Found deployed commit: ${DEPLOYED_COMMIT}"
-
-            # Verify the commit exists in git history
-            if git rev-parse --verify "${DEPLOYED_COMMIT}^{commit}" >/dev/null 2>&1; then
-              echo "Comparing changes with deployed commit ${DEPLOYED_COMMIT}"
-                CHANGES=$(git diff --name-only "${DEPLOYED_COMMIT}" HEAD -- \
-                'api/' \
-                'alembic/' \
-                'requirements.txt' \
-                'Dockerfile' \
-                '*.yml' \
-                '*.ini' \
-                'scripts/' \
-                '*.sh' \
-                '.github/workflows/' \
-                || true)
-              else
-              echo "Deployed commit ${DEPLOYED_COMMIT} not found in history, forcing update"
-              CHANGES="force_update"
-            fi
-          else
-            echo "No .git-commit file found in current deployment, forcing update"
-            CHANGES="force_update"
-          fi
-        else
-          # For automated triggers, compare with previous commit
-          echo "Comparing with previous commit"
-          CHANGES=$(git diff --name-only HEAD^ HEAD -- \
-            'api/' \
-            'alembic/' \
-            'requirements.txt' \
-            'Dockerfile' \
-            '*.yml' \
-            '*.ini' \
-            'scripts/' \
-            '*.sh' \
-            || true)
-        fi
-
-        if [ ! -z "$CHANGES" ]; then
-          echo "Backend changes detected:"
-          echo "$CHANGES"
-          echo "changes=true" >> $GITHUB_OUTPUT
-        else
-          echo "No backend changes detected"
-          echo "changes=false" >> $GITHUB_OUTPUT
-        fi
-
-        # Debug output
-        echo "Git diff output:"
-        git diff --name-only HEAD^ HEAD || true
-
-    - name: Clean and copy backend files
+    # If backend changes are detected, this step cleans the target deployment directory
+    # and copies the new backend files into it. A backup of the existing deployment is made first.
+    - name: Clean and copy backend files to deployment directory
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
         # Create backup of current deployment if it exists
@@ -350,39 +173,18 @@ jobs:
         echo "Contents of deployment directory:"
         ls -la /opt/thebarcodeapi/barcodeAPI/
 
-    - name: Create .env file for backend
-      run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'cat > /opt/thebarcodeapi/barcodeAPI/.env << EOF
-        API_VERSION=${{ vars.API_VERSION }}
-        ALGORITHM=HS256
-        ACCESS_TOKEN_EXPIRE_MINUTES=30
-        REDIS_URL=redis://redis:6379/1
-        SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        LOG_DIRECTORY=/app
-        ROOT_PATH=/api/v1
-        DB_PASSWORD=${{ env.DB_PASSWORD }}
-        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-        SECRET_KEY=${{ env.API_SECRET_KEY }}
-        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        ENVIRONMENT=${{ env.ENVIRONMENT }}
-        EOF'
-
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
-
-        # Verify .env file was created and has content
-        echo "Verifying .env file:"
-        if [ -f "/opt/thebarcodeapi/barcodeAPI/.env" ]; then
-          echo "File exists"
-          echo "File permissions:"
-          ls -l /opt/thebarcodeapi/barcodeAPI/.env
-          echo "File contents:"
-          cat /opt/thebarcodeapi/barcodeAPI/.env
-        else
-          echo "ERROR: .env file not created!"
-          exit 1
-        fi
+    # Executes a script to create the .env file required by the backend application.
+    # This file contains sensitive information and configuration details.
+    - name: Create .env file for backend services
+      run: bash ./scripts/create-backend-env-file.sh
+      env:
+        SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
+        API_VERSION: ${{ vars.API_VERSION }}
+        DB_PASSWORD: ${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        API_SECRET_KEY: ${{ env.API_SECRET_KEY }}
+        API_MASTER_KEY: ${{ env.API_MASTER_KEY }}
+        ENVIRONMENT: ${{ env.ENVIRONMENT }}
 
     - name: Set up Docker Buildx
       if: steps.check_backend_changes.outputs.changes == 'true'
@@ -390,7 +192,10 @@ jobs:
       with:
         install: true
 
-    - name: Setup build cache
+    # Sets up Docker Buildx cache using GitHub Actions cache.
+    # The cache is keyed by OS, current commit SHA, and hashes of key backend definition files (requirements.txt, Dockerfile, Python/Alembic code).
+    # This helps speed up Docker image builds by reusing layers from previous builds.
+    - name: Setup Docker Buildx cache layers
       if: steps.check_backend_changes.outputs.changes == 'true'
       uses: actions/cache@v3
       with:
@@ -402,41 +207,50 @@ jobs:
           ${{ runner.os }}-buildx-${{ hashFiles('**/requirements.txt', '**/Dockerfile', 'api/**/*.py', 'alembic/**/*.py') }}
           ${{ runner.os }}-buildx-${{ github.ref_name }}-
 
-    - name: Build and cache Docker image
+    # Builds the Docker image for the backend API.
+    # It uses docker/build-push-action, configured to build locally and load the image into the Docker daemon.
+    # Caching (cache-from, cache-to) is utilized to optimize build times.
+    # `tags` and `labels` would ideally be dynamic e.g. using `docker/metadata-action` if a `meta` step was defined.
+    - name: Build and cache Docker image for backend API
       if: steps.check_backend_changes.outputs.changes == 'true'
       uses: docker/build-push-action@v5
       with:
-        context: /opt/thebarcodeapi/barcodeAPI
-        file: /opt/thebarcodeapi/barcodeAPI/Dockerfile
-        push: false
-        load: true
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: |
+        context: /opt/thebarcodeapi/barcodeAPI # Sets the Docker build context to the backend API code directory.
+        file: /opt/thebarcodeapi/barcodeAPI/Dockerfile # Specifies the Dockerfile to be used.
+        push: false # The image is not pushed to a container registry.
+        load: true  # The built image is loaded into the local Docker daemon on the runner.
+        tags: barcodeapi:latest # ${{ steps.meta.outputs.tags }} # Example: barcodeapi:latest or dynamic tags from a meta step.
+        labels: ${{ steps.meta.outputs.labels }} # Example: org.opencontainers.image.source=${{ github.repositoryUrl }}
+        cache-from: | # Defines sources for build cache.
           type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
-          type=gha,scope=${{ github.workflow }}
-        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=min
-        build-args: |
+          type=gha,scope=${{ github.workflow }}-${{ github.ref_name }} # GitHub Actions cache scoped to workflow and branch.
+        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=min # Exports new cache layers locally.
+        build-args: | # Arguments passed to the Docker build.
           DEBIAN_FRONTEND=noninteractive
           PYTHON_ENV=${{ env.ENVIRONMENT }}
-        platforms: linux/amd64
-        outputs: type=docker
-        provenance: false
-        sbom: false
+        platforms: linux/amd64 # Specifies the target platform for the build.
+        outputs: type=docker # Defines the output type of the build.
+        provenance: false # Disables build provenance attestations.
+        sbom: false # Disables SBOM attestations.
 
-    - name: Move cache
+    # Moves the newly created Docker Buildx cache to the location expected by subsequent workflow runs for cache restoration.
+    - name: Update local Docker build cache
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
         rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache
         mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache-new /opt/thebarcodeapi/barcodeAPI/.buildx-cache
 
-    - name: Store Git commit hash
+    # Stores the current Git commit hash into a .git-commit file within the backend deployment directory.
+    # This helps in tracking which version of the code is currently deployed.
+    - name: Store Git commit hash in backend deployment directory
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
         git rev-parse HEAD > .git-commit
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeAPI/
 
-    - name: Setup Initial Directories
+    # Sets up essential initial directory structure for the backend application,
+    # including directories for persisted data (Postgres, Redis) and backups.
+    - name: Setup initial directories for backend data and operations
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
@@ -446,9 +260,6 @@ jobs:
 
     - name: Setup Docker and Environment
       run: |
-        # Fix docker socket permissions
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
-
         # Add runner to docker group if not already added
         if ! groups | grep -q docker; then
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
@@ -456,26 +267,30 @@ jobs:
           exec sg docker newgrp docker
         fi
 
-        # Create env_vars file
+        # Create /tmp/env_vars file with environment variables needed by the backend deployment script.
+        # This file is sourced by scripts/deploy-backend-docker.sh.
+        # Note: Some variables here are duplicated (e.g. SECRET_KEY, MASTER_API_KEY, DATABASE_URL)
+        # and ENVIRONMENT is hardcoded to 'production'. This might need review for consistency.
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
-        ENVIRONMENT=production
+        ENVIRONMENT=production # Consider using ${{ env.ENVIRONMENT }} if it should match the workflow's ENVIRONMENT
         DB_PASSWORD=${{ env.DB_PASSWORD }}
         POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
         API_SECRET_KEY=${{ env.API_SECRET_KEY }}
         API_MASTER_KEY=${{ env.API_MASTER_KEY }}
         API_VERSION=${{ vars.API_VERSION }}
-        ALGORITHM=HS256
-        ACCESS_TOKEN_EXPIRE_MINUTES=30
-        REDIS_URL=redis://redis:6379/1
-        SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        LOG_DIRECTORY=/app
-        ROOT_PATH=/api/v1
-        SECRET_KEY=${{ env.API_SECRET_KEY }}
-        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
+        ALGORITHM=HS256 # Default algorithm for JWT
+        ACCESS_TOKEN_EXPIRE_MINUTES=30 # Default token expiry
+        REDIS_URL=redis://redis:6379/1 # Default Redis URL
+        SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api # DB URL for synchronous operations
+        LOG_DIRECTORY=/app # Default log directory within the container
+        ROOT_PATH=/api/v1 # API root path
+        SECRET_KEY=${{ env.API_SECRET_KEY }} # Duplicates API_SECRET_KEY
+        MASTER_API_KEY=${{ env.API_MASTER_KEY }} # Duplicates API_MASTER_KEY
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api # Main DB URL
         EOF"
 
-        # Determine and set docker compose command
+        # Determines the correct Docker Compose command (docker-compose or docker compose)
+        # and saves it to /tmp/docker_vars for use in subsequent scripts.
         if command -v docker-compose &> /dev/null; then
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'echo "DOCKER_COMPOSE=docker-compose" > /tmp/docker_vars'
         elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
@@ -492,195 +307,22 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat /tmp/docker_vars
 
         # Verify Docker access
-        docker ps
+        docker ps # Verifies Docker daemon is accessible.
 
-    - name: Create and run backend deployment script
+    # Executes the main backend deployment script.
+    # This script is responsible for managing Docker Compose (down, up, build), handling data persistence,
+    # database backups, and health checks for the backend services.
+    - name: Deploy backend services via Docker Compose and perform health checks
+      run: bash ./scripts/deploy-backend-docker.sh
       env:
+        SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
+        ENVIRONMENT: ${{ env.ENVIRONMENT }} # Passed directly, though script also sources from /tmp/env_vars.
+        DB_PASSWORD: ${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+        API_SECRET_KEY: ${{ env.API_SECRET_KEY }}
+        API_MASTER_KEY: ${{ env.API_MASTER_KEY }}
+        API_VERSION: ${{ vars.API_VERSION }}
         CHANGES: ${{ steps.check_backend_changes.outputs.changes }}
-      run: |
-        # Create deployment script
-        cat > deploy_backend.sh << 'EOF'
-        #!/bin/bash
-        set -e
-
-        # Source environment variables
-        if [ ! -f "/tmp/env_vars" ]; then
-            echo "Error: /tmp/env_vars not found"
-            exit 1
-        fi
-        source /tmp/env_vars
-
-        # Source docker compose command
-        if [ ! -f "/tmp/docker_vars" ]; then
-            echo "Error: /tmp/docker_vars not found"
-            exit 1
-        fi
-        source /tmp/docker_vars
-
-        cd /opt/thebarcodeapi/barcodeAPI
-
-        echo "Starting backend deployment..."
-        echo "Using DOCKER_COMPOSE command: ${DOCKER_COMPOSE}"
-
-        # If no changes detected, just check health and exit
-        if [ "$CHANGES" == "false" ]; then
-          echo "No changes detected in backend files. Verifying health only..."
-
-          # Check if services are running
-          if ! $DOCKER_COMPOSE ps | grep -q "Up"; then
-            echo "Services are not running, starting them..."
-            $DOCKER_COMPOSE up -d
-          fi
-
-          # Verify health
-          for service in "db" "redis" "api"; do
-            timeout 300 bash -c "until $DOCKER_COMPOSE ps $service 2>/dev/null | grep -q 'healthy'; do
-              echo 'Waiting for $service to become healthy...'
-              sleep 5
-            done"
-          done
-
-          echo "Backend health verified"
-          exit 0
-        fi
-
-        # Create backup directory
-        BACKUP_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/backups/$(date +%Y%m%d_%H%M%S)"
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${BACKUP_DIR}"
-        echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "${BACKUP_DIR}"
-
-        # Function to safely backup PostgreSQL
-        backup_postgres() {
-            echo "Attempting PostgreSQL backup..."
-            if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "db"; then
-                if $DOCKER_COMPOSE exec -T db pg_isready -U postgres > /dev/null 2>&1; then
-                    echo "PostgreSQL is ready, creating backup..."
-                    $DOCKER_COMPOSE exec -T db pg_dumpall -U postgres > "${BACKUP_DIR}/postgres_backup.sql" || {
-                        echo "Failed to create backup"
-                        return 1
-                    }
-                    echo "PostgreSQL backup completed successfully"
-                    return 0
-                fi
-            fi
-            echo "No existing PostgreSQL container or not ready, skipping backup"
-            return 0
-        }
-
-        # Function to safely backup Redis
-        backup_redis() {
-            echo "Attempting Redis backup..."
-            if $DOCKER_COMPOSE ps 2>/dev/null | grep -q "redis"; then
-                if $DOCKER_COMPOSE exec -T redis redis-cli ping | grep -q "PONG"; then
-                    echo "Redis is ready, creating backup..."
-                    $DOCKER_COMPOSE exec -T redis redis-cli SAVE || {
-                        echo "Failed to save Redis dump"
-                        return 1
-                    }
-
-                    REDIS_ID=$($DOCKER_COMPOSE ps -q redis)
-                    if [ ! -z "$REDIS_ID" ]; then
-                        docker cp "${REDIS_ID}:/data/dump.rdb" "${BACKUP_DIR}/redis_dump.rdb" || {
-                            echo "Failed to copy Redis dump"
-                            return 1
-                        }
-                    else
-                        echo "Could not find Redis container"
-                        return 1
-                    fi
-
-                    echo "Redis backup completed successfully"
-                    return 0
-                fi
-            fi
-            echo "No existing Redis container or not ready, skipping backup"
-            return 0
-        }
-
-        # Perform backups
-        echo "Checking for existing containers to backup..."
-        backup_postgres || echo "Note: PostgreSQL backup skipped"
-        backup_redis || echo "Note: Redis backup skipped"
-
-        # Store current container IDs
-        OLD_CONTAINERS=$($DOCKER_COMPOSE ps -q 2>/dev/null || echo "")
-
-        # Stop current containers
-        echo "Stopping current containers..."
-        $DOCKER_COMPOSE down || true
-
-        # Preserve existing data
-        if [ -d "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres" ]; then
-            echo "Preserving PostgreSQL data..."
-            echo "$SUDO_PASSWORD" | sudo -S cp -R /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres "${BACKUP_DIR}/postgres_data"
-        fi
-
-        if [ -d "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis" ]; then
-            echo "Preserving Redis data..."
-            echo "$SUDO_PASSWORD" | sudo -S cp -R /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis "${BACKUP_DIR}/redis_data"
-        fi
-
-        # Set up data directories
-        echo "Setting up data directories..."
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
-        echo "$SUDO_PASSWORD" | sudo -S chown -R 999:999 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
-        echo "$SUDO_PASSWORD" | sudo -S chmod -R 700 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
-        echo "$SUDO_PASSWORD" | sudo -S chown -R 999:999 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
-        echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
-
-        sudo chown -R 999:999 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
-        sudo chmod -R 700 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
-        sudo chown -R 999:999 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
-        sudo chmod -R 755 /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
-
-        # Use cached image if available
-        if docker image inspect barcodeapi:latest >/dev/null 2>&1; then
-          echo "Using cached image"
-          $DOCKER_COMPOSE up -d
-        else
-          echo "Building fresh image"
-          $DOCKER_COMPOSE build --no-cache api
-          $DOCKER_COMPOSE up -d
-        fi
-
-        # Check container health
-        check_container_health() {
-            local container=$1
-            local timeout=$2
-            local start_time=$(date +%s)
-            local end_time=$((start_time + timeout))
-
-            while [ $(date +%s) -lt $end_time ]; do
-                if $DOCKER_COMPOSE ps $container 2>/dev/null | grep -q "healthy"; then
-                    echo "$container is healthy"
-                    return 0
-                fi
-                echo "Waiting for $container to become healthy..."
-                sleep 5
-            done
-
-            echo "$container failed to become healthy within $timeout seconds"
-            return 1
-        }
-
-        # Check all services
-        for service in "db" "redis" "api"; do
-            if ! check_container_health "$service" 300; then
-                echo "Service $service failed health check"
-                $DOCKER_COMPOSE logs $service
-                exit 1
-            fi
-        done
-
-        echo "Backend deployment completed successfully"
-        EOF
-
-        # Make script executable
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod +x deploy_backend.sh
-
-        # Run deployment script
-        ./deploy_backend.sh
 
     - name: Verify deployment
       run: |
@@ -694,42 +336,18 @@ jobs:
             exit 1
         }
 
-    - name: Run Database Migrations
+    # Executes a script to run database migrations using Alembic within the API container.
+    - name: Run database migrations for backend
+      run: bash ./scripts/run-migrations.sh
+      env:
+        SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }} # Script uses sudo for `docker compose exec`.
+
+    # Verifies the overall backend deployment by checking Docker container statuses,
+    # recent logs, and performing a health check against the API endpoint.
+    # It also handles cleanup of the temporary .env file used during verification.
+    - name: Verify backend deployment status and API health
       run: |
-        cd /opt/thebarcodeapi/barcodeAPI
-
-        # Determine docker compose command
-        if command -v docker-compose &> /dev/null; then
-          COMPOSE_CMD="docker-compose"
-        else
-          COMPOSE_CMD="docker compose"
-        fi
-
-        echo "Using compose command: $COMPOSE_CMD"
-
-        # Set proper permissions
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
-
-        # Run migrations
-        echo "Running migrations..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD exec -T api alembic upgrade head
-
-        # Check migration status
-        MIGRATION_STATUS=$?
-        if [ $MIGRATION_STATUS -eq 0 ]; then
-          echo "Database migrations completed successfully"
-        else
-          echo "Migration failed! Checking logs..."
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs api
-        fi
-
-        # Exit with migration status
-        exit $MIGRATION_STATUS
-
-    - name: Verify Backend Deployment
-      run: |
-        cd /opt/thebarcodeapi/barcodeAPI
+        cd /opt/thebarcodeapi/barcodeAPI # Script expects to be in this directory for docker-compose commands.
 
         # Determine docker compose command
         if command -v docker-compose &> /dev/null; then
@@ -768,21 +386,27 @@ jobs:
 
         echo "Backend verification completed successfully"
 
-        # Cleanup
+        # Cleanup of the .env file specific to this verification step; the main .env for the container is managed by create-backend-env-file.sh.
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
 
-    - name: Clean up
+    # Performs a Docker system prune to remove unused Docker data (images, containers, volumes, networks)
+    # to free up disk space. Runs even if previous steps in the job fail.
+    - name: Clean up unused Docker resources on runner
       if: always()
       run: |
-        cd /opt/thebarcodeapi/barcodeAPI
+        cd /opt/thebarcodeapi/barcodeAPI # Context for docker-compose related prune if applicable, though `docker system prune` is global.
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
 
-    - name: Final cleanup
+    # Final cleanup of the backend .env file created by 'Create .env file for backend services' step.
+    # This ensures that sensitive data in this specific .env file (if different from the one inside Docker) is removed after deployment.
+    - name: Final cleanup of backend .env file from host
       if: always()
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
 
-    - name: Final Status Check
+    # Performs a final status check on all critical services (API, Redis, Database)
+    # to ensure they are running and responsive after the deployment process.
+    - name: Final status check of all backend services
       run: |
         echo "Performing final status check..."
 
@@ -812,22 +436,26 @@ jobs:
 
         echo "All services are running correctly!"
 
-  final-verification:
+  final-verification: # This job runs after both frontend and backend deployments.
     runs-on: self-hosted
-    needs: [frontend-deployment, backend-deployment]
+    needs: [frontend-deployment, backend-deployment] # Ensures it runs only if both dependencies succeed (unless `if: always()` is used on this job).
     steps:
 
-    - name: Clean up build artifacts
-      if: always()
+    # Cleans up build artifacts (like .next, build directories, package files) from the runner's workspace.
+    # Also runs a Docker system prune, which might be redundant if the backend job already did it.
+    - name: Clean up build artifacts from runner workspace
+      if: always() # Run this step regardless of the success or failure of previous jobs/steps.
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf .next
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf build
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f package.json package-lock.json
-        # Clean docker unused resources
-        docker system prune -f --volumes
+        # Clean docker unused resources - this is a repeat from the backend job, consider if necessary here.
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
 
-    - name: Notify on failure
-      if: failure()
+    # If any of the preceding jobs (frontend-deployment, backend-deployment) or steps in this job failed,
+    # this step collects diagnostic information from PM2, Docker, and Nginx, and cleans up temporary files.
+    - name: Notify and collect diagnostics on deployment failure
+      if: failure() # Run this step only if a failure occurred in this job or its dependencies.
       run: |
         echo "============================================"
         echo "Deployment failed! Collecting diagnostic information..."

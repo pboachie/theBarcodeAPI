@@ -114,6 +114,10 @@ thebarcodeapi/
 └── README.md             # This file
 ```
 
+## ⚙️ CI/CD & Deployment Process
+
+This project uses GitHub Actions for automated CI/CD. For a detailed explanation of the deployment workflows, scripts, and infrastructure setup, please refer to the [Deployment Process Documentation (DEPLOYMENT.md)](DEPLOYMENT.md).
+
 ## 🚀 Quick Start
 
 ### **Prerequisites**

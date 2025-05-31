@@ -1,0 +1,14 @@
+#!/bin/bash
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/opt/thebarcodeapi/__ENVIRONMENT__/backups"
+
+# Backup PostgreSQL
+docker compose exec db pg_dump -U barcodeboachiefamily barcode_api > "$BACKUP_DIR/db_backup_$TIMESTAMP.sql"
+
+# Backup Redis
+docker compose exec redis redis-cli SAVE
+echo "$SUDO_PASSWORD" | sudo -S cp /opt/thebarcodeapi/__ENVIRONMENT__/releases/data/redis/dump.rdb "$BACKUP_DIR/redis_backup_$TIMESTAMP.rdb"
+
+# Clean old backups (keep last 7 days)
+find $BACKUP_DIR -name "db_backup_*" -mtime +7 -delete
+find $BACKUP_DIR -name "redis_backup_*" -mtime +7 -delete
