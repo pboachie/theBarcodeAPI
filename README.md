@@ -123,8 +123,8 @@ thebarcodeapi/
 ### **1. Clone & Setup Environment**
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/thebarcodeapi.git # Replace with actual repo URL
-cd thebarcodeapi
+git clone https://github.com/pboachie/theBarcodeAPI.git
+cd theBarcodeAPI
 
 # Create a root .env file (if it doesn't exist) for global settings.
 # This file is used by docker-compose.yml.

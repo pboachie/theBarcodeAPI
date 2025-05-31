@@ -1,13 +1,13 @@
-version: '3.8' # Specify a version
+version: '3.8'
 
 services:
-  barcodeApi: # Renamed from api
+  barcodeApi:
     build:
-      context: ./barcodeApi # Updated context
-      dockerfile: Dockerfile # Path relative to context
+      context: ./barcodeApi
+      dockerfile: Dockerfile
       args:
-        - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default} # Pass version as build arg
-        - PYTHON_ENV=${ENVIRONMENT:-production} # Added default for ENVIRONMENT
+        - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
+        - PYTHON_ENV=${ENVIRONMENT:-production}
     ports:
       - "${API_PORT:-8000}:8000" # Allow host port to be configured via .env
     depends_on:
@@ -16,15 +16,14 @@ services:
       redis:
         condition: service_healthy
     env_file:
-      - ./barcodeApi/.env # Updated path
-    environment: # Added environment section for runtime version
+      - ./barcodeApi/.env
+    environment:
       - APP_VERSION=${PROJECT_VERSION:-0.0.0-default}
     volumes:
       - ./barcodeApi/app:/app/app:rw
       - ./barcodeApi/alembic:/app/alembic:rw
-      # If ./data and ./logs were intended to be in barcodeApi, they would be:
-      # - ./barcodeApi/data:/app/data
-      # - ./barcodeApi/logs:/app/logs
+      - ./barcodeApi/data:/app/data
+      - ./barcodeApi/logs:/app/logs
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -40,17 +39,17 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '${API_CPUS:-4.0}' # Allow configuration via .env
-          memory: ${API_MEMORY:-2G}  # Allow configuration via .env
+          cpus: '${API_CPUS:-4.0}'
+          memory: ${API_MEMORY:-2G}
 
   barcodeFrontend:
     build:
       context: ./barcodeFrontend
       dockerfile: Dockerfile
-      args: # Added args section for build-time version
+      args:
         - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
     ports:
-      - "${FRONTEND_PORT:-3000}:3000" # Allow host port to be configured via .env
+      - "${FRONTEND_PORT:-3000}:3000"
     environment:
       # Example: Making the backend API URL available to Next.js
       # This needs to be prefixed with NEXT_PUBLIC_ for Next.js to pick it up client-side
@@ -124,10 +123,10 @@ services:
         limits:
           memory: ${DB_MEMORY:-1G} # Allow configuration via .env
 
-volumes: # Define named volumes for persistent data
+volumes:
   postgres_data:
   redis_data:
 
 networks:
   default:
-    name: barcodeproject_network # Renamed network for clarity
+    name: barcodeproject_network
