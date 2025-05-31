@@ -1,47 +1,57 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
-/node_modules
-/.pnp
-.pnp.js
-
-# testing
-/coverage
-
-# production
-/build
-
-# misc
+# General
 .DS_Store
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-.next*
-
-
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-*.pyc
-/__pycache__/*
-
 *.log
-*.env
-*.db
-*/build*
-*/venv/*
+*.env # Catch-all for .env files, recommend being specific if needed
 
-# Python build artifacts
-*.egg-info/
-dist/
-.eggs/
-*.egg
-*.venv
+# Node / Frontend (within barcodeFrontend)
+barcodeFrontend/node_modules/
+barcodeFrontend/.next/
+barcodeFrontend/out/
+barcodeFrontend/.env
+barcodeFrontend/.env.local
+barcodeFrontend/.env.development.local
+barcodeFrontend/.env.test.local
+barcodeFrontend/.env.production.local
+barcodeFrontend/npm-debug.log*
+barcodeFrontend/yarn-debug.log*
+barcodeFrontend/yarn-error.log*
+barcodeFrontend/coverage/ # Assuming frontend coverage reports go here
+
+# Python / Backend (within barcodeApi)
+barcodeApi/__pycache__/
+barcodeApi/*.pyc
+barcodeApi/.venv/ # Common name for virtual envs
+barcodeApi/venv/  # Another common name
+barcodeApi/.env # Backend specific .env
+barcodeApi/.pytest_cache/
+barcodeApi/.coverage*
+barcodeApi/htmlcov/ # Common for Python coverage
+barcodeApi/instance/ # If ever used by Flask/similar
+barcodeApi/dist/
+barcodeApi/*.egg-info/
+barcodeApi/.eggs/
+barcodeApi/*.egg
+
+# VSCode
+.vscode/*
+!.vscode/settings.json # Often useful to commit workspace settings
+!.vscode/launch.json   # Often useful to commit launch configurations
+!.vscode/extensions.json # Useful for recommending extensions
+
+# Build artifacts (if any at root, less likely now)
+# /build
+# /dist
+
+# Coverage (if any at root)
+# /coverage
+
+# PNP (if you use Yarn PnP)
+.pnp.js
+.pnp.loader.mjs
+.yarn/cache
+.yarn/install-state.gz
+.yarn/patches
+.yarn/plugins
+.yarn/releases
+.yarn/sdks
+.yarn/versions
