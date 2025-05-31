@@ -11,6 +11,9 @@ WORKDIR /app
 # Copy package.json and package-lock.json (or yarn.lock if used)
 COPY package.json package-lock.json ./
 
+# Install jq
+RUN apk add --no-cache jq
+
 # Install project dependencies
 RUN npm install
 
