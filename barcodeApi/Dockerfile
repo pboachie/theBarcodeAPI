@@ -4,12 +4,14 @@ FROM --platform=linux/amd64 python:3.10-slim-buster AS builder-base
 # Set build arguments with defaults
 ARG DEBIAN_FRONTEND=noninteractive
 ARG PYTHON_ENV=production
+ARG VERSION_ARG=0.0.0-dockerfile-default # Default if not passed by docker-compose
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DEBIAN_FRONTEND=${DEBIAN_FRONTEND} \
-    PYTHON_ENV=${PYTHON_ENV}
+    PYTHON_ENV=${PYTHON_ENV} \
+    APP_VERSION=${VERSION_ARG} # Set runtime env var from build arg
 
 # Set work directory
 WORKDIR /app
