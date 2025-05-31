@@ -27,7 +27,7 @@ export default function RemoteConnectionPage() {
             <li><strong>Simplified Integration:</strong> Access powerful barcode functionalities through a simple HTTP API.</li>
             <li><strong>Scalability:</strong> Rely on our robust infrastructure to handle your requests, from small projects to enterprise-level applications.</li>
             <li><strong>Cross-Platform Compatibility:</strong> Connect from any platform or programming language that supports HTTP requests.</li>
-            <li><strong>Focus on Your Core Logic:</strong> Offload complex barcode processing to our specialized servers and focus on your application's unique features.</li>
+            <li><strong>Focus on Your Core Logic:</strong> Offload complex barcode processing to our specialized servers and focus on your application&apos;s unique features.</li>
           </ul>
         </section>
 
@@ -36,7 +36,7 @@ export default function RemoteConnectionPage() {
             Connecting with C# (Visual Studio)
           </h2>
           <p className="text-md md:text-lg leading-relaxed mb-6">
-            This section provides a step-by-step guide to connect to `thebarcodeapi.com` using C# in Visual Studio. We'll demonstrate how to make a POST request to generate a barcode.
+            This section provides a step-by-step guide to connect to `thebarcodeapi.com` using C# in Visual Studio. We&apos;ll demonstrate how to make a POST request to generate a barcode.
           </p>
           
           <h3 className="text-xl md:text-2xl font-medium mb-4 text-[var(--accent-color)]/80">Prerequisites</h3>
@@ -45,7 +45,7 @@ export default function RemoteConnectionPage() {
             <li>Visual Studio IDE.</li>
             <li>A basic understanding of C# and asynchronous programming.</li>
             <li>For older .NET Framework versions, you might need to install `Newtonsoft.Json` via NuGet for JSON handling. For .NET Core and .NET 5+, `System.Text.Json` is built-in. We will use `System.Net.Http.Json` for simplicity in this example, which is available in modern .NET versions.</li>
-            <li>Your API Key from theBarcodeAPI.com (replace `"YOUR_API_KEY"` in the code).</li>
+            <li>Your API Key from theBarcodeAPI.com (replace &quot;YOUR_API_KEY&quot; in the code).</li>
           </ul>
 
           <h3 className="text-xl md:text-2xl font-medium mb-4 text-[var(--accent-color)]/80">Step-by-Step Guide</h3>
@@ -151,7 +151,7 @@ public class BarcodeGenerator
               </code>
             </pre>
             <p className="mt-4 text-xs md:text-sm text-slate-400 dark:text-slate-500">
-              Remember to replace `"YOUR_API_KEY"` with your actual key. The code includes options for handling JSON responses (e.g., an image URL) or direct image data. Adjust the `Accept` header and response processing accordingly.
+              Remember to replace &quot;YOUR_API_KEY&quot; with your actual key. The code includes options for handling JSON responses (e.g., an image URL) or direct image data. Adjust the `Accept` header and response processing accordingly.
             </p>
           </div>
         </section>
@@ -161,23 +161,23 @@ public class BarcodeGenerator
             Connecting with Python
           </h2>
           <p className="text-md md:text-lg leading-relaxed mb-6">
-            This section demonstrates how to connect to `thebarcodeapi.com` using a Python script. We'll use the popular `requests` library to make a POST request for barcode generation.
+            This section demonstrates how to connect to `thebarcodeapi.com` using a Python script. We&apos;ll use the popular `requests` library to make a POST request for barcode generation.
           </p>
 
           <h3 className="text-xl md:text-2xl font-medium mb-4 text-[var(--accent-color)]/80">Prerequisites</h3>
           <ul className="list-disc list-inside mb-6 space-y-1">
             <li>Python 3.6+ installed.</li>
             <li>The `requests` library. You can install it using pip: <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">pip install requests</code>.</li>
-            <li>Your API Key from theBarcodeAPI.com (replace `"YOUR_API_KEY"` in the code).</li>
+            <li>Your API Key from theBarcodeAPI.com (replace &quot;YOUR_API_KEY&quot; in the code).</li>
           </ul>
 
           <h3 className="text-xl md:text-2xl font-medium mb-4 text-[var(--accent-color)]/80">Step-by-Step Guide</h3>
           <ol className="list-decimal list-inside space-y-3 mb-6">
-            <li><strong>Install `requests`:</strong> If you haven't already, open your terminal or command prompt and run `pip install requests`.</li>
+            <li><strong>Install `requests`:</strong> If you haven&apos;t already, open your terminal or command prompt and run `pip install requests`.</li>
             <li><strong>Create a Python file:</strong> Create a new file (e.g., `barcode_request.py`).</li>
             <li><strong>Write the Code:</strong> Copy and paste the Python code snippet below into your file.</li>
             <li><strong>Replace API Key:</strong> Update the `api_key` variable with your actual API key.</li>
-            <li><strong>Run the Script:</strong> Execute the script from your terminal: `python barcode_request.py`. It will send the request and print the server's response.</li>
+            <li><strong>Run the Script:</strong> Execute the script from your terminal: `python barcode_request.py`. It will send the request and print the server&apos;s response.</li>
           </ol>
           
           <div className="mt-6 bg-black/20 dark:bg-black/30 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
@@ -251,7 +251,7 @@ if __name__ == "__main__":
               </code>
             </pre>
             <p className="mt-4 text-xs md:text-sm text-slate-400 dark:text-slate-500">
-              Ensure you replace `"YOUR_API_KEY"`. This script currently expects a JSON response. If the API is configured to send the image directly, you'll need to adjust the `Accept` header to something like `"image/png"` and modify the response handling to save `response.content` to a file.
+              Ensure you replace &quot;YOUR_API_KEY&quot;. This script currently expects a JSON response. If the API is configured to send the image directly, you&apos;ll need to adjust the `Accept` header to something like &quot;image/png&quot; and modify the response handling to save `response.content` to a file.
             </p>
           </div>
         </section>
