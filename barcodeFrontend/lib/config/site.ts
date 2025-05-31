@@ -11,7 +11,8 @@ export const siteConfig = {
     navigation: [
     { href: '/', label: 'Home' },
     { href: '/bulk', label: 'Bulk', longLabel: 'Bulk Generate' },
-    { href: 'https://api.thebarcodeapi.com', label: 'Docs', longLabel: 'API Documentation', target: '_blank' },
+    { href: '/remote-connection', label: 'Remote API', longLabel: 'Remote Connection Guide', external: false },
+    { href: 'https://api.thebarcodeapi.com/docs', label: 'Docs', longLabel: 'API Documentation', target: '_blank' },
     { href: '/support', label: 'Support' }
     ],
     social: [
