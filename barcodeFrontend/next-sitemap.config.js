@@ -11,4 +11,15 @@ module.exports = {
       'https://www.thebarcodeapi.com/sitemap-0.xml',
     ],
   },
+  additionalPaths: async (config) => {
+    return [
+      {
+        loc: 'https://api.thebarcodeapi.com',
+        changefreq: 'daily',
+        priority: 0.7,
+        lastmod: new Date().toISOString(),
+      },
+      // Add other manual paths here if needed in the future
+    ];
+  },
 };
