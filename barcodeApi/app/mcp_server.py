@@ -6,14 +6,12 @@ from .schemas import BarcodeFormatEnum, BarcodeImageFormatEnum, BarcodeRequest
 from .barcode_generator import generate_barcode_image, BarcodeGenerationError
 import logging
 
-# Configure basic logging (todo: move to main)
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     force=True
 )
 
-# Initialize logger for this module
 logger = logging.getLogger(__name__)
 
 async def generate_barcode_mcp(

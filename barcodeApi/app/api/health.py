@@ -1,5 +1,3 @@
-# app/api/health.py
-
 from fastapi import APIRouter, Depends, BackgroundTasks, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -41,7 +39,6 @@ router = APIRouter(
     }
 )
 
-# Cache configuration
 CACHE_DURATION = timedelta(seconds=10)
 last_check_time = datetime.min
 cached_health_response: Optional[HealthResponse] = None
@@ -74,7 +71,7 @@ async def get_system_metrics() -> Dict[str, Any]:
     return {
         "cpu_usage": psutil.cpu_percent(interval=1),
         "memory_usage": psutil.virtual_memory().percent,
-        "memory_total": psutil.virtual_memory().total // (1024 ** 3),  # GB
+        "memory_total": psutil.virtual_memory().total // (1024 ** 3),
         "disk_usage": psutil.disk_usage('/').percent
     }
 
@@ -87,7 +84,6 @@ async def detailed_health_check(redis_manager: RedisManager) -> None:
     """
     async with AsyncSessionLocal() as db:
         try:
-            # Collect all metrics concurrently
             system_metrics = await get_system_metrics()
             db_status = await check_database(db)
             redis_status = await redis_manager.check_redis()
@@ -110,7 +106,6 @@ async def detailed_health_check(redis_manager: RedisManager) -> None:
             if detailed_health["status"] != "ok":
                 detailed_health["message"] = "One or more system components are not functioning properly"
 
-            # Store in Redis with 5-minute expiration
             await redis_manager.redis.set(
                 "detailed_health_check",
                 json.dumps(detailed_health),
@@ -156,19 +151,16 @@ async def health_check(
 ) -> HealthResponse:
     global last_check_time, cached_health_response
 
-    # Return cached response if valid
     if (datetime.now() - last_check_time < CACHE_DURATION and
         cached_health_response is not None):
         return cached_health_response
 
     try:
-        # Check critical components
         db_status = await check_database(db)
         redis_status = await redis_manager.check_redis()
 
         overall_status = "ok" if all([db_status == "ok", redis_status == "ok"]) else "error"
 
-        # Update cache
         cached_health_response = HealthResponse(
             status=overall_status,
             version=settings.API_VERSION,
@@ -177,7 +169,6 @@ async def health_check(
         )
         last_check_time = datetime.now()
 
-        # Schedule detailed check
         background_tasks.add_task(detailed_health_check, redis_manager)
 
         return cached_health_response

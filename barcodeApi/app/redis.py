@@ -1,5 +1,3 @@
-# app/redis.py
-
 from redis.asyncio import Redis, ConnectionPool
 from app.config import settings
 from app.redis_manager import RedisManager
@@ -7,7 +5,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Configure connection pool with appropriate settings
 redis_pool = ConnectionPool.from_url(
     settings.REDIS_URL,
     encoding="utf-8",
@@ -18,10 +15,8 @@ redis_pool = ConnectionPool.from_url(
     db=1
 )
 
-# Initialize Redis client
 redis = Redis(connection_pool=redis_pool)
 
-# Initialize RedisManager with the Redis client
 redis_manager = RedisManager(redis)
 
 async def get_redis_manager() -> RedisManager:
@@ -31,11 +26,9 @@ async def initialize_redis_manager():
     """Initialize Redis manager and batch processors"""
     logger.info("Initializing Redis manager...")
     try:
-        # Initialize Redis manager
         await redis_manager.start()
         logger.info("Redis manager initialization complete")
 
-        # Verify batch processor initialization
         for priority, processor in redis_manager.batch_processor.processors.items():
             if not processor.running:
                 logger.error(f"{priority} batch processor not running")

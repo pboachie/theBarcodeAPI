@@ -32,7 +32,7 @@ class RedisManager:
     def __init__(self, redis: Redis):
         self.redis = redis
         self.increment_usage_sha = None
-        self.pending_results = {} # Note: This might be redundant if BatchProcessor handles futures internally
+        self.pending_results = {}
         self.rate_limit_sha = None
         self.get_all_user_data_sha = None
         self.ip_cache = {}
@@ -50,7 +50,7 @@ class RedisManager:
 
     @asynccontextmanager
     async def get_pipeline(self):
-        pipe = self.redis.pipeline() # redis.pipeline() is not async
+        pipe = self.redis.pipeline()
         try: yield pipe
         finally: await pipe.reset()
 
@@ -79,8 +79,8 @@ class RedisManager:
             await self.batch_processor.stop()
             if self.redis:
                 await self.redis.close()
-                if self.redis.connection_pool: # type: ignore
-                    self.redis.connection_pool.disconnect() # type: ignore
+                if self.redis.connection_pool:
+                    self.redis.connection_pool.disconnect()
             self.ip_cache.clear(); gc.collect()
             logger.info("Redis manager stopped successfully.")
         except Exception as ex: logger.error(f"Error during Redis manager shutdown: {ex}")
@@ -107,7 +107,7 @@ class RedisManager:
                 task_upd = {'status':'COMPLETED','result':res_dict,'data':data,'output_filename':task_info.get('output_filename')}
                 pipe.set(key_task,json.dumps(task_upd)); pipe.rpush(key_results,json.dumps(res_dict))
                 if not futures[internal_id].done(): futures[internal_id].set_result(True)
-            except (BarcodeGenerationError, ValueError, TypeError) as ex_inner: # Catch specific errors
+            except (BarcodeGenerationError, ValueError, TypeError) as ex_inner:
                 logger.error(f"Error for task {task_id} in job {job_id}: {ex_inner}")
                 err_res = {'original_data':data,'output_filename':task_info.get('output_filename'),'status':'Failed','error_message':str(ex_inner),'barcode_image_url':None}
                 task_err_upd = {'status':'FAILED','error':str(ex_inner),'result':err_res,'data':data,'output_filename':task_info.get('output_filename')}
@@ -158,13 +158,11 @@ class RedisManager:
                 if fut and not fut.done(): fut.set_exception(ex) if isinstance(ex, (ValueError,TypeError,NotImplementedError)) else fut.set_result(await self.get_default_value(operation, items[0][0] if items else None))
 
     async def _process_set_user_data(self, items: List[Tuple[Any, str]], pipe, pending_results):
-        # (Content of _process_set_user_data - largely unchanged but ensure it uses pending_results (futures) correctly)
-        # For brevity, assuming it's correctly adapted to use pending_results like other _process_* methods
         try:
-            for item_tuple, internal_id in items: # items are (({'user_data': ud_obj},), internal_id)
+            for item_tuple, internal_id in items:
                 user_data_dict = item_tuple[0]
                 user_data = user_data_dict['user_data']
-                if not isinstance(user_data, UserData): # Basic check
+                if not isinstance(user_data, UserData):
                     if not pending_results[internal_id].done(): pending_results[internal_id].set_result(False); continue
                 key = f"user_data:{user_data.id}"
                 mapping = {f.name: str(getattr(user_data, f.name)) if getattr(user_data, f.name) is not None else "" for f in UserData.model_fields.values()}
@@ -173,42 +171,27 @@ class RedisManager:
                 pipe.hset(key, mapping=mapping); pipe.expire(key, 86400)
             results = await pipe.execute()
             for i, (_, internal_id) in enumerate(items):
-                if not pending_results[internal_id].done(): pending_results[internal_id].set_result(bool(results[i*2])) # Simplified
+                if not pending_results[internal_id].done(): pending_results[internal_id].set_result(bool(results[i*2]))
         except Exception as ex: logger.error(f"Err in _process_set_user_data: {ex}"); [f.set_exception(ex) for _,f_id in items if not (f:=pending_results[f_id]).done()]
 
 
     async def _process_get_user_data(self, items: List[Tuple[Any, str]], pipe, pending_results):
-        # (Content of _process_get_user_data - ensure it handles item_tuple correctly and uses pending_results)
-        # Example: item_tuple might be ({'user_id': uid, 'ip_address': ip, 'is_username_lookup': False},)
-        # Or for username lookup: ({'user_id': uname, 'is_username_lookup': True},)
         try:
             for item_tuple, internal_id in items:
                 payload = item_tuple[0]
-                user_identifier = payload['user_id'] # This could be actual ID or username
-                # If is_username_lookup, one might first fetch ID from a username:id mapping.
-                # For now, assuming key is constructed directly or this logic is simplified/handled elsewhere.
-                key = f"user_data:{user_identifier}" # This needs to be the actual user ID for HGETALL
+                user_identifier = payload['user_id']
+                key = f"user_data:{user_identifier}"
                 if payload.get('is_username_lookup'):
-                    # Placeholder: In a real scenario, you'd look up username to get user_id first.
-                    # This lookup itself could be a batched operation if frequent.
-                    # For this example, if it's a username lookup, we might not find it directly with HGETALL.
-                    # This method needs to be robust if `user_identifier` is not an ID.
-                    # For now, we assume if is_username_lookup, the ID is already resolved or this is a simplified path.
                     logger.debug(f"Username lookup for {user_identifier} - ensure ID is used for HGETALL key.")
-                    # If username is passed as user_id, HGETALL might fail or return empty.
-                    # This part needs careful implementation of username to ID resolution.
-                    # For this refactor, we'll assume key is correctly formed for HGETALL.
-                    pass # Fall through, assuming key is correctly the user_id for HGETALL
+                    pass
                 pipe.hgetall(key)
 
             results = await pipe.execute()
             for i, (item_tuple, internal_id) in enumerate(items):
                 payload = item_tuple[0]
-                ip_address = payload.get('ip_address') # For default creation
+                ip_address = payload.get('ip_address')
                 if not pending_results[internal_id].done():
                     if results[i]:
-                        # ... (UserData conversion logic from existing _process_get_user_data)
-                        # Simplified:
                         try:
                             user_data_dict = {k.decode(): v.decode() for k, v in results[i].items()}
                             for f in ['req_today','rem_req']: user_data_dict[f]=int(user_data_dict.get(f,0))
@@ -223,16 +206,12 @@ class RedisManager:
         except Exception as ex: logger.error(f"Err in _process_get_user_data: {ex}"); [f.set_exception(ex) for _,f_id in items if not (f:=pending_results[f_id]).done()]
 
 
-    # ... (Other _process_* methods like _process_increment_usage, etc., are assumed to be refactored similarly if needed,
-    # ensuring they correctly unpack `item_tuple` from `items` and use `pending_results` (futures))
-
-    # --- Public methods refactored to use BatchProcessor ---
     async def set_user_data(self, user_data: UserData) -> bool:
         try:
             return await self.batch_processor.add_to_batch("set_user_data", ({'user_data': user_data},), BatchPriority.MEDIUM) or False
         except Exception as ex: logger.error(f"Error adding set_user_data to batch: {ex}"); return False
 
-    async def get_user_data(self, user_id: Optional[str], ip_address: str) -> UserData: # Consistently returns UserData, creates default if not found
+    async def get_user_data(self, user_id: Optional[str], ip_address: str) -> UserData:
         try:
             payload = {'user_id': user_id, 'ip_address': ip_address, 'is_username_lookup': False}
             user_data_result = await self.batch_processor.add_to_batch("get_user_data", (payload,), BatchPriority.HIGH)
@@ -246,9 +225,8 @@ class RedisManager:
 
     async def increment_usage(self, user_id: Optional[str], ip_address: str) -> UserData:
         try:
-            # _process_increment_usage expects ((user_id, ip_address), internal_id)
             user_data_result = await self.batch_processor.add_to_batch("increment_usage", (user_id, ip_address), BatchPriority.URGENT)
-            return user_data_result if user_data_result else await self.create_default_user_data(ip_address) # Fallback
+            return user_data_result if user_data_result else await self.create_default_user_data(ip_address)
         except Exception as ex: logger.error(f"Error in increment_usage batch call: {ex}"); return await self.create_default_user_data(ip_address)
 
     async def check_rate_limit(self, key: str) -> bool:
@@ -300,30 +278,7 @@ class RedisManager:
             logger.info(f"DB to Redis sync tasks ({len(tasks)}) added.")
         except Exception as ex: logger.error(f"Error in sync_db_to_redis: {ex}", exc_info=True)
 
-    # ... (keep _cleanup_future, _convert_list_to_dict, _decode_redis_hash, _get_key, _extract_ip_address,
-    #      get_default_value, check_redis, get_connection_stats, create_default_user_data,
-    #      cleanup_redis_keys, _gather_with_cleanup, get_metrics)
-    # ... (and _process_token_checks, _process_get_tokens, _process_reset_daily_usage, _process_username_mappings, _process_get_user_data_by_ip)
-    # ... (ensure get_user_data_by_username is also using batch processor as per previous diff)
-
-    # Make sure to remove the old token_management(self, ...) method.
-    # The other _process_* methods need to be here and correctly implemented.
-    # For this overwrite, I'm focusing on the refactoring of public methods and adding new _process_token methods.
-    # The existing _process_* methods from the read_files output will be assumed correct and included below this comment block.
-
-    # [The rest of the _process_* methods, _get_key, _extract_ip_address, etc., and other helper/public methods from the original file,
-    #  excluding the ones explicitly refactored above or removed, would be here.]
-    #  The method `get_user_data_by_username` was already refactored.
-    #  The methods `sync_redis_to_db` and `token_management` are affected by this refactor.
-    #  The following methods are assumed to be kept as they are, or their refactoring is outside the explicit scope of this step,
-    #  but they should be part of the final file content.
-    #  _cleanup_future, _convert_list_to_dict, _decode_redis_hash,
-    #  _process_check_rate_limit, _process_token_checks, _process_get_tokens, _process_reset_daily_usage,
-    #  _process_username_mappings, _process_get_user_data_by_ip, get_default_value,
-    #  check_redis, get_connection_stats, create_default_user_data, cleanup_redis_keys, _gather_with_cleanup, get_metrics
-
-    # (Re-inserting methods that were not explicitly refactored but need to be preserved)
-    def _cleanup_future(self, batch_id: str, result: Any): # This was removed in prev. step, ensure it's not needed by retained _process_* methods
+    def _cleanup_future(self, batch_id: str, result: Any):
         future = self.pending_results.get(batch_id)
         if future and not future.done(): future.set_result(result)
 
@@ -357,7 +312,7 @@ class RedisManager:
         try:
             window = settings.RATE_LIMIT_WINDOW; limit = settings.RATE_LIMIT_LIMIT
             current_time = datetime.now(pytz.utc).isoformat()
-            for (key,), batch_id in items: pipe.eval(RATE_LIMIT_SCRIPT, 1, key, window, limit, current_time) # Corrected evalsha to eval if script itself is passed
+            for (key,), batch_id in items: pipe.eval(RATE_LIMIT_SCRIPT, 1, key, window, limit, current_time)
             results = await pipe.execute()
             for i, (_, batch_id) in enumerate(items):
                 future = pending_results.get(batch_id)
@@ -368,13 +323,13 @@ class RedisManager:
                 future = pending_results.get(batch_id)
                 if future and not future.done(): future.set_result(False)
 
-    async def _process_token_checks(self, items: List[Tuple[Any, str]], pipe, pending_results): # Corresponds to is_token_active
+    async def _process_token_checks(self, items: List[Tuple[Any, str]], pipe, pending_results):
         try:
             for item_tuple, internal_id in items:
                 user_id, token = item_tuple
                 pipe.hget(f"user_data:{user_id}", "active_token")
             results = await pipe.execute()
-            for i, ((_, token), internal_id) in enumerate(items): # Assuming item_tuple was (user_id, token)
+            for i, ((_, token), internal_id) in enumerate(items):
                 future = pending_results.get(internal_id)
                 if future and not future.done():
                     stored_token_bytes = results[i]
@@ -386,10 +341,10 @@ class RedisManager:
                 if internal_id in pending_results and not pending_results[internal_id].done():
                     pending_results[internal_id].set_exception(ex)
 
-    async def _process_get_tokens(self, items: List[Tuple[Any, str]], pipe, pending_results): # Corresponds to get_active_token
+    async def _process_get_tokens(self, items: List[Tuple[Any, str]], pipe, pending_results):
         try:
             for item_tuple, internal_id in items:
-                user_id, = item_tuple # user_id is the first element
+                user_id, = item_tuple
                 pipe.hget(f"user_data:{user_id}", "active_token")
             results = await pipe.execute()
             for i, (_, internal_id) in enumerate(items):
@@ -405,13 +360,13 @@ class RedisManager:
 
     async def _process_reset_daily_usage(self, items: List[Tuple[Any, str]], pipe, pending_results):
         try:
-            for (key,), batch_id in items: # item is (key,)
+            for (key,), batch_id in items:
                 key_type = await self.redis.type(key)
                 mapping = {"requests_today": "0", "remaining_requests": str(settings.RateLimit.get_limit("unauthenticated"))}
                 if key_type == b'hash': pipe.hset(key, mapping=mapping)
                 elif key.startswith("ip:") or key.startswith("user_data:"):
                     pipe.hset(key, mapping=mapping); pipe.expire(key, 86400)
-                else: logger.warning(f"Invalid key type for {key}, skipping"); continue # Important to handle future if skipped
+                else: logger.warning(f"Invalid key type for {key}, skipping"); continue
             results = await pipe.execute()
             for i, (_, batch_id) in enumerate(items):
                 future = pending_results.get(batch_id)
@@ -422,13 +377,12 @@ class RedisManager:
                 future = pending_results.get(batch_id)
                 if future and not future.done(): future.set_result(False)
 
-    async def _process_username_mappings(self, items: List[Tuple[Any, str]], pipe, pending_results): # Corresponds to set_username_to_id_mapping
+    async def _process_username_mappings(self, items: List[Tuple[Any, str]], pipe, pending_results):
         try:
             for item_tuple, internal_id in items:
                 username, user_id = item_tuple
-                key = self._get_key(user_id, None) # Assumes _get_key handles user_id correctly
-                pipe.hset(key, "username", username) # This sets username on user_data:{user_id}
-                # If we need a username:user_id map, it's a different key e.g. f"username_map:{username}" -> user_id
+                key = self._get_key(user_id, None)
+                pipe.hset(key, "username", username)
             results = await pipe.execute()
             for i, (_, internal_id) in enumerate(items):
                 future = pending_results.get(internal_id)
@@ -462,11 +416,11 @@ class RedisManager:
                 if future and not future.done(): future.set_result(await self.create_default_user_data(ip_address))
 
     def _get_key(self, user_id: Optional[str] = None, ip_address: Optional[str] = None) -> str:
-        if user_id is None or user_id == -1: # Check for -1 if it's a convention for anonymous
+        if user_id is None or user_id == -1:
             ip_str = self.ip_cache.get(ip_address)
             if ip_str is None:
                 try:
-                    ip = ipaddress.ip_address(ip_address or "") # Handle None ip_address
+                    ip = ipaddress.ip_address(ip_address or "")
                     ip_str = ip.compressed
                     if ip_address: self.ip_cache[ip_address] = ip_str
                 except ValueError: ip_str = ip_address or "unknown_ip"
@@ -474,10 +428,10 @@ class RedisManager:
         return f"user_data:{user_id}"
 
     def _extract_ip_address(self, item: Any) -> str:
-        if isinstance(item, tuple) and len(item)>0: # ( (user_id, ip_address), internal_id ) or ( (ip_address,), internal_id )
+        if isinstance(item, tuple) and len(item)>0:
             inner_tuple = item[0]
-            if len(inner_tuple) > 1 and isinstance(inner_tuple[1], str): return inner_tuple[1] # (user_id, ip_address)
-            if len(inner_tuple) == 1 and isinstance(inner_tuple[0], str): return inner_tuple[0] # (ip_address,)
+            if len(inner_tuple) > 1 and isinstance(inner_tuple[1], str): return inner_tuple[1]
+            if len(inner_tuple) == 1 and isinstance(inner_tuple[0], str): return inner_tuple[0]
         elif isinstance(item, dict): return item.get('ip_address', "unknown")
         return str(item) if item is not None else "unknown"
 
@@ -489,19 +443,14 @@ class RedisManager:
         try:
             async with self.get_connection():
                 info = await self.redis.info("clients")
-                # Type ignore for _in_use_connections if not directly on pool type hint
-                return RedisConnectionStats(connected_clients=info.get("connected_clients",0), blocked_clients=info.get("blocked_clients",0), tracking_clients=info.get("tracking_clients",0), total_connections=info.get("total_connections_received",0), in_use_connections=len(self.redis.connection_pool._in_use_connections)) # type: ignore
+                return RedisConnectionStats(connected_clients=info.get("connected_clients",0), blocked_clients=info.get("blocked_clients",0), tracking_clients=info.get("tracking_clients",0), total_connections=info.get("total_connections_received",0), in_use_connections=len(self.redis.connection_pool._in_use_connections))
         except Exception as ex: logger.error(f"Error getting connection stats: {ex}"); return RedisConnectionStats(connected_clients=0,blocked_clients=0,tracking_clients=0,total_connections=0,in_use_connections=0)
 
     async def create_default_user_data(self, ip_address: str) -> UserData:
         try:
-            # Potentially use get_user_data_by_ip to prevent re-creation if already exists by IP.
-            # However, this method is often a fallback *from* get_user_data_by_ip.
-            # For safety, let's assume it's called when data is truly not found.
             now = datetime.now(pytz.utc)
             user_data = UserData(id=IDGenerator.generate_id(), username=f"ip:{ip_address}", ip_address=ip_address, tier="unauthenticated", remaining_requests=settings.RateLimit.get_limit("unauthenticated"), requests_today=0, last_request=now, last_reset=now)
-            # Directly set this default data, not via batch, as it's a fallback/creation step
-            key = self._get_key(user_data.id, ip_address) # Should use user_data.id here.
+            key = self._get_key(user_data.id, ip_address)
             ip_key = f"ip:{ip_address}"
 
             mapping = {f.name: str(getattr(user_data, f.name)) if getattr(user_data, f.name) is not None else "" for f in UserData.model_fields.values()}
@@ -509,9 +458,8 @@ class RedisManager:
             mapping['last_reset'] = user_data.last_reset.isoformat()
 
             async with self.redis.pipeline() as pipe:
-                pipe.hset(key, mapping=mapping) # user_data:{id}
+                pipe.hset(key, mapping=mapping)
                 pipe.expire(key, 86400)
-                # Also ensure ip:{ip} maps to this id if it's a new user from IP
                 pipe.hset(ip_key, mapping={"id": str(user_data.id), "ip_address": ip_address})
                 pipe.expire(ip_key, 86400)
                 await pipe.execute()
@@ -541,7 +489,6 @@ class RedisManager:
         except Exception as ex: logger.error(f"Error during Redis cleanup: {ex}", exc_info=True)
 
     async def _gather_with_cleanup(self, tasks: List[asyncio.Task]) -> List[Any]:
-        # (Content of _gather_with_cleanup - unchanged)
         try: return await asyncio.gather(*tasks)
         except Exception:
             for task in tasks:
@@ -556,7 +503,6 @@ class RedisManager:
 
 
     async def get_metrics(self) -> dict:
-        # (Content of get_metrics - unchanged)
         try:
             info, pool = await self.redis.info(), self.redis.connection_pool
             batch_metrics = { str(prio): {"queue_size": len(proc.operations), "processing": proc.processing, "interval_ms": int(proc.interval*1000)} for prio, proc in self.batch_processor.processors.items()}
@@ -567,12 +513,9 @@ class RedisManager:
             }
         except Exception as ex: logger.error(f"Error getting metrics: {ex}"); return {"error":str(ex), "redis":{},"connection_pool":{},"batch_processors":{}}
 
-    # get_user_data_by_username was refactored in the previous step.
-    # Ensure it's using the batch processor correctly.
     async def get_user_data_by_username(self, username: str) -> Optional[UserData]:
         _batch_response_for_cleanup = None
         try:
-            # The payload for _process_get_user_data needs to be a tuple containing a dict
             item_payload = ({'user_id': username, 'is_username_lookup': True},)
             batch_response = await self.batch_processor.add_to_batch(
                 "get_user_data",
@@ -587,13 +530,11 @@ class RedisManager:
             if isinstance(batch_response, UserData):
                 return batch_response
 
-            # This dict conversion should ideally happen within _process_get_user_data
             if isinstance(batch_response, dict):
                 logger.warning(f"get_user_data_by_username received dict, expected UserData. Attempting conversion for {username}.")
                 try:
-                    required_fields = UserData.model_fields.keys() # Use model_fields for Pydantic v2
+                    required_fields = UserData.model_fields.keys()
                     if all(field in batch_response for field in required_fields):
-                        # Ensure correct types, especially for nested models or specific formats like datetime
                         for field in ['requests_today', 'remaining_requests']:
                             if field in batch_response and batch_response[field] is not None: batch_response[field] = int(batch_response[field])
                             else: batch_response[field] = 0
@@ -622,7 +563,7 @@ class RedisManager:
             else:
                 logger.warning("_cleanup_pending_results method not found on batch_processor. Skipping cleanup.")
 
-    async def sync_redis_to_db(self, db: AsyncSession): # Unchanged from previous version, kept for context
+    async def sync_redis_to_db(self, db: AsyncSession):
         logger.debug("Starting sync_redis_to_db process.")
         try:
             all_user_data = await self.redis.evalsha(self.get_all_user_data_sha, 0)
@@ -633,18 +574,18 @@ class RedisManager:
                     if not entry or len(entry) < 2: continue
                     entry_type, identifier = entry[0], entry[1]
                     if not identifier: continue
-                    data_dict = {k.decode('utf-8'):v.decode('utf-8') for k,v in (fd for fd in entry[2:] if isinstance(fd, (list,tuple)) and len(fd)==2)} # Ensure bytes are decoded
+                    data_dict = {k.decode('utf-8'):v.decode('utf-8') for k,v in (fd for fd in entry[2:] if isinstance(fd, (list,tuple)) and len(fd)==2)}
                     if not data_dict: continue
                     now = datetime.now(pytz.utc)
-                    if entry_type == b"user_data": # Compare with bytes
-                        user_id = identifier.decode('utf-8') # Ensure identifier is decoded
+                    if entry_type == b"user_data":
+                        user_id = identifier.decode('utf-8')
                         user_records[user_id] = {
                             'id': user_id, 'username': data_dict.get('username', f"user_{user_id}"),
                             'tier': data_dict.get('tier', 'unauthenticated'), 'ip_address': data_dict.get('ip_address'),
                             'requests_today': int(data_dict.get('requests_today',0)),
                             'remaining_requests': int(data_dict.get('remaining_requests', settings.RateLimit.get_limit("unauthenticated"))),
                             'last_request': datetime.fromisoformat(data_dict.get('last_request', now.isoformat())),
-                            'hashed_password': data_dict.get('hashed_password'), # Keep if exists, else None implicitly
+                            'hashed_password': data_dict.get('hashed_password'),
                         }
                         usage_records[user_id] = {
                             'user_id': user_id, 'ip_address': data_dict.get('ip_address'),
@@ -657,12 +598,12 @@ class RedisManager:
                 except Exception as ex: logger.error(f"Error processing entry {entry}: {ex}"); continue
             if user_records:
                 stmt = insert(User).values(list(user_records.values()))
-                set_clause = {c.name: getattr(stmt.excluded, c.name) for c in User.__table__.columns if c.name != 'id'} # Exclude primary key from update
+                set_clause = {c.name: getattr(stmt.excluded, c.name) for c in User.__table__.columns if c.name != 'id'}
                 stmt = stmt.on_conflict_do_update(index_elements=['id'], set_=set_clause)
                 await db.execute(stmt)
             if usage_records:
                 stmt = insert(Usage).values(list(usage_records.values()))
-                set_clause_usage = {c.name: getattr(stmt.excluded, c.name) for c in Usage.__table__.columns if c.name != 'user_id'}  # Assuming user_id is PK for Usage
+                set_clause_usage = {c.name: getattr(stmt.excluded, c.name) for c in Usage.__table__.columns if c.name != 'user_id'}
                 stmt = stmt.on_conflict_do_update(index_elements=["user_id"], set_=set_clause_usage)
                 await db.execute(stmt)
             await db.commit()
@@ -670,8 +611,3 @@ class RedisManager:
         except Exception as ex: logger.error(f"Error syncing Redis data to database: {str(ex)}", exc_info=True); raise
         finally: await db.close()
 
-    # Removed token_management method
-    # Public token methods are now refactored above to use batch processor
-    # Other utility methods like check_redis, get_connection_stats, etc., are kept.
-    # cleanup_redis_keys, _gather_with_cleanup, get_metrics are also kept.
-    # create_default_user_data is kept.

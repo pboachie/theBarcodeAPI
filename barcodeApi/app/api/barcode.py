@@ -1,5 +1,3 @@
-# app/api/barcode.py
-
 from app.barcode_generator import BarcodeGenerationError, generate_barcode_image
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, Response
 from fastapi.param_functions import Form
@@ -71,7 +69,6 @@ async def generate_barcode(
         )
 
 
-        # Create options dictionary
         writer_options = {
             'module_width': module_width,
             'module_height': module_height,
@@ -85,17 +82,13 @@ async def generate_barcode(
             'dpi': dpi
         }
 
-        # Add text content to writer options if needed
         if show_text and text_content:
             writer_options['text_content'] = text_content
 
-        # Filter out None values
         writer_options = {k: v for k, v in writer_options.items() if v is not None}
 
-        # Get client IP
         ip_address = await get_client_ip(request)
 
-        # Check remaining requests
         if current_user.remaining_requests <= 0:
             raise HTTPException(
                 status_code=429,
@@ -108,7 +101,6 @@ async def generate_barcode(
             logger.error(f"Barcode generation error: {str(e)}")
             raise HTTPException(status_code=400, detail=str(e))
 
-        # Update usage in Redis
         updated_user_data = await redis_manager.increment_usage(user_id=current_user.id, ip_address=ip_address)
         if not updated_user_data:
             logger.error("Error updating usage in Redis")
@@ -117,11 +109,9 @@ async def generate_barcode(
                 detail="There was an error processing your request. Please try again."
             )
 
-        # Parse image format and set media type
         image_format_str = barcode_request.image_format.value
         media_type = f"image/{image_format_str.lower()}"
 
-        # Set response headers
         add_headers = {
             "X-Rate-Limit-Requests": str(updated_user_data.requests_today),
             "X-Rate-Limit-Remaining": str(updated_user_data.remaining_requests),

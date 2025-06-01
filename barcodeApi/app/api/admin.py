@@ -1,5 +1,3 @@
-# app/api/admin.py
-
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -53,7 +51,6 @@ async def get_users(
 
     try:
 
-        # Log the user and IP attempting to get users
         logger.info(f"User data requested by {current_user.username} from {current_user.ip_address}")
 
         async with db.begin():
@@ -62,7 +59,6 @@ async def get_users(
 
         for user in db_users:
             try:
-                # Get user data from Redis using batch processor
                 user_data = await redis_manager.batch_processor.add_to_batch(
                     "get_user_data",
                     {"user_id": user.id},
@@ -72,7 +68,6 @@ async def get_users(
                 current_time = datetime.now()
 
                 if user_data and isinstance(user_data, UserData):
-                    # Use existing Redis data
                     response_item = {
                         "id": str(user_data.id),
                         "username": user_data.username,
@@ -84,7 +79,6 @@ async def get_users(
                         "last_reset": user_data.last_reset.isoformat() if user_data.last_reset else None
                     }
                 else:
-                    # Create default data
                     response_item = {
                         "id": str(user.id),
                         "username": user.username,
@@ -96,7 +90,6 @@ async def get_users(
                         "last_reset": current_time.isoformat()
                     }
 
-                    # Create UserData for Redis
                     default_data = UserData(
                         id=str(user.id),
                         username=str(user.username),
@@ -108,7 +101,6 @@ async def get_users(
                         last_reset=current_time
                     )
 
-                    # Queue Redis update
                     redis_batch_tasks.append(
                         redis_manager.batch_processor.add_to_batch(
                             "set_user_data",
@@ -123,7 +115,6 @@ async def get_users(
                 logger.error(f"Error processing user {user.id}: {e}", exc_info=True)
                 continue
 
-        # Wait for all batch operations to complete if there are any
         if redis_batch_tasks:
             results = await asyncio.gather(*redis_batch_tasks, return_exceptions=True)
             for result in results:
@@ -192,11 +183,9 @@ async def create_user(
     """
     try:
 
-        # Log the user and IP attempting the creation
         logger.info(f"User creation requested by {current_user.username} from {current_user.ip_address}")
 
         async with db.begin():
-            # Check if user already exists
             result = await db.execute(select(User).filter(User.username == user.username))
             existing_user = result.scalar_one_or_none()
             if existing_user:
@@ -210,9 +199,8 @@ async def create_user(
             new_user = User(username=user.username, hashed_password=hashed_password, tier=user.tier.value)
             db.add(new_user)
             await db.flush()
-            await db.refresh(new_user) # Refresh the user object to get the ID
+            await db.refresh(new_user)
 
-        # Initialize user data in Redis
         current_time = datetime.now()
         user_data = UserData(
             id=str(new_user.id),
@@ -265,10 +253,8 @@ async def sync_database(
     Raises:
         HTTPException: If there is an error during the synchronization process.
     """
-    # Attempt database sync
     try:
 
-        # Log the user and IP attempting the sync
         logger.info(f"Database sync requested by {current_user.username} from {current_user.ip_address}")
 
         try:

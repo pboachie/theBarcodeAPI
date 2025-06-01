@@ -1,4 +1,3 @@
-# app/dependencies.py
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -36,23 +35,19 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # Unauthenticated user
     if token is None:
         try:
             client_ip = await get_client_ip(request)
             logger.debug(f"Client IP: {client_ip}")
 
-            # Try to get existing user data by IP first
             user_data = await redis_manager.get_user_data_by_ip(client_ip)
             if user_data:
                 logger.debug(f"Found existing user data for IP {client_ip}")
                 return user_data
 
-            # If no existing data found, create new user data
             logger.debug("Creating default user data")
             user_data = await redis_manager.create_default_user_data(client_ip)
 
-            # Store user data (this will also set up IP mapping)
             await redis_manager.set_user_data(user_data)
             return user_data
 
@@ -63,7 +58,6 @@ async def get_current_user(
             logger.error(f"Unexpected error: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Internal Server Error")
 
-    # Authenticated user logic remains the same...
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         username: str = payload.get("sub")

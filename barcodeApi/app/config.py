@@ -1,4 +1,3 @@
-# app/config.py
 import os
 
 from pydantic import ConfigDict
@@ -23,8 +22,8 @@ class Settings(BaseSettings):
     ROOT_PATH: str = os.getenv("ROOT_PATH", "/api/v1")
     DB_PASSWORD: str = os.getenv("DB_PASSWORD", "")
     SERVER_URL: str = os.getenv("SERVER_URL", "https://www.thebarcodeapi.com")
-    RATE_LIMIT_WINDOW: ClassVar[int] = 60  # Window duration in seconds
-    RATE_LIMIT_LIMIT: ClassVar[int] = 100  # Maximum number of requests within the window
+    RATE_LIMIT_WINDOW: ClassVar[int] = 60
+    RATE_LIMIT_LIMIT: ClassVar[int] = 100
     ALLOWED_HOSTS: ClassVar[List[str]] = [
         "thebarcodeapi.com",
         "*.thebarcodeapi.com"

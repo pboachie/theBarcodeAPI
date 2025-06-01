@@ -1,5 +1,3 @@
-# app/rate_limiter.py
-
 from functools import wraps
 from typing import Callable
 import logging
