@@ -1,5 +1,3 @@
-# app/barcode_generator.py
-
 import asyncio
 from io import BytesIO
 from barcode import get_barcode_class, generate
@@ -19,23 +17,18 @@ async def generate_barcode_image(barcode_request: BarcodeRequest, writer_options
 
 def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options: Dict[str, any]) -> bytes:
     try:
-        # Create ImageWriter instance first
         writer = ImageWriter()
 
-        # Configure text settings BEFORE generating barcode
         show_text = getattr(barcode_request, 'show_text', True)
         if not show_text:
-            # Disable text completely
             writer.text = ""
             writer.font_size = 0
             writer.text_distance = 0
         else:
-            # Set custom text if provided, otherwise use barcode data
             writer.text = writer_options.get('text_content', barcode_request.data)
             writer.font_size = writer_options.get('font_size', 10)
             writer.text_distance = writer_options.get('text_distance', 5)
 
-        # Set other writer options
         writer.module_width = writer_options.get('module_width', 0.2)
         writer.module_height = writer_options.get('module_height', 15.0)
         writer.quiet_zone = writer_options.get('quiet_zone', 6.5)
@@ -43,7 +36,6 @@ def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options
         writer.foreground = writer_options.get('foreground', 'black')
         writer.center_text = writer_options.get('center_text', True)
 
-        # Generate barcode using the library's generate function
         buffer = BytesIO()
         generate(
             barcode_request.format,
@@ -54,14 +46,11 @@ def _generate_barcode_image_sync(barcode_request: BarcodeRequest, writer_options
             text="" if not show_text else writer.text
         )
 
-        # Process the generated image
         buffer.seek(0)
         img = PIL.Image.open(buffer)
 
-        # Resize to requested dimensions
         img = img.resize((barcode_request.width, barcode_request.height), PIL.Image.Resampling.LANCZOS)
 
-        # Save to new buffer
         try:
             with BytesIO() as output_buffer:
                 img.save(

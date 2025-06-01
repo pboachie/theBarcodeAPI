@@ -1,5 +1,3 @@
-# app/api/token.py
-
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,7 +47,6 @@ async def login_for_access_token(
     finally:
         await db.close()
 
-# Rate limit all other endpoints to 1 request per 15 minutes
 @router.get("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed", include_in_schema=False)
 @router.put("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed", include_in_schema=False)
 @router.delete("", status_code=status.HTTP_405_METHOD_NOT_ALLOWED, summary="Method not allowed", include_in_schema=False)

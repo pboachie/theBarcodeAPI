@@ -1,5 +1,3 @@
-# lua_scripts.py
-
 INCREMENT_USAGE_SCRIPT = """
 local key = KEYS[1]
 local user_id = ARGV[1]
@@ -7,7 +5,6 @@ local ip_address = ARGV[2]
 local rate_limit = tonumber(ARGV[3])
 local current_time = ARGV[4]
 
--- Input validation
 if not key or key == '' then
     return {err="Key is required"}
 end
@@ -21,16 +18,13 @@ if not rate_limit or rate_limit < 0 then
     return {err="Valid rate limit is required"}
 end
 
--- Check if we have user data for this key
 local user_exists = redis.call("EXISTS", key)
 
 if user_exists == 1 then
-    -- Get current values with proper type conversion
     local requests_today = tonumber(redis.call("HGET", key, "requests_today")) or 0
     local remaining = tonumber(redis.call("HGET", key, "remaining_requests")) or rate_limit
     local new_remaining = math.max(0, remaining - 1)
 
-    -- Prepare updates with type safety
     local updates = {
         "id", tostring(user_id),
         "requests_today", tostring(requests_today + 1),
@@ -39,18 +33,15 @@ if user_exists == 1 then
         "ip_address", ip_address
     }
 
-    -- Preserve existing tier or set default
     local user_type = redis.call("HGET", key, "tier")
     if not user_type then
         table.insert(updates, "tier")
         table.insert(updates, "unauthenticated")
     end
 
-    -- Atomic update
     redis.call("HMSET", key, unpack(updates))
     redis.call("EXPIRE", key, 86400)
 else
-    -- Initialize new user data with proper type conversion
     local initial_data = {
         "id", tostring(user_id),
         "ip_address", ip_address,
@@ -65,7 +56,6 @@ else
     redis.call("EXPIRE", key, 86400)
 end
 
--- Function to convert list to table
 local function list_to_table(list)
     local result = {}
     for i = 1, #list, 2 do
@@ -74,32 +64,26 @@ local function list_to_table(list)
     return result
 end
 
--- Always return as key-value table
 local data = redis.call("HGETALL", key)
 return list_to_table(data)
 """
 
 GET_ALL_USER_DATA_SCRIPT = """
--- Get all user data from Redis
 local function get_all_user_data()
     local result = {}
     local cursor = "0"
     local pattern = "user_data:*"
 
     repeat
-        -- Scan for user data keys
         local scan_result = redis.call("SCAN", cursor, "MATCH", pattern, "COUNT", 100)
         cursor = scan_result[1]
         local keys = scan_result[2]
 
-        -- Process each key
         for _, key in ipairs(keys) do
-            -- Extract user_id from key
             local user_id = string.match(key, "user_data:(.+)")
             if user_id then
                 local data = redis.call("HGETALL", key)
                 if #data > 0 then
-                    -- Convert hash to array format expected by Python
                     local user_entry = {"user_data", user_id}
                     for i = 1, #data, 2 do
                         table.insert(user_entry, {data[i], data[i + 1]})
@@ -110,7 +94,6 @@ local function get_all_user_data()
         end
     until cursor == "0"
 
-    -- Get IP-based data
     cursor = "0"
     pattern = "ip:*"
 
@@ -137,7 +120,6 @@ local function get_all_user_data()
     return result
 end
 
--- Execute and return results
 return get_all_user_data()
 """
 
@@ -147,7 +129,6 @@ local window = tonumber(ARGV[1])
 local limit = tonumber(ARGV[2])
 local current_time = tonumber(redis.call('TIME')[1])
 
--- Input validation
 if not key or key == '' then
     return redis.error_reply("Key is required")
 end
@@ -158,7 +139,6 @@ if not limit or limit <= 0 then
     return redis.error_reply("Valid limit is required")
 end
 
--- Clean up old entries more efficiently
 local cleanup_before = current_time - window
 local keys_to_del = {}
 local cursor = "0"
@@ -176,23 +156,19 @@ repeat
         end
     end
 
-    -- Process deletions in batches
     if #keys_to_del >= batch_size then
         redis.call("HDEL", key, unpack(keys_to_del))
         keys_to_del = {}
     end
 until cursor == "0"
 
--- Delete any remaining old entries
 if #keys_to_del > 0 then
     redis.call("HDEL", key, unpack(keys_to_del))
 end
 
--- Update current window count
 local current_field = tostring(current_time)
 local window_count = redis.call("HINCRBY", key, current_field, 1)
 
--- Set expiration on first hit
 if window_count == 1 then
     redis.call("EXPIRE", key, window)
 end

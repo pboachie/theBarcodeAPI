@@ -10,15 +10,15 @@ from fastnanoid import generate as generate_nanoid
 
 from app.dependencies import get_current_user, get_redis_manager
 from app.redis_manager import RedisManager
-# Assuming MultiLevelBatchProcessor is accessible, if not, adjust import
-# from app.batch_processor import MultiLevelBatchProcessor # Or from where it's defined
+
+
 from app.schemas import (
-    BarcodeRequest, # This might be needed if constructing full requests for batch processor
+    BarcodeRequest,
     BulkFileMetadata,
     BulkUploadResponse,
     JobStatusEnum,
     JobStatusResponse,
-    BarcodeResult, # Needed for JobStatusResponse
+    BarcodeResult,
     UserData,
 )
 
@@ -28,15 +28,15 @@ router = APIRouter(prefix="/api/bulk", tags=["Bulk Operations"])
 ALLOWED_CONTENT_TYPES = [
     "text/plain",
     "text/csv",
-    "application/vnd.ms-excel", # .xls
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", # .xlsx
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 ]
 MAX_FILES = 5
-# JOB_ID_NAMESPACE = uuid.UUID("f47ac10b-58cc-4372-a567-0e02b2c3d479") # Example namespace, not strictly needed with nanoid
+
 
 @router.post("/generate_upload", response_model=BulkUploadResponse)
 async def bulk_generate_upload(
-    request: Request, # Added request to access app.state
+    request: Request,
     files: List[UploadFile] = File(...),
     current_user: UserData = Depends(get_current_user),
     redis_manager: RedisManager = Depends(get_redis_manager),
@@ -53,7 +53,6 @@ async def bulk_generate_upload(
     files_metadata_list: List[BulkFileMetadata] = []
     total_items_to_process = 0
 
-    # Access batch_processor from app state
     batch_processor = request.app.state.batch_processor
 
     for file_idx, file in enumerate(files):
@@ -64,8 +63,8 @@ async def bulk_generate_upload(
         metadata = BulkFileMetadata(
             filename=file.filename,
             content_type=file.content_type or "unknown",
-            item_count=0, # Initialize with 0
-            status="Pending", # Initial status
+            item_count=0,
+            status="Pending",
             message=""
         )
 
@@ -77,7 +76,7 @@ async def bulk_generate_upload(
 
         try:
             file_content = await file.read()
-            await file.seek(0) # Reset file pointer in case it's read again or by pandas
+            await file.seek(0)
 
             if file.content_type == 'text/plain':
                 lines = file_content.decode('utf-8').splitlines()
@@ -90,23 +89,21 @@ async def bulk_generate_upload(
                         task_id = generate_nanoid()
                         task_key = f"job:{job_id}:task:{task_id}"
 
-                        # Minimal default options for plain text lines
-                        # Users can't specify complex options per line in a .txt file easily
-                        barcode_options = {"format": "code128", "image_format": "PNG"} # Sensible defaults
+                        barcode_options = {"format": "code128", "image_format": "PNG"}
 
                         task_payload = {
                             "data": line_data,
-                            "options": barcode_options, # Pass the defined options
+                            "options": barcode_options,
                             "task_id": task_id,
                             "job_id": job_id,
-                            "original_filename": file.filename, # Keep original filename for reference
-                            "output_filename": f"{task_id}.png", # Default output filename
-                            "status": "PENDING", # Initial status for task stored in Redis
+                            "original_filename": file.filename,
+                            "output_filename": f"{task_id}.png",
+                            "status": "PENDING",
                         }
                         await redis_manager.redis.set(task_key, json.dumps(task_payload))
                         await batch_processor.add_to_batch(
                             'generate_barcode',
-                            task_payload, # Send the whole task payload
+                            task_payload,
                             priority="MEDIUM"
                         )
                         logger.info(f"Task {task_id} for job {job_id} (file: {file.filename}, line: {line_num}) added to batch for data: {line_data}")
@@ -127,16 +124,14 @@ async def bulk_generate_upload(
                     for index, row in df.iterrows():
                         barcode_data = row['data']
                         if pd.isna(barcode_data) or str(barcode_data).strip() == "":
-                            continue # Skip empty data rows
+                            continue
 
                         barcode_data = str(barcode_data).strip()
                         current_file_item_count += 1
                         task_id = generate_nanoid()
                         task_key = f"job:{job_id}:task:{task_id}"
 
-                        # Extract options from other columns if they exist
                         barcode_options_from_file = {}
-                        # Standard BarcodeRequest fields
                         if 'format' in row and not pd.isna(row['format']): barcode_options_from_file['format'] = str(row['format']).lower()
                         if 'width' in row and not pd.isna(row['width']): barcode_options_from_file['width'] = int(row['width'])
                         if 'height' in row and not pd.isna(row['height']): barcode_options_from_file['height'] = int(row['height'])
@@ -152,22 +147,19 @@ async def bulk_generate_upload(
                         if 'foreground' in row and not pd.isna(row['foreground']): barcode_options_from_file['foreground'] = str(row['foreground'])
                         if 'center_text' in row and not pd.isna(row['center_text']): barcode_options_from_file['center_text'] = bool(row['center_text'])
                         if 'dpi' in row and not pd.isna(row['dpi']): barcode_options_from_file['dpi'] = int(row['dpi'])
-                        # Barcode specific options like add_checksum might need more care or direct pass-through if generate_barcode_image handles them
                         if 'add_checksum' in row and not pd.isna(row['add_checksum']): barcode_options_from_file['add_checksum'] = bool(row['add_checksum'])
                         if 'no_checksum' in row and not pd.isna(row['no_checksum']): barcode_options_from_file['no_checksum'] = bool(row['no_checksum'])
                         if 'guardbar' in row and not pd.isna(row['guardbar']): barcode_options_from_file['guardbar'] = bool(row['guardbar'])
 
-                        # Default options if not provided in file
                         complete_barcode_options = {
                             "format": "code128",
                             "image_format": "PNG",
                             "width": 200,
                             "height": 100,
-                            **barcode_options_from_file # Override defaults with file values
+                            **barcode_options_from_file
                         }
 
                         output_filename_suggestion = str(row.get('filename', '')).strip()
-                        # Ensure output_filename has an extension, default to image_format
                         img_fmt_lower = complete_barcode_options.get("image_format", "png").lower()
                         if output_filename_suggestion:
                             if not output_filename_suggestion.lower().endswith(f".{img_fmt_lower}"):
@@ -196,13 +188,13 @@ async def bulk_generate_upload(
                 except pd.errors.EmptyDataError:
                     metadata.status = "Failed"
                     metadata.message = "The uploaded file is empty or unparseable."
-                except Exception as e: # Catch pandas specific or general errors
+                except Exception as e:
                     logger.error(f"Error parsing file {file.filename} for job {job_id}: {e}", exc_info=True)
                     metadata.status = "Failed"
                     metadata.message = f"Error processing file: {str(e)}"
 
-            if metadata.status != "Failed": # If not already marked as failed by parsing
-                metadata.status = "Uploaded" # Or "Processing" if tasks added
+            if metadata.status != "Failed":
+                metadata.status = "Uploaded"
                 metadata.message = "File processed for task creation."
 
         except Exception as e:
@@ -221,16 +213,14 @@ async def bulk_generate_upload(
         "files": [meta.model_dump() for meta in files_metadata_list],
         "progress_percentage": 0.0,
         "user_id": current_user.id,
-        "results": [], # To be populated by workers
+        "results": [],
         "total_items": total_items_to_process,
         "processed_items": 0,
-        "initial_setup_complete": True # Mark that initial file parsing and task creation is done
+        "initial_setup_complete": True
     }
     await redis_manager.redis.set(f"job:{job_id}", json.dumps(job_data))
 
-    # Refined ETA (conceptual)
-    estimated_completion_time = f"{total_items_to_process * 0.5} seconds" # Example: 0.5s per item
-    # Cap ETA to a reasonable maximum, e.g., 30 minutes
+    estimated_completion_time = f"{total_items_to_process * 0.5} seconds"
     if total_items_to_process * 0.5 > 1800:
         estimated_completion_time = "Approximately 30 minutes or more."
 
@@ -258,11 +248,8 @@ async def get_bulk_job_status(
         raise HTTPException(status_code=500, detail="Error retrieving job status.")
 
     if job_data.get("user_id") != current_user.id:
-        # Add role check here if admins should be able to see any job
-        # if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to view this job.")
 
-    # Calculate progress if available
     total_items = int(job_data.get("total_items", 0))
     processed_items = int(job_data.get("processed_items", 0))
 
@@ -272,32 +259,28 @@ async def get_bulk_job_status(
 
     current_job_status_val = job_data.get("status", JobStatusEnum.PENDING.value)
 
-    # Retrieve actual results from the job's results list in Redis
     results_json_list = await redis_manager.redis.lrange(f"job:{job_id}:results", 0, -1)
     actual_results = [BarcodeResult(**json.loads(r)) for r in results_json_list]
 
     if job_data.get("initial_setup_complete") and processed_items >= total_items and total_items > 0:
         if current_job_status_val not in [JobStatusEnum.COMPLETED.value, JobStatusEnum.PARTIAL_SUCCESS.value, JobStatusEnum.FAILED.value]:
-            # Finalize status
             has_failures = any(res.status == "Failed" for res in actual_results)
             if has_failures:
-                if processed_items == len(actual_results): # All attempted tasks are in results
+                if processed_items == len(actual_results):
                     all_failed = all(res.status == "Failed" for res in actual_results)
-                    if all_failed and total_items > 0 : # Check total_items to ensure it's not an empty job marked as FAILED
+                    if all_failed and total_items > 0 :
                         current_job_status_val = JobStatusEnum.FAILED.value
                     else:
                         current_job_status_val = JobStatusEnum.PARTIAL_SUCCESS.value
-                else: # Still processing or some results missing, might be premature to mark PARTIAL_SUCCESS
-                    current_job_status_val = JobStatusEnum.PROCESSING.value # Or keep as PENDING if not all results are in
+                else:
+                    current_job_status_val = JobStatusEnum.PROCESSING.value
             else:
                 current_job_status_val = JobStatusEnum.COMPLETED.value
 
-            # Update job status in Redis (only if changed)
             if current_job_status_val != job_data.get("status"):
                 await redis_manager.redis.hset(f"job:{job_id}", "status", current_job_status_val)
-                job_data["status"] = current_job_status_val # Update local copy for response
+                job_data["status"] = current_job_status_val
 
-    # Ensure progress is 100 if completed/partial/failed and all items processed
     if current_job_status_val in [JobStatusEnum.COMPLETED.value, JobStatusEnum.PARTIAL_SUCCESS.value, JobStatusEnum.FAILED.value] and processed_items == total_items and total_items > 0:
         progress_percentage = 100.0
 
@@ -307,6 +290,6 @@ async def get_bulk_job_status(
         status=JobStatusEnum(current_job_status_val),
         progress_percentage=progress_percentage,
         results=actual_results,
-        error_message=job_data.get("error_message"), # This could be a job-level error message
+        error_message=job_data.get("error_message"),
         files=[BulkFileMetadata(**fmeta) for fmeta in job_data.get("files", [])],
     )

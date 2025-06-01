@@ -1,4 +1,3 @@
-# app/models.py
 """
 Database models for the Barcode API application.
 
@@ -56,7 +55,6 @@ class User(Base):
     """
     __tablename__ = "users"
 
-    # Primary identification
     id = Column(String, primary_key=True, index=True, unique=True,
                 doc="Unique user identifier generated using nanoid")
     username = Column(String, unique=True, index=True, nullable=False,
@@ -64,21 +62,17 @@ class User(Base):
     hashed_password = Column(String, nullable=True,
                            doc="Bcrypt hashed password (null for IP-based users)")
 
-    # Access control and billing
     tier = Column(String, nullable=False, default=UserTier.UNAUTHENTICATED,
                  doc="User tier determining rate limits and feature access")
 
-    # Network and location tracking
     ip_address = Column(String, nullable=True, index=True,
                        doc="Client IP address for tracking and identification")
 
-    # Rate limiting and usage tracking
     remaining_requests = Column(Integer, default=0, nullable=False,
                               doc="Current remaining API requests for rate limiting")
     requests_today = Column(Integer, default=0, nullable=False,
                           doc="Number of requests made today for analytics")
 
-    # Temporal tracking
     last_request = Column(DateTime(timezone=True), nullable=True, index=True,
                          doc="Timestamp of most recent API request")
     last_reset = Column(DateTime(timezone=True), nullable=True,
@@ -89,17 +83,15 @@ class User(Base):
                        onupdate=func.now(), nullable=False,
                        doc="Last account modification timestamp")
 
-    # Table constraints and indexes
     __table_args__ = (
         UniqueConstraint('username', name='uq_users_username'),
         UniqueConstraint('id', name='uq_users_id'),
         Index('ix_users_tier', 'tier'),
         Index('ix_users_last_request', 'last_request'),
         Index('ix_users_created_at', 'created_at'),
-        Index('ix_users_ip_tier', 'ip_address', 'tier'),  # Composite index for IP-based lookups
+        Index('ix_users_ip_tier', 'ip_address', 'tier'),
     )
 
-    # Relationships
     active_token = relationship("ActiveToken", back_populates="user", uselist=False,
                               cascade="all, delete-orphan")
     usage = relationship("Usage", back_populates="user", cascade="all, delete-orphan")
@@ -193,13 +185,11 @@ class ActiveToken(Base):
     last_used = Column(DateTime(timezone=True), nullable=True,
                       doc="Timestamp of last token usage for activity tracking")
 
-    # Table constraints and indexes
     __table_args__ = (
         Index('ix_active_tokens_expires_revoked', 'expires_at', 'is_revoked'),
         Index('ix_active_tokens_user_active', 'user_id', 'is_revoked'),
     )
 
-    # Relationships
     user = relationship("User", back_populates="active_token")
 
     @validates('token')
@@ -267,7 +257,6 @@ class Usage(Base):
                        onupdate=func.now(), nullable=False,
                        doc="Last update timestamp")
 
-    # Table constraints and indexes
     __table_args__ = (
         Index('ix_usage_user_ip', 'user_id', 'ip_address'),
         Index('ix_usage_ip_tier', 'ip_address', 'tier'),
@@ -275,7 +264,6 @@ class Usage(Base):
         Index('ix_usage_tier_requests', 'tier', 'requests_today'),
     )
 
-    # Relationships
     user = relationship("User", back_populates="usage")
 
     @validates('tier')

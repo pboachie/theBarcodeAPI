@@ -1,5 +1,3 @@
-# app/database.py
-
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import create_engine
@@ -13,23 +11,21 @@ logger = logging.getLogger(__name__)
 DATABASE_URL = settings.DATABASE_URL
 ASYNC_DATABASE_URL = DATABASE_URL.replace('postgresql://', 'postgresql+asyncpg://')
 
-# Synchronous engine for Alembic
 try:
     sync_engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 except Exception as e:
     logger.error(f"Error creating database engine: {e}")
     raise
 
-# Asynchronous engine for the application
 engine = create_async_engine(
     ASYNC_DATABASE_URL,
     pool_size=20,
     max_overflow=20,
     pool_timeout=30,
-    pool_recycle=3600,  # 1 hour
+    pool_recycle=3600,
     pool_pre_ping=True,
     poolclass=AsyncAdaptedQueuePool,
-    echo=False  # Set to True for SQL query logging
+    echo=False
 )
 
 AsyncSessionLocal = async_sessionmaker(

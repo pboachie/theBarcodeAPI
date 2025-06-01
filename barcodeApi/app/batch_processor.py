@@ -47,7 +47,7 @@ class BatchProcessor:
             logger.warning("Batch processor is not running.")
             return
         self.running = False
-        self._process_event.set()  # Wake up the process loop
+        self._process_event.set()
         if self._task:
             await self._task
         logger.info("Batch processor stopped")
@@ -72,10 +72,8 @@ class BatchProcessor:
                 self._process_event.set()
 
         try:
-            # Wait for result with timeout
             return await asyncio.wait_for(future, timeout=self.max_wait_time)
         except asyncio.TimeoutError:
-            # Handle timeout by processing directly
             logger.warning(f"Operation {operation} timed out, processing directly")
             try:
                 return await self._process_single_operation(batch_op)
@@ -83,7 +81,6 @@ class BatchProcessor:
                 logger.error(f"Direct processing failed: {e}", exc_info=True)
                 return await self.redis_manager.get_default_value(operation, item)
         finally:
-            # Clean up if operation wasn't processed
             async with self._lock:
                 if batch_op in self.operations:
                     self.operations.remove(batch_op)
@@ -109,7 +106,6 @@ class BatchProcessor:
         while self.running:
             try:
                 if not self.operations:
-                    # Wait for new operations or shutdown
                     try:
                         await asyncio.wait_for(self._process_event.wait(), timeout=0.1)
                     except asyncio.TimeoutError:
@@ -132,7 +128,6 @@ class BatchProcessor:
             if not self.operations:
                 return
 
-            # Sort by priority and creation time
             self.operations.sort(
                 key=lambda x: (x.priority, x.created_at)
             )
@@ -143,12 +138,10 @@ class BatchProcessor:
         if not current_batch:
             return
 
-        # Group operations by type
         operation_groups: Dict[str, List[BatchOperation]] = {}
         for op in current_batch:
             operation_groups.setdefault(op.operation, []).append(op)
 
-        # Process each operation group
         async with self.redis_manager.get_pipeline() as pipe:
             start_time = time.time()
             try:
@@ -166,7 +159,6 @@ class BatchProcessor:
 
             except Exception as e:
                 logger.error(f"Error processing batch: {e}", exc_info=True)
-                # Set default values for all operations in the batch
                 for op in current_batch:
                     if not op.future.done():
                         try:
@@ -225,22 +217,17 @@ class MultiLevelBatchProcessor:
                 logger.debug(f"Cleaning up {len(results)} {operation_type} results")
 
                 if operation_type == "get":
-                    # Clean up get operation results
                     for result in results:
                         if hasattr(result, "close"):
                             await result.close()
 
                 elif operation_type == "set":
-                    # Clean up set operation results if necessary
                     for result in results:
-                        # Perform any required cleanup for 'set' results
-                        pass  # No specific cleanup needed for set operations in this case
+                        pass
 
                 elif operation_type == "delete":
-                    # Clean up delete operation results if necessary
                     for result in results:
-                        # Perform any required cleanup for 'delete' results
-                        pass  # No specific cleanup needed for delete operations in this case
+                        pass
 
                 else:
                     logger.warning(f"Unknown operation type: {operation_type}")

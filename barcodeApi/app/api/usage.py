@@ -222,7 +222,6 @@ async def get_usage(
 
         user_limits = get_user_limits(user_data.tier)
 
-        # Reset usage if new day has started
         if last_reset < start_of_day_pst:
             user_data.requests_today = 0
             user_data.remaining_requests = user_limits
