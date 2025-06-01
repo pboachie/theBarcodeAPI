@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi_limiter import FastAPILimiter
 from pydantic import ValidationError
 from fastapi.openapi.utils import get_openapi
@@ -205,8 +205,8 @@ app = FastAPI(
     Rate limits apply based on authentication status and tier level.
     """,
     version=settings.API_VERSION,
-    docs_url="/redoc" if settings.ENVIRONMENT == "development" else None,
-    redoc_url="/docs",
+    docs_url="/swagger",
+    redoc_url="/",
     openapi_url="/openapi.json",
     lifespan=lifespan,
     root_path=settings.ROOT_PATH,
@@ -277,6 +277,10 @@ async def log_memory_usage():
         gc.collect()
         logger.debug(f"Garbage collection: {gc.get_count()}")
         await asyncio.sleep(60)
+
+@app.get("/docs", include_in_schema=False)
+async def redirect_docs_to_root():
+    return RedirectResponse(url="/", status_code=301)
 
 app.include_router(health.router)
 app.include_router(barcode.router)
