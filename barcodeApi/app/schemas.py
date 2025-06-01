@@ -1,4 +1,3 @@
-# app/schemas.py
 from pydantic import BaseModel, Field, field_serializer, model_validator
 from typing import List, Optional, Dict, Any
 from enum import Enum
@@ -57,35 +56,29 @@ class BarcodeFormatEnum(str, Enum):
     - GS1 formats support rich data encoding
     """
 
-    # General purpose linear formats
-    code128 = "code128"  # Variable length, alphanumeric + symbols, fastest generation
-    code39 = "code39"    # Fixed length, alphanumeric only, widely compatible
+    code128 = "code128"
+    code39 = "code39"
 
-    # European Article Number (EAN) formats for retail
-    ean = "ean"          # Alias for EAN-13, most common retail format
-    ean13 = "ean13"      # 13-digit European retail standard
-    ean14 = "ean14"      # 14-digit shipping container identification
-    ean8 = "ean8"        # 8-digit compact retail format for small packages
+    ean = "ean"
+    ean13 = "ean13"
+    ean14 = "ean14"
+    ean8 = "ean8"
 
-    # GS1 standards for supply chain and logistics
-    gs1 = "gs1"          # General GS1 format with application identifiers
-    gs1_128 = "gs1_128"  # GS1-128 shipping and logistics standard
-    gtin = "gtin"        # Global Trade Item Number (8, 12, 13, or 14 digits)
+    gs1 = "gs1"
+    gs1_128 = "gs1_128"
+    gtin = "gtin"
 
-    # Publishing industry standards
-    isbn = "isbn"        # International Standard Book Number (13-digit)
-    isbn10 = "isbn10"    # Legacy 10-digit ISBN format
-    isbn13 = "isbn13"    # Modern 13-digit ISBN format
-    issn = "issn"        # International Standard Serial Number for periodicals
+    isbn = "isbn"
+    isbn10 = "isbn10"
+    isbn13 = "isbn13"
+    issn = "issn"
 
-    # Specialized formats
-    itf = "itf"          # Interleaved 2 of 5, commonly for GTIN-14
-    jan = "jan"          # Japanese Article Number (equivalent to EAN-13)
-    pzn = "pzn"          # Pharmazentralnummer for German pharmaceutical products
+    itf = "itf"
+    jan = "jan"
+    pzn = "pzn"
 
-    # Universal Product Code (UPC) formats for North American retail
-    upc = "upc"          # Universal Product Code (12-digit)
-    upca = "upca"        # UPC-A standard format (12-digit with check digit)
+    upc = "upc"
+    upca = "upca"
 
 class BarcodeImageFormatEnum(str, Enum):
     """
@@ -105,14 +98,12 @@ class BarcodeImageFormatEnum(str, Enum):
     - Small file sizes: JPEG
     - Legacy systems: BMP
     """
-    BMP = "BMP"    # Windows Bitmap - uncompressed, large file size, excellent quality
-    GIF = "GIF"    # Graphics Interchange Format - legacy, limited colors
-    JPEG = "JPEG"  # Joint Photographic Experts Group - compressed, smaller files
-    PCX = "PCX"    # Picture Exchange - legacy DOS format, rarely used
-    PNG = "PNG"    # Portable Network Graphics - lossless, web standard, supports transparency
-    TIFF = "TIFF"  # Tagged Image File Format - professional printing standard
-    # MSP = "MSP"  # Microsoft Paint format - deprecated
-    # XBM = "XBM"  # X11 Bitmap format - deprecated
+    BMP = "BMP"
+    GIF = "GIF"
+    JPEG = "JPEG"
+    PCX = "PCX"
+    PNG = "PNG"
+    TIFF = "TIFF"
 
 class BarcodeFormat(BaseModel):
     """
@@ -380,7 +371,6 @@ class BarcodeRequest(BaseModel):
 
     def get_writer_options(self) -> Dict[str, Any]:
         """Get options for the barcode writer"""
-        # Start with basic options
         options = {
             'module_width': self.module_width,
             'module_height': self.module_height,
@@ -392,7 +382,6 @@ class BarcodeRequest(BaseModel):
             'image_format': self.image_format.value if self.image_format else 'PNG'
         }
 
-        # Handle text display options
         if not self.show_text:
             options['font_size'] = 0
             options['text_distance'] = 0
@@ -402,7 +391,6 @@ class BarcodeRequest(BaseModel):
             options['text_distance'] = self.text_distance or 5
             options['text'] = self.text_content or self.data
 
-        # Add barcode-specific options
         if self.add_checksum is not None:
             options['add_checksum'] = self.add_checksum
         if self.no_checksum is not None:
@@ -410,7 +398,6 @@ class BarcodeRequest(BaseModel):
         if self.guardbar is not None:
             options['guardbar'] = self.guardbar
 
-        # Remove None values
         return {k: v for k, v in options.items() if v is not None}
 
     model_config = {
@@ -489,7 +476,6 @@ class WriterOptions(BaseModel):
         le=20.0,
         description="Distance on the left and right from the border to the first/last barcode module in mm"
     )
-    # font_path: str = Field(default="DejaVuSansMono", description="Path to the font file to be used")
     font_size: int = Field(
         default=10,
         ge=6,
@@ -585,7 +571,7 @@ class UsageRequest(BaseModel):
     ip_address: str = Field(
         ...,
         min_length=7,
-        max_length=45,  # IPv6 addresses can be up to 45 characters
+        max_length=45,
         description="IP address of the client making the request"
     )
 
@@ -598,9 +584,9 @@ class TierEnum(str, Enum):
     - **standard**: Mid-tier with moderate request limits
     - **premium**: Highest tier with maximum request limits and priority support
     """
-    basic = "basic"       # Entry-level tier with basic rate limits
-    standard = "standard" # Standard tier with moderate rate limits
-    premium = "premium"   # Premium tier with highest rate limits
+    basic = "basic"
+    standard = "standard"
+    premium = "premium"
 
 class UserCreate(BaseModel):
     """
@@ -758,7 +744,6 @@ class UserData(BaseModel):
     def parse_obj(cls, obj):
         if isinstance(obj, str):
             obj = json.loads(obj)
-        # Handle datetime fields
         for field in ['last_reset', 'last_request']:
             if isinstance(obj.get(field), str):
                 obj[field] = datetime.fromisoformat(obj[field].rstrip('Z'))
@@ -947,22 +932,22 @@ class BulkFileMetadata(BaseModel):
     filename: str
     content_type: str
     item_count: int
-    status: str  # e.g., "Uploaded", "Processing", "Completed", "Failed"
+    status: str
     message: Optional[str] = None
 
 
 class BulkUploadResponse(BaseModel):
     job_id: str
-    estimated_completion_time: Optional[str] = None  # e.g., "5 minutes", "10 seconds"
+    estimated_completion_time: Optional[str] = None
     files_processed: List[BulkFileMetadata]
 
 
 class BarcodeResult(BaseModel):
     original_data: str
     output_filename: Optional[str] = None
-    status: str  # e.g., "Generated", "Failed"
+    status: str
     error_message: Optional[str] = None
-    barcode_image_url: Optional[str] = None  # For now, this can be a placeholder
+    barcode_image_url: Optional[str] = None
 
 
 class JobStatusResponse(BaseModel):

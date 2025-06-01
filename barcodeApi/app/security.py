@@ -1,5 +1,3 @@
-# app/security.py
-
 import re
 from datetime import datetime, timedelta
 from jose import jwt
@@ -29,7 +27,6 @@ async def create_access_token(data: dict, db: AsyncSession, redis_manager: Redis
 
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
-    # Store the token in Redis
     await redis_manager.add_active_token(user.id, encoded_jwt, expire_time=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60)
 
     return encoded_jwt
