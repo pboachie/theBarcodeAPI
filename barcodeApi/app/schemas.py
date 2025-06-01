@@ -934,3 +934,41 @@ class SecurityScheme(BaseModel):
         description="Format of the bearer token (e.g., JWT)"
     )
 
+
+class JobStatusEnum(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    PARTIAL_SUCCESS = "PARTIAL_SUCCESS"
+
+
+class BulkFileMetadata(BaseModel):
+    filename: str
+    content_type: str
+    item_count: int
+    status: str  # e.g., "Uploaded", "Processing", "Completed", "Failed"
+    message: Optional[str] = None
+
+
+class BulkUploadResponse(BaseModel):
+    job_id: str
+    estimated_completion_time: Optional[str] = None  # e.g., "5 minutes", "10 seconds"
+    files_processed: List[BulkFileMetadata]
+
+
+class BarcodeResult(BaseModel):
+    original_data: str
+    output_filename: Optional[str] = None
+    status: str  # e.g., "Generated", "Failed"
+    error_message: Optional[str] = None
+    barcode_image_url: Optional[str] = None  # For now, this can be a placeholder
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: JobStatusEnum
+    progress_percentage: float = Field(..., ge=0, le=100)
+    results: Optional[List[BarcodeResult]] = None
+    error_message: Optional[str] = None
+    files: List[BulkFileMetadata]

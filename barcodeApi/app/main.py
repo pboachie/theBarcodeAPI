@@ -16,7 +16,7 @@ from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 
 import logging
-from app.api import barcode, usage, health, token, admin
+from app.api import barcode, usage, health, token, admin, bulk as bulk_api_router
 from app.config import settings
 from app.barcode_generator import BarcodeGenerationError
 from app.mcp_server import generate_barcode_mcp
@@ -310,6 +310,7 @@ app.include_router(barcode.router)
 app.include_router(usage.router)
 app.include_router(token.router)
 app.include_router(admin.router)
+app.include_router(bulk_api_router.router)
 
 def mount_mcp_sse_app():
     """Mount the FastMCP SSE app after startup to ensure mcp_instance is available."""
