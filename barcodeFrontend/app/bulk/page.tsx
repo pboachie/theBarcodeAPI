@@ -8,7 +8,7 @@ import BulkWebOptions from '@/components/bulk/BulkWebOptions';
 import { AlertCircle } from 'lucide-react';
 
 export default function BulkPage() {
-    const [showWebOptions] = useState(false);
+    const [showWebOptions, setShowWebOptions] = useState(false); // Modified to allow setting
     const { toast } = useToast();
 
     const handleAPIClick = () => {
@@ -20,14 +20,7 @@ export default function BulkPage() {
         });
     };
 
-    const handleWebClick = () => {
-        toast({
-            title: "Feature Temporarily Disabled",
-            description: "The web bulk generation feature is temporarily disabled. Please check back later!",
-            variant: "default",
-            duration: 3000,
-        });
-    };
+    // Removed handleWebClick function
 
     const containerVariants = {
         hidden: { opacity: 0, y: 20 },
@@ -67,17 +60,17 @@ export default function BulkPage() {
                     transition={{ type: "spring", stiffness: 400, damping: 17 }}
                 >
                     <Card
-                        className="cursor-pointer opacity-75 hover:opacity-90 transition-opacity relative overflow-hidden"
-                        onClick={handleWebClick}
+                        className="cursor-pointer hover:opacity-90 transition-opacity relative overflow-hidden" // Removed opacity-75 to make it look enabled
+                        onClick={() => setShowWebOptions(prev => !prev)} // Modified onClick handler
                     >
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 Generate via Web
-                                <AlertCircle className="h-4 w-4 text-yellow-500" />
+                                {/* <AlertCircle className="h-4 w-4 text-yellow-500" /> Re-enable if still conditionally disabled */}
                             </CardTitle>
                             <CardDescription>Upload your data file to generate barcodes.</CardDescription>
                         </CardHeader>
-                        <div className="absolute inset-0 bg-background/10 backdrop-blur-[1px]" />
+                        {/* Removed the overlay div to make it look enabled */}
                     </Card>
                 </motion.div>
 
