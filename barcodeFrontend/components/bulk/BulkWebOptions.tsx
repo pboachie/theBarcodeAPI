@@ -4,9 +4,9 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Upload, X, FileText, Loader2, AlertTriangle, Check, Download, Image as ImageIcon, AlertCircle } from 'lucide-react';
+import { Upload, X, FileText, Loader2, AlertTriangle, Check, Download, /*Image as ImageIcon,*/ AlertCircle } from 'lucide-react'; // ImageIcon removed
 import { useToast } from '@/components/ui/use-toast';
-import { Progress } from '@/components/ui/progress';
+import { Progress } from '@/components/ui/progress'; // Progress is uncommented
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Define types for job status and file metadata based on backend schemas
@@ -57,7 +57,6 @@ const itemVariants = {
   exit: { opacity: 0, y: -10, transition: { duration: 0.2, ease: "easeIn" } }
 };
 
-
 export default function BulkWebOptions() {
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -69,7 +68,6 @@ export default function BulkWebOptions() {
   const [jobStatus, setJobStatus] = useState<JobStatusResponse | null>(null);
   const [estimatedTime, setEstimatedTime] = useState<string | null>(null);
   const [fileProcessingInfo, setFileProcessingInfo] = useState<FileMetadata[]>([]);
-
   const pollingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -85,12 +83,12 @@ export default function BulkWebOptions() {
     const newFilesArray: File[] = Array.from(incomingFiles);
 
     setFiles(prevFiles => {
-      const currentFiles = [...prevFiles]; // Work with a copy for validation
-      let filesToAdd: File[] = [];
+      const currentFiles = [...prevFiles];
+      const filesToAdd: File[] = []; // Changed to const
       let showMaxFilesToast = false;
 
       if (currentFiles.length >= MAX_FILES) {
-        toast({ title: 'File limit reached', description: `You can upload a maximum of ${MAX_FILES} files.`, variant: 'warning'});
+        toast({ title: 'File limit reached', description: `You can upload a maximum of ${MAX_FILES} files.`, variant: 'default'});
         return currentFiles;
       }
 
@@ -104,14 +102,14 @@ export default function BulkWebOptions() {
           continue;
         }
         if (currentFiles.some(ef => ef.name === file.name) || filesToAdd.some(nf => nf.name === file.name)) {
-          toast({ title: 'Duplicate file', description: `${file.name} is already added or in selection.`, variant: 'warning'});
+          toast({ title: 'Duplicate file', description: `${file.name} is already added or in selection.`, variant: 'default'});
           continue;
         }
         filesToAdd.push(file);
       }
 
       if (showMaxFilesToast) {
-         toast({ title: 'File limit reached', description: `Some files were not added. Max ${MAX_FILES} files.`, variant: 'warning'});
+         toast({ title: 'File limit reached', description: `Some files were not added. Max ${MAX_FILES} files.`, variant: 'default'});
       }
       if (filesToAdd.length > 0) {
          toast({ title: 'Files ready', description: `${filesToAdd.length} file(s) added to the list.`});
@@ -153,19 +151,19 @@ export default function BulkWebOptions() {
           toast({
             title: `Job ${statusData.status.replace('_', ' ')}`,
             description: `Job ${currentJobId} finished: ${statusData.status.replace('_', ' ')}. ${statusData.error_message || ''}`.trim(),
-            variant: statusData.status === 'COMPLETED' || statusData.status === 'PARTIAL_SUCCESS' ? 'success' : 'error',
+            variant: statusData.status === 'COMPLETED' || statusData.status === 'PARTIAL_SUCCESS' ? 'default' : 'destructive',
             duration: 7000,
           });
         }
       } else { /* ... error handling ... */ }
-    } catch (error) { /* ... error handling ... */ }
-  }, [toast]);
+    } catch (_error) { /* ... error handling ... */ } // eslint-disable-line @typescript-eslint/no-unused-vars
+  }, [toast, setJobStatus, setFileProcessingInfo, setIsProcessing]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setJobId(null); setJobStatus(null); setEstimatedTime(null); setFileProcessingInfo([]); setProcessingError(null);
     if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
-    if (files.length === 0) { toast({ title: 'No files selected', description: 'Please upload files.', variant: 'warning'}); return; }
+    if (files.length === 0) { toast({ title: 'No files selected', description: 'Please upload files.', variant: 'default'}); return; }
 
     setIsProcessing(true);
     const formData = new FormData();
@@ -179,10 +177,10 @@ export default function BulkWebOptions() {
         toast({ title: 'Bulk job started!', description: `Job ID: ${data.job_id}. ${data.estimated_completion_time ? `Est. time: ${data.estimated_completion_time}` : ''}`});
         pollJobStatus(data.job_id);
       } else { /* ... error handling ... */ setIsProcessing(false); }
-    } catch (error) { /* ... error handling ... */ setIsProcessing(false); }
+    } catch (_error) { /* ... error handling ... */ setIsProcessing(false); } // eslint-disable-line @typescript-eslint/no-unused-vars
   };
 
-  const resetJobState = () => { /* ... same as before ... */
+  const resetJobState = () => {
     setJobId(null); setJobStatus(null); setIsProcessing(false); setProcessingError(null);
     setEstimatedTime(null); setFileProcessingInfo([]); setFiles([]);
     if (pollingTimeoutRef.current) clearTimeout(pollingTimeoutRef.current);
@@ -230,7 +228,7 @@ export default function BulkWebOptions() {
                                <span className="text-xs text-muted-foreground">({(file.size / 1024).toFixed(2)} KB) - {file.type || 'unknown type'}</span>
                             </div>
                         </div>
-                        <Button variant="ghost" size="icon" onClick={() => removeFile(file.name)} aria-label={`Remove ${file.name}`} className="flex-shrink-0 ml-2 text-muted-foreground hover:text-destructive" disabled={isProcessing || !!jobId}>
+                        <Button variant="ghost" size="sm" onClick={() => removeFile(file.name)} aria-label={`Remove ${file.name}`} className="flex-shrink-0 ml-2 text-muted-foreground hover:text-destructive" disabled={isProcessing || !!jobId}>
                           <X className="h-5 w-5" />
                         </Button>
                       </motion.div>
@@ -278,81 +276,98 @@ export default function BulkWebOptions() {
       {/* Job Status Display Area */}
       {jobId && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mt-6 p-6 border rounded-lg bg-card shadow-lg">
+          {/* Item 1: Title and Button */}
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-foreground">Job Status</h2>
             { (jobStatus?.status === 'COMPLETED' || jobStatus?.status === 'PARTIAL_SUCCESS' || jobStatus?.status === 'FAILED') && (
                  <Button onClick={resetJobState} variant="outline" size="sm">Start New Bulk Job</Button>
             )}
           </div>
+          {/* Item 2: Job ID */}
           <p className="text-sm text-muted-foreground"><strong>Job ID:</strong> <span className="font-mono">{jobId}</span></p>
+          {/* Item 3: Estimated Time (conditional) */}
           {estimatedTime && (!jobStatus || jobStatus.status === 'PENDING' || jobStatus.status === 'PROCESSING') &&
             <p className="text-sm text-muted-foreground"><strong>Estimated Completion:</strong> {estimatedTime}</p>}
 
-          {isProcessing && (!jobStatus || jobStatus.status === 'PENDING' || jobStatus.status === 'PROCESSING') && ( /* ... loader ... */ )}
+          <>
+            {/* Item 4: Loader (conditional) - Original */}
+            {isProcessing && (!jobStatus || jobStatus.status === 'PENDING' || jobStatus.status === 'PROCESSING') && ( <div className="flex items-center mt-4"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> <p>Processing, please wait...</p></div> )}
 
-          {jobStatus && (
-            <div className="mt-4">
-              <div className="flex justify-between items-center mb-1"> {/* ... status and percentage ... */} </div>
-              <Progress value={jobStatus.progress_percentage} className="w-full h-3 my-2" />
-              {jobStatus.error_message && ( <p className="text-sm text-red-600 mt-2">Job Error: {jobStatus.error_message}</p> )}
-
-              {/* File Processing Info (Animated) */}
-              {fileProcessingInfo.length > 0 && (
-                <div className="mt-5">
-                  <h3 className="text-lg font-medium mb-3 text-foreground">File Summary:</h3>
-                  <motion.ul layout className="space-y-3">
-                    {fileProcessingInfo.map((fp, index) => (
-                      <motion.li layout key={`${fp.filename}-${index}`} variants={itemVariants} initial="hidden" animate="visible" exit="exit" custom={index}
-                        className={`text-sm p-3 border rounded-md shadow-sm flex justify-between items-center transition-all duration-300 ease-in-out
-                                   ${fp.status === 'Completed' || fp.status === 'Generated' || fp.status === 'Uploaded' ? 'bg-green-50 border-green-200' :
-                                     fp.status === 'Failed' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
-                        <div>
-                          <p className="font-semibold text-foreground truncate pr-2" title={fp.filename}>{fp.filename}</p>
-                          <p className="text-xs text-muted-foreground mt-1">{fp.content_type} - {fp.item_count} items</p>
-                          {fp.message && <p className="text-xs mt-1 text-muted-foreground italic">{fp.message}</p>}
-                        </div>
-                        <div className="ml-2">{getFileStatusIcon(fp.status)}</div>
-                      </motion.li>
-                    ))}
-                  </motion.ul>
+            {jobStatus ? (
+              <div className="mt-4">
+                <div className="flex justify-between items-center mb-1">
+                    <p className={`text-sm font-semibold ${
+                        jobStatus.status === 'COMPLETED' ? 'text-green-600' :
+                        jobStatus.status === 'PARTIAL_SUCCESS' ? 'text-yellow-600' :
+                        jobStatus.status === 'FAILED' ? 'text-red-600' :
+                        'text-blue-600'
+                    }`}>Status: {jobStatus.status.replace('_', ' ')}</p>
+                    <p className="text-sm text-muted-foreground">{jobStatus.progress_percentage}% complete</p>
                 </div>
-              )}
+                <Progress value={jobStatus.progress_percentage} className="w-full h-3 my-2" /> {/* Progress component uncommented */}
+                {jobStatus.error_message && ( <p className="text-sm text-red-600 mt-2">Job Error: {jobStatus.error_message}</p> )}
 
-              {/* Detailed Results Display */}
-              {(jobStatus.status === 'COMPLETED' || jobStatus.status === 'PARTIAL_SUCCESS') && jobStatus.results && jobStatus.results.length > 0 && (
-                <div className="mt-6">
-                  <h3 className="text-lg font-medium mb-3 text-foreground">Generated Barcodes:</h3>
-                  <div className="space-y-4">
-                    {jobStatus.results.map((result, index) => (
-                      <motion.div key={index} variants={itemVariants} initial="hidden" animate="visible" custom={index + fileProcessingInfo.length}
-                        className={`p-4 border rounded-md shadow-sm ${result.status === 'Generated' ? 'bg-green-50/50' : 'bg-red-50/50'}`}
-                      >
-                        <p className="text-sm font-medium text-foreground">
-                          {result.output_filename || result.original_data}
-                        </p>
-                        {result.status === 'Generated' && result.barcode_image_url ? (
-                          result.barcode_image_url.startsWith('data:image/') ? (
-                            <img src={result.barcode_image_url} alt={`Barcode for ${result.original_data}`} className="mt-2 max-w-xs mx-auto rounded border p-1" />
-                          ) : (
-                            <a href={result.barcode_image_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline block mt-1">
-                              View Image (URL)
-                            </a>
-                          )
-                        ) : result.status === 'Failed' && result.error_message ? (
-                          <p className="text-xs text-red-600 mt-1">Error: {result.error_message}</p>
-                        ) : null}
-                      </motion.div>
-                    ))}
+                {/* File Processing Info (Animated) */}
+                {fileProcessingInfo.length > 0 && (
+                  <div className="mt-5">
+                    <h3 className="text-lg font-medium mb-3 text-foreground">File Summary:</h3>
+                    <motion.ul layout className="space-y-3">
+                      {fileProcessingInfo.map((fp, index) => (
+                        <motion.li layout key={`${fp.filename}-${index}`} variants={itemVariants} initial="hidden" animate="visible" exit="exit" custom={index}
+                          className={`text-sm p-3 border rounded-md shadow-sm flex justify-between items-center transition-all duration-300 ease-in-out
+                                     ${fp.status === 'Completed' || fp.status === 'Generated' || fp.status === 'Uploaded' ? 'bg-green-50 border-green-200' :
+                                       fp.status === 'Failed' ? 'bg-red-50 border-red-200' : 'bg-blue-50 border-blue-200'}`}>
+                          <div>
+                            <p className="font-semibold text-foreground truncate pr-2" title={fp.filename}>{fp.filename}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{fp.content_type} - {fp.item_count} items</p>
+                            {fp.message && <p className="text-xs mt-1 text-muted-foreground italic">{fp.message}</p>}
+                          </div>
+                          <div className="ml-2">{getFileStatusIcon(fp.status)}</div>
+                        </motion.li>
+                      ))}
+                    </motion.ul>
                   </div>
-                  <Button disabled className="mt-6 w-full sm:w-auto" variant="outline">
-                    <Download className="mr-2 h-4 w-4" />
-                    Download All as ZIP (Coming Soon)
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-           {processingError && jobId && ( /* ... error display ... */ )}
+                )}
+
+                {/* Detailed Results Display - REINTRODUCING THIS BLOCK */}
+                {(jobStatus.status === 'COMPLETED' || jobStatus.status === 'PARTIAL_SUCCESS') && jobStatus.results && jobStatus.results.length > 0 && (
+                  <div className="mt-6">
+                    <h3 className="text-lg font-medium mb-3 text-foreground">Generated Barcodes:</h3>
+                    <div className="space-y-4">
+                      {jobStatus.results.map((result, index) => (
+                        <motion.div key={index} variants={itemVariants} initial="hidden" animate="visible" custom={index} // Changed custom prop
+                          className={`p-4 border rounded-md shadow-sm ${result.status === 'Generated' ? 'bg-green-50/50' : 'bg-red-50/50'}`}
+                        >
+                          <p className="text-sm font-medium text-foreground">
+                            {result.output_filename || result.original_data}
+                          </p>
+                          {result.status === 'Generated' && result.barcode_image_url ? (
+                            result.barcode_image_url.startsWith('data:image/') ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                              <img src={result.barcode_image_url} alt={`Barcode for ${result.original_data}`} className="mt-2 max-w-xs mx-auto rounded border p-1" />
+                            ) : (
+                              <a href={result.barcode_image_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline block mt-1">
+                                View Image (URL)
+                              </a>
+                            )
+                          ) : result.status === 'Failed' && result.error_message ? (
+                            <p className="text-xs text-red-600 mt-1">Error: {result.error_message}</p>
+                          ) : null}
+                        </motion.div>
+                      ))}
+                    </div>
+                    <Button disabled className="mt-6 w-full sm:w-auto" variant="outline">
+                      <Download className="mr-2 h-4 w-4" />
+                      Download All as ZIP (Coming Soon)
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {/* Original processingError && jobId conditional */}
+            {processingError && jobId && ( <div className="mt-4 p-4 bg-red-500/10 border border-red-500 text-red-600 rounded-lg shadow"><AlertTriangle className="inline-block mr-2 h-5 w-5" />There was an error with this job. Details: {processingError}</div> )}
+          </>
         </motion.div>
       )}
     </div>
