@@ -1,0 +1,39 @@
+# Docker Caching and Build Context Optimization
+
+# Ignore Git history and configuration
+.git
+.gitignore
+
+# Ignore Node.js dependency directory
+node_modules
+
+# Ignore Next.js build output and cache
+.next
+
+# Ignore local environment files (if any, though typically .env is used at runtime)
+# .env.local
+# .env.development.local
+# .env.test.local
+# .env.production.local
+
+# Ignore test reports and coverage
+coverage
+*.lcov
+
+# Ignore editor and OS-specific files
+.vscode
+.DS_Store
+*.suo
+*.user
+*.log*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Explicitly include files essential for the build if they were ever mistakenly ignored by broader patterns
+# (though not strictly necessary if not covered by above ignores)
+# !package.json
+# !package-lock.json
+# !public/
+# !next.config.js
+# !tsconfig.json
