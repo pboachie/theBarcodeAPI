@@ -304,7 +304,17 @@ export default function BulkWebOptions() {
                     }`}>Status: {jobStatus.status.replace('_', ' ')}</p>
                     <p className="text-sm text-muted-foreground">{jobStatus.progress_percentage}% complete</p>
                 </div>
-                <Progress value={jobStatus.progress_percentage} className="w-full h-3 my-2" /> {/* Progress component uncommented */}
+                <Progress
+                  value={jobStatus.progress_percentage}
+                  showPercentage
+                  indeterminate={(jobStatus.status === 'PENDING' && jobStatus.progress_percentage === 0)}
+                  status={
+                    jobStatus.status === 'COMPLETED' ? 'complete' :
+                    jobStatus.status === 'FAILED' ? 'error' :
+                    undefined
+                  }
+                  className="w-full h-4 my-2" // Adjusted height for percentage text
+                />
                 {jobStatus.error_message && ( <p className="text-sm text-red-600 mt-2">Job Error: {jobStatus.error_message}</p> )}
 
                 {/* File Processing Info (Animated) */}
