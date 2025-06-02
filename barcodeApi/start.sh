@@ -42,7 +42,7 @@ fi
 if [ ! -f "/app/logs/app.log" ]; then
     touch /app/logs/app.log
 fi
-chown -R appuser:appuser /app/logs
+# chown -R appuser:appuser /app/logs
 chmod -R 775 /app/logs
 # Wait for the database to be ready
 print_header "Database Check"
