@@ -11,7 +11,7 @@ const Progress = React.forwardRef<HTMLDivElement, ProgressProps>(
   ({ className, value, indeterminate, showPercentage, status, ...props }, ref) => {
     const percentage = Math.min(Math.max(value || 0, 0), 100); // Ensure percentage is between 0 and 100
 
-    let baseProgressBarClassName = 'h-full transition-all duration-300 ease-in-out';
+    const baseProgressBarClassName = 'h-full transition-all duration-300 ease-in-out';
     let colorClassName = 'bg-primary'; // Default color
 
     if (status === 'complete') {

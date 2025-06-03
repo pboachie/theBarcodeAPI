@@ -1,5 +1,5 @@
 # Use an official Node.js runtime as a parent image
-FROM node:18-alpine AS base
+FROM node:18-bullseye AS base
 
 # Build argument for version
 ARG VERSION_ARG=0.0.0-dockerfile-default
@@ -8,11 +8,11 @@ ENV NEXT_PUBLIC_APP_VERSION=${VERSION_ARG}
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy package.json and package-lock.json (or yarn.lock if used)
+# Copy package.json and package-lock.json
 COPY package.json package-lock.json ./
 
-# Install jq
-RUN apk add --no-cache jq
+# Install jq for JSON processing
+RUN apt-get update && apt-get install -y jq --no-install-recommends && rm -rf /var/lib/apt/lists/*
 
 # Install project dependencies
 RUN npm install

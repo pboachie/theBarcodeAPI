@@ -436,7 +436,10 @@ class RedisManager:
         return str(item) if item is not None else "unknown"
 
     async def check_redis(self) -> str:
-        try: async with self.get_connection(): await self.redis.ping(); return "ok"
+        try:
+            async with self.get_connection():
+                await self.redis.ping()
+                return "ok"
         except Exception as ex: logger.error(f"Redis health check failed: {ex}"); return "error"
 
     async def get_connection_stats(self) -> RedisConnectionStats:

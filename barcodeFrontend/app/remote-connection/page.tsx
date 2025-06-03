@@ -1,6 +1,6 @@
 "use client";
 
-import { ScrollButtons } from '@/components/ui/ScrollButtons';
+import ScrollButtons from '@/components/ui/ScrollButtons';
 
 export default function RemoteConnectionPage() {
   return (

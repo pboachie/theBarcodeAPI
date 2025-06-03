@@ -56,3 +56,4 @@ barcodeApi/*.egg
 .yarn/sdks
 .yarn/versions
 .env
+

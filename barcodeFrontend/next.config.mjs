@@ -2,11 +2,11 @@
 const nextConfig = {
     reactStrictMode: true,
     images: {
-      domains: ['thebarcodeapi.com', 'localhost'],
+      domains: ['thebarcodeapi.com', 'localhost', 'api.thebarcodeapi.com'],
     },
     async rewrites() {
     const isDevelopment = process.env.NODE_ENV === 'development';
-    const apiUrl = isDevelopment ? 'http://localhost:3000/api' : 'https://api.thebarcodeapi.com/api';
+    const apiUrl = isDevelopment ? 'http://barcodeapi:8000/api/v1' : 'https://api.thebarcodeapi.com/api/v1';
 
     return [
       {
