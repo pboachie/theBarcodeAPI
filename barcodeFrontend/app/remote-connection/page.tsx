@@ -58,9 +58,9 @@ export default function RemoteConnectionPage() {
             <li><strong>Run the Application:</strong> Execute the code. It will make a POST request to the barcode generation endpoint and print the response (which could be an image URL or binary data depending on the API).</li>
           </ol>
 
-          <div className="mt-6 bg-black/20 dark:bg-black/30 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
+          <div className="mt-6 bg-gray-800 dark:bg-gray-900 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
             <h3 className="text-lg md:text-xl font-semibold mb-3 text-[var(--accent-color)]/70">C# Code Example</h3>
-            <pre className="bg-transparent p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base">
+            <pre className="bg-transparent p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base max-h-96 overflow-y-auto">
               <code className="language-csharp text-slate-300 dark:text-slate-200">
                 {`using System;
 using System.Net.Http;
@@ -182,9 +182,9 @@ public class BarcodeGenerator
             <li><strong>Run the Script:</strong> Execute the script from your terminal: `python barcode_request.py`. It will send the request and print the server&apos;s response.</li>
           </ol>
           
-          <div className="mt-6 bg-black/20 dark:bg-black/30 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
+          <div className="mt-6 bg-gray-800 dark:bg-gray-900 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
             <h3 className="text-lg md:text-xl font-semibold mb-3 text-[var(--accent-color)]/70">Python Code Example</h3>
-            <pre className="bg-transparent p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base">
+            <pre className="bg-transparent p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base max-h-96 overflow-y-auto">
               <code className="language-python text-slate-300 dark:text-slate-200">
                 {`import requests
 import json
