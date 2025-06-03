@@ -28,17 +28,34 @@ if not os.path.isabs(log_directory):
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     log_directory = os.path.join(base_dir, log_directory)
 
-os.makedirs(log_directory, exist_ok=True)
+# Ensure log directory exists with proper permissions
+try:
+    os.makedirs(log_directory, exist_ok=True)
+    # Test write permissions
+    test_file = os.path.join(log_directory, "test_write.tmp")
+    with open(test_file, 'w') as f:
+        f.write("test")
+    os.remove(test_file)
 
-log_level = logging.DEBUG
-logging.basicConfig(
-    level=log_level,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(os.path.join(log_directory, "app.log"), mode="a"),
-        logging.StreamHandler()
-    ]
-)
+    log_level = logging.DEBUG
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(os.path.join(log_directory, "app.log"), mode="a"),
+            logging.StreamHandler()
+        ]
+    )
+except (OSError, PermissionError) as e:
+    print(f"Warning: Cannot write to log directory {log_directory}: {e}")
+    print("Falling back to console-only logging")
+
+    log_level = logging.DEBUG
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler()]
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +89,9 @@ async def lifespan(app: FastAPI):
 
             await initialize_redis_manager()
             app.state.redis_manager = redis_manager
+
+            # Initialize background_tasks early to avoid AttributeError during shutdown
+            app.state.background_tasks = []
 
             app.state.batch_processor = redis_manager.batch_processor
             logger.info("Verifying Redis manager state...")
@@ -142,12 +162,14 @@ async def lifespan(app: FastAPI):
                     loop.remove_signal_handler(sig)
 
                 logger.info("Canceling background tasks...")
-                for task in app.state.background_tasks:
-                    task.cancel()
-                    try:
-                        await task
-                    except asyncio.CancelledError:
-                        pass
+                background_tasks = getattr(app.state, 'background_tasks', [])
+                for task in background_tasks:
+                    if not task.done():
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
 
                 logger.info("Stopping batch processors...")
                 for priority, processor in redis_manager.batch_processor.processors.items():
@@ -247,14 +269,6 @@ app.add_middleware(
 )
 
 app.add_middleware(CustomServerHeaderMiddleware)
-
-
-if settings.ENVIRONMENT == "development":
-    settings.ALLOWED_HOSTS.extend([
-        "localhost",
-        "127.0.0.1"
-    ])
-
 
 app.add_middleware(
     TrustedHostMiddleware,

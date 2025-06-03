@@ -205,108 +205,110 @@ class RedisManager:
                         pending_results[internal_id].set_result(await self.create_default_user_data(ip_address) if ip_address else None)
         except Exception as ex: logger.error(f"Err in _process_get_user_data: {ex}"); [f.set_exception(ex) for _,f_id in items if not (f:=pending_results[f_id]).done()]
 
-
-    async def set_user_data(self, user_data: UserData) -> bool:
+    async def _process_increment_usage(self, items: List[Tuple[Any, str]], pipe, pending_results):
         try:
-            return await self.batch_processor.add_to_batch("set_user_data", ({'user_data': user_data},), BatchPriority.MEDIUM) or False
-        except Exception as ex: logger.error(f"Error adding set_user_data to batch: {ex}"); return False
+            current_time = datetime.now(pytz.utc).isoformat()
+            for item_tuple, internal_id in items:
+                user_id, ip_address = item_tuple
+                key = self._get_key(user_id, ip_address)
+                # Use the INCREMENT_USAGE_SCRIPT Lua script
+                pipe.evalsha(
+                    self.increment_usage_sha,
+                    1,  # number of keys
+                    key,
+                    str(current_time), # Ensure current_time is a string
+                    str(settings.RateLimit.get_limit("unauthenticated")), # Ensure limit is a string
+                    "86400"  # Ensure expiry is a string
+                )
 
-    async def get_user_data(self, user_id: Optional[str], ip_address: str) -> UserData:
-        try:
-            payload = {'user_id': user_id, 'ip_address': ip_address, 'is_username_lookup': False}
-            user_data_result = await self.batch_processor.add_to_batch("get_user_data", (payload,), BatchPriority.HIGH)
-            return user_data_result if user_data_result else await self.create_default_user_data(ip_address)
-        except Exception as ex: logger.error(f"Error in get_user_data batch call: {ex}"); return await self.create_default_user_data(ip_address)
-
-    async def get_user_data_by_ip(self, ip_address: str) -> Optional[UserData]:
-        try:
-            return await self.batch_processor.add_to_batch("get_user_data_by_ip", (ip_address,), BatchPriority.HIGH)
-        except Exception as ex: logger.error(f"Error adding get_user_data_by_ip to batch: {ex}"); return None
-
-    async def increment_usage(self, user_id: Optional[str], ip_address: str) -> UserData:
-        try:
-            user_data_result = await self.batch_processor.add_to_batch("increment_usage", (user_id, ip_address), BatchPriority.URGENT)
-            return user_data_result if user_data_result else await self.create_default_user_data(ip_address)
-        except Exception as ex: logger.error(f"Error in increment_usage batch call: {ex}"); return await self.create_default_user_data(ip_address)
-
-    async def check_rate_limit(self, key: str) -> bool:
-        try: return await self.batch_processor.add_to_batch("check_rate_limit", (key,), BatchPriority.URGENT) or False
-        except Exception as ex: logger.error(f"Error adding check_rate_limit to batch: {ex}"); return False
-
-    async def get_active_token(self, user_id: int) -> Optional[str]:
-        try: return await self.batch_processor.add_to_batch("get_active_token", (user_id,), BatchPriority.HIGH)
-        except Exception as ex: logger.error(f"Error adding get_active_token to batch: {ex}"); return None
-
-    async def is_token_active(self, user_id: int, token: str) -> bool:
-        try: return await self.batch_processor.add_to_batch("is_token_active", (user_id, token), BatchPriority.HIGH) or False
-        except Exception as ex: logger.error(f"Error adding is_token_active to batch: {ex}"); return False
-
-    async def add_active_token(self, user_id: int, token: str, expire_time: int = 3600) -> bool:
-        try: return await self.batch_processor.add_to_batch("add_active_token", (user_id, token, expire_time), BatchPriority.MEDIUM) or False
-        except Exception as ex: logger.error(f"Error adding add_active_token to batch: {ex}"); return False
-
-    async def remove_active_token(self, user_id: int) -> bool:
-        try: return await self.batch_processor.add_to_batch("remove_active_token", (user_id,), BatchPriority.MEDIUM) or False
-        except Exception as ex: logger.error(f"Error adding remove_active_token to batch: {ex}"); return False
-
-    async def set_username_to_id_mapping(self, username: str, user_id: str) -> bool:
-        try: return await self.batch_processor.add_to_batch("set_username_mapping", (username, user_id), BatchPriority.LOW) or False
-        except Exception as ex: logger.error(f"Error setting username_to_id_mapping: {ex}"); return False
-
-    async def sync_all_username_mappings(self, db: AsyncSession):
-        tasks = []
-        try:
-            logger.debug("Starting sync_all_username_mappings")
-            async with db as session: users = (await session.execute(select(User))).scalars().all()
-            logger.debug(f"Retrieved {len(users)} users.")
-            for user in users:
-                if user.username and user.id:
-                    tasks.append(self.batch_processor.add_to_batch("set_username_mapping", (user.username, str(user.id)), BatchPriority.LOW))
-            if tasks: await asyncio.gather(*[asyncio.ensure_future(t) for t in tasks if asyncio.iscoroutine(t) or asyncio.isfuture(t)])
-            logger.info(f"Username mappings sync tasks ({len(tasks)}) added.")
-        except Exception as ex: logger.error(f"Error in sync_all_username_mappings: {ex}", exc_info=True)
-
-    async def sync_db_to_redis(self, db: AsyncSession):
-        tasks = []
-        logger.debug("Starting sync_db_to_redis process.")
-        try:
-            async with db as session: db_items = (await session.execute(select(Usage))).scalars().all()
-            for item in db_items:
-                ud_obj = UserData(id=str(item.user_id), username=getattr(item,'username',f"user_{item.user_id}"), ip_address=str(item.ip_address), tier=item.tier, requests_today=item.requests_today, remaining_requests=item.remaining_requests, last_request=item.last_request, last_reset=item.last_reset)
-                tasks.append(self.batch_processor.add_to_batch("set_user_data", ({'user_data': ud_obj},), BatchPriority.LOW))
-            if tasks: await asyncio.gather(*[asyncio.ensure_future(t) for t in tasks if asyncio.iscoroutine(t) or asyncio.isfuture(t)])
-            logger.info(f"DB to Redis sync tasks ({len(tasks)}) added.")
-        except Exception as ex: logger.error(f"Error in sync_db_to_redis: {ex}", exc_info=True)
-
-    def _cleanup_future(self, batch_id: str, result: Any):
-        future = self.pending_results.get(batch_id)
-        if future and not future.done(): future.set_result(result)
-
-    def _convert_list_to_dict(self, data: List[Any]) -> Dict[bytes, bytes]:
-        result = {}
-        for i in range(0, len(data), 2):
-            key = data[i].encode('utf-8') if isinstance(data[i], str) else data[i]
-            value = data[i+1].encode('utf-8') if isinstance(data[i+1], str) else data[i+1]
-            result[key] = value
-        return result
-
-    def _decode_redis_hash(self, hash_data: Dict[bytes, bytes], defaults: Dict[str, Any]) -> Dict[str, Any]:
-        result = {}
-        try:
-            str_data = {k.decode('utf-8'): v.decode('utf-8') for k, v in hash_data.items()}
-            result = defaults.copy()
-            for key, value in str_data.items():
-                if key in result:
-                    value_str = str(value).strip()
+            results = await pipe.execute()
+            for i, (item_tuple, internal_id) in enumerate(items):
+                user_id, ip_address = item_tuple
+                if not pending_results[internal_id].done():
                     try:
-                        if isinstance(result[key], int): result[key] = int(value_str) if value_str else result[key]
-                        elif isinstance(result[key], datetime): result[key] = datetime.fromisoformat(value_str) if value_str else result[key]
-                        else: result[key] = value_str if value_str else result[key]
-                    except (ValueError, TypeError) as ex: logger.error(f"Error converting {key}={value}: {ex}")
-            return result
+                        # The Lua script returns updated user data as a list
+                        lua_result = results[i]
+                        if lua_result:
+                            # Convert the result to UserData object
+                            user_data_dict = {
+                                'id': str(user_id) if user_id else IDGenerator.generate_id(),
+                                'username': f"ip:{ip_address}" if not user_id else f"user_{user_id}",
+                                'ip_address': ip_address,
+                                'tier': 'unauthenticated',
+                                'requests_today': int(lua_result[0]) if lua_result[0] else 1,
+                                'remaining_requests': int(lua_result[1]) if lua_result[1] else settings.RateLimit.get_limit("unauthenticated") - 1,
+                                'last_request': datetime.fromisoformat(lua_result[2]) if lua_result[2] else datetime.now(pytz.utc),
+                                'last_reset': datetime.fromisoformat(lua_result[3]) if lua_result[3] else datetime.now(pytz.utc)
+                            }
+                            user_data = UserData(**user_data_dict)
+                            pending_results[internal_id].set_result(user_data)
+                        else:
+                            # Fallback to creating default user data
+                            default_user_data = await self.create_default_user_data(ip_address)
+                            pending_results[internal_id].set_result(default_user_data)
+                    except Exception as e_conv:
+                        logger.error(f"Error converting increment_usage result: {e_conv}")
+                        # Fallback to creating default user data
+                        default_user_data = await self.create_default_user_data(ip_address)
+                        pending_results[internal_id].set_result(default_user_data)
+
         except Exception as ex:
-            logger.error(f"Error parsing Redis hash: {ex}")
-            return defaults
+            logger.error(f"Error in _process_increment_usage: {ex}")
+            for item_tuple, internal_id in items:
+                user_id, ip_address = item_tuple
+                if not pending_results[internal_id].done():
+                    try:
+                        # Fallback to creating default user data
+                        default_user_data = await self.create_default_user_data(ip_address)
+                        pending_results[internal_id].set_result(default_user_data)
+                    except Exception as fallback_ex:
+                        logger.error(f"Error creating fallback user data: {fallback_ex}")
+                        pending_results[internal_id].set_exception(ex)
+
+    async def get_default_value(self, operation: str, item_data: Any = None) -> Any:
+        """Returns appropriate default values for failed operations"""
+        try:
+            if operation == "increment_usage":
+                # Extract IP address from item_data for creating default user
+                ip_address = "unknown"
+                if isinstance(item_data, tuple) and len(item_data) >= 2:
+                    ip_address = item_data[1] or "unknown"
+                elif isinstance(item_data, str):
+                    ip_address = item_data
+                return await self.create_default_user_data(ip_address)
+
+            elif operation == "get_user_data":
+                # Extract IP address from item_data
+                ip_address = "unknown"
+                if isinstance(item_data, dict):
+                    ip_address = item_data.get('ip_address', 'unknown')
+                elif isinstance(item_data, tuple) and len(item_data) >= 2:
+                    ip_address = item_data[1] or "unknown"
+                return await self.create_default_user_data(ip_address)
+
+            elif operation == "get_user_data_by_ip":
+                ip_address = item_data if isinstance(item_data, str) else "unknown"
+                return await self.create_default_user_data(ip_address)
+
+            elif operation == "check_rate_limit":
+                return False  # Default to rate limit exceeded
+
+            elif operation == "is_token_active":
+                return False  # Default to token not active
+
+            elif operation == "get_active_token":
+                return None  # Default to no token
+
+            elif operation in ["set_user_data", "add_active_token", "remove_active_token", "reset_daily_usage", "set_username_mapping"]:
+                return False  # Default to operation failed
+
+            else:
+                logger.warning(f"No default value defined for operation: {operation}")
+                return None
+
+        except Exception as ex:
+            logger.error(f"Error getting default value for operation {operation}: {ex}")
+            return None
 
     async def _process_check_rate_limit(self, items: List[Tuple[Any, str]], pipe, pending_results):
         try:
@@ -456,7 +458,7 @@ class RedisManager:
             key = self._get_key(user_data.id, ip_address)
             ip_key = f"ip:{ip_address}"
 
-            mapping = {f.name: str(getattr(user_data, f.name)) if getattr(user_data, f.name) is not None else "" for f in UserData.model_fields.values()}
+            mapping = {field_name: str(getattr(user_data, field_name)) if getattr(user_data, field_name) is not None else "" for field_name in UserData.model_fields.keys()}
             mapping['last_request'] = user_data.last_request.isoformat()
             mapping['last_reset'] = user_data.last_reset.isoformat()
 
@@ -613,4 +615,125 @@ class RedisManager:
             logger.info(f"Synced {len(user_records)} users and {len(usage_records)} usages successfully.")
         except Exception as ex: logger.error(f"Error syncing Redis data to database: {str(ex)}", exc_info=True); raise
         finally: await db.close()
+
+    async def sync_all_username_mappings(self, db: AsyncSession):
+        """Sync all username mappings from database to Redis for faster lookups"""
+        logger.info("Starting sync_all_username_mappings process...")
+        try:
+            # Query all users from database
+            result = await db.execute(select(User))
+            users = result.scalars().all()
+
+            logger.info(f"Found {len(users)} users to sync username mappings")
+
+            # Create batch operations for username mappings
+            async with self.redis.pipeline() as pipe:
+                for user in users:
+                    if user.username and user.id:
+                        # Create mapping from username to user_id for faster lookups
+                        username_key = f"username_mapping:{user.username}"
+                        pipe.set(username_key, user.id, ex=86400)  # 24 hour expiry
+
+                        # Also update the user_data hash with username
+                        user_data_key = f"user_data:{user.id}"
+                        pipe.hset(user_data_key, "username", user.username)
+                        pipe.expire(user_data_key, 86400)
+
+                await pipe.execute()
+
+            logger.info(f"Successfully synced {len(users)} username mappings to Redis")
+
+        except Exception as ex:
+            logger.error(f"Error syncing username mappings: {ex}", exc_info=True)
+            raise
+        finally:
+            await db.close()
+
+    async def get_user_data_by_ip(self, ip_address: str) -> Optional[UserData]:
+        """Get user data by IP address"""
+        try:
+            result = await self.batch_processor.add_to_batch(
+                "get_user_data_by_ip",
+                (ip_address,),
+                BatchPriority.HIGH
+            )
+            return result if result else await self.create_default_user_data(ip_address)
+        except Exception as ex:
+            logger.error(f"Error getting user data by IP {ip_address}: {ex}")
+            return await self.create_default_user_data(ip_address)
+
+    async def increment_usage(self, user_id: Optional[str], ip_address: str) -> UserData:
+        """Increment usage for a user or IP address."""
+        try:
+            # The _process_increment_usage method expects (user_id, ip_address)
+            # and returns a UserData object or raises an exception.
+            result = await self.batch_processor.add_to_batch(
+                "increment_usage",
+                (user_id, ip_address), # Ensure this matches what _process_increment_usage expects
+                BatchPriority.HIGH
+            )
+            if isinstance(result, UserData):
+                return result
+            # If result is not UserData, it might be an error or unexpected type.
+            # Fallback to creating default user data in case of issues.
+            logger.warning(f"increment_usage did not return UserData. Got {type(result)}. Falling back for IP: {ip_address}")
+            return await self.create_default_user_data(ip_address)
+        except Exception as ex:
+            logger.error(f"Error in increment_usage for IP {ip_address}: {ex}", exc_info=True)
+            # Fallback in case of any exception during batch processing or result handling
+            return await self.create_default_user_data(ip_address)
+
+    def _decode_redis_hash(self, hash_data: Dict[Union[bytes, str], Union[bytes, str]], defaults: Dict[str, Any]) -> Dict[str, Any]:
+        """Decodes a Redis hash (bytes/str keys/values) into a dict with Python types."""
+        decoded_dict = {}
+        if not hash_data: return defaults.copy() # Return a copy to avoid modifying the original defaults
+
+        for key_bytes_or_str, value_bytes_or_str in hash_data.items():
+            key = key_bytes_or_str.decode('utf-8') if isinstance(key_bytes_or_str, bytes) else str(key_bytes_or_str)
+            value_str = value_bytes_or_str.decode('utf-8') if isinstance(value_bytes_or_str, bytes) else str(value_bytes_or_str)
+
+            if key in defaults:
+                default_value = defaults[key]
+                if value_str is None or value_str == "None" or value_str == "": # Handle explicit None or empty strings
+                    # Check if the default value is also None or if the field is Optional
+                    # For simplicity, if Redis stores "None" or empty, and default is None, result is None.
+                    # If default is not None, this might indicate a data issue or specific handling is needed.
+                    decoded_dict[key] = None if default_value is None or isinstance(default_value, type(None)) else default_value
+                elif isinstance(default_value, bool):
+                    decoded_dict[key] = value_str.lower() == 'true'
+                elif isinstance(default_value, int):
+                    try: decoded_dict[key] = int(value_str)
+                    except ValueError: decoded_dict[key] = default_value
+                elif isinstance(default_value, float):
+                    try: decoded_dict[key] = float(value_str)
+                    except ValueError: decoded_dict[key] = default_value
+                elif isinstance(default_value, datetime):
+                    try: decoded_dict[key] = datetime.fromisoformat(value_str)
+                    except ValueError: decoded_dict[key] = default_value
+                else: # Default to string if no specific type match or if it's already a string
+                    decoded_dict[key] = value_str
+            else:
+                # If key is not in defaults, try to infer common types or treat as string
+                if value_str is None or value_str == "None" or value_str == "":
+                    decoded_dict[key] = None
+                elif value_str.lower() == 'true': decoded_dict[key] = True
+                elif value_str.lower() == 'false': decoded_dict[key] = False
+                elif value_str.isdigit() or (value_str.startswith('-') and value_str[1:].isdigit()):
+                    decoded_dict[key] = int(value_str)
+                else:
+                    try:
+                        # Attempt float conversion if it contains a decimal point and is otherwise numeric
+                        if '.' in value_str and all(part.isdigit() or (part.startswith('-') and part[1:].isdigit()) or part == '' for part in value_str.split('.', 1)):
+                            decoded_dict[key] = float(value_str)
+                        else:
+                            decoded_dict[key] = value_str # Fallback to string
+                    except ValueError: # Catch errors from float conversion if parts are not valid
+                        decoded_dict[key] = value_str
+
+        # Ensure all default keys are present, filling with default if not in hash_data
+        for k, v in defaults.items():
+            if k not in decoded_dict:
+                decoded_dict[k] = v
+
+        return decoded_dict
 

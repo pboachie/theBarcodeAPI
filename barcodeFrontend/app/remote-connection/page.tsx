@@ -116,7 +116,7 @@ export default function RemoteConnectionPage() {
           <p className="text-md md:text-lg leading-relaxed mb-6">
             This section provides a step-by-step guide to connect to `thebarcodeapi.com` using C# in Visual Studio. We&apos;ll demonstrate how to make a POST request to generate a barcode.
           </p>
-          
+
           <h3 className="text-xl md:text-2xl font-medium mb-4 text-[var(--accent-color)]/80">Prerequisites</h3>
           <ul className="list-disc list-inside mb-6 space-y-1">
             <li>.NET Core SDK or .NET Framework (typically included with Visual Studio).</li>
@@ -191,7 +191,7 @@ public class BarcodeGenerator
             response.EnsureSuccessStatusCode();
 
             Console.WriteLine("API Request Successful!");
-            
+
             // Option 1: Get image URL if API returns JSON with URL
             // string responseBody = await response.Content.ReadAsStringAsync();
             // Console.WriteLine("Response JSON: " + responseBody);
@@ -328,7 +328,7 @@ def generate_barcode():
             with open(file_name, "wb") as f:
                 f.write(response.content)
             print(f"Barcode image saved as {file_name}")
-        
+
         else:
             print(f"Unexpected content type: {response.headers.get('Content-Type')}")
             print("Raw response:", response.text)
@@ -524,7 +524,7 @@ generateBarcodeWithJS();
           outline: 2px solid var(--accent-color);
           outline-offset: 2px;
         }
-        
+
         /* Code block specific styling for syntax highlighting (conceptual) */
         /* You would typically use a library like Prism.js or Highlight.js that adds its own classes */
         code[class*="language-"] {
