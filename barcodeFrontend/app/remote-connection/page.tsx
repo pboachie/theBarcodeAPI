@@ -1,5 +1,7 @@
 "use client";
 
+import { ScrollButtons } from '@/components/ui/ScrollButtons';
+
 export default function RemoteConnectionPage() {
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] p-4 md:p-8">
@@ -367,6 +369,7 @@ if __name__ == "__main__":
         }
 
       `}</style>
+      <ScrollButtons />
     </div>
   );
 }
