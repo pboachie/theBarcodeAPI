@@ -40,7 +40,7 @@ export default function RemoteConnectionPage() {
           <p className="text-md md:text-lg leading-relaxed mb-6">
             This section provides a step-by-step guide to connect to `thebarcodeapi.com` using C# in Visual Studio. We&apos;ll demonstrate how to make a POST request to generate a barcode.
           </p>
-          
+
           <h3 className="text-xl md:text-2xl font-medium mb-4 text-[var(--accent-color)]/80">Prerequisites</h3>
           <ul className="list-disc list-inside mb-6 space-y-1">
             <li>.NET Core SDK or .NET Framework (typically included with Visual Studio).</li>
@@ -106,7 +106,7 @@ public class BarcodeGenerator
             response.EnsureSuccessStatusCode();
 
             Console.WriteLine("API Request Successful!");
-            
+
             // Option 1: Get image URL if API returns JSON with URL
             // string responseBody = await response.Content.ReadAsStringAsync();
             // Console.WriteLine("Response JSON: " + responseBody);
@@ -181,7 +181,7 @@ public class BarcodeGenerator
             <li><strong>Replace API Key:</strong> Update the `api_key` variable with your actual API key.</li>
             <li><strong>Run the Script:</strong> Execute the script from your terminal: `python barcode_request.py`. It will send the request and print the server&apos;s response.</li>
           </ol>
-          
+
           <div className="mt-6 bg-gray-800 dark:bg-gray-900 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
             <h3 className="text-lg md:text-xl font-semibold mb-3 text-[var(--accent-color)]/70">Python Code Example</h3>
             <pre className="bg-transparent p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base max-h-96 overflow-y-auto">
@@ -234,7 +234,7 @@ def generate_barcode():
             with open(file_name, "wb") as f:
                 f.write(response.content)
             print(f"Barcode image saved as {file_name}")
-        
+
         else:
             print(f"Unexpected content type: {response.headers.get('Content-Type')}")
             print("Raw response:", response.text)
@@ -313,7 +313,7 @@ if __name__ == "__main__":
           outline: 2px solid var(--accent-color);
           outline-offset: 2px;
         }
-        
+
         /* Code block specific styling for syntax highlighting (conceptual) */
         /* You would typically use a library like Prism.js or Highlight.js that adds its own classes */
         code[class*="language-"] {
