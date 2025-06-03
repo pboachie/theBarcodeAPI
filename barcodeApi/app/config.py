@@ -26,7 +26,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_LIMIT: ClassVar[int] = 100
     ALLOWED_HOSTS: ClassVar[List[str]] = [
         "thebarcodeapi.com",
-        "*.thebarcodeapi.com"
+        "*.thebarcodeapi.com",
+        "localhost",  # Allow for health checks
+        "127.0.0.1"   # Allow for health checks
     ]
 
     class Config:
