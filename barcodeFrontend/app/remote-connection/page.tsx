@@ -1,8 +1,31 @@
 "use client";
 
+import React from 'react';
 import ScrollButtons from '@/components/ui/ScrollButtons';
 
 export default function RemoteConnectionPage() {
+  const [copiedStates, setCopiedStates] = React.useState<{ [key: string]: boolean }>({});
+
+  const handleCopy = async (codeElementId: string, buttonId: string) => {
+    try {
+      const codeElement = document.getElementById(codeElementId);
+      if (codeElement) {
+        await navigator.clipboard.writeText(codeElement.innerText);
+        setCopiedStates(prev => ({ ...prev, [buttonId]: true }));
+        setTimeout(() => {
+          setCopiedStates(prev => ({ ...prev, [buttonId]: false }));
+        }, 2000); // Reset after 2 seconds
+      }
+    } catch (err) {
+      console.error('Failed to copy: ', err);
+      // Optionally, set an error state for the button, e.g.
+      // setCopiedStates(prev => ({ ...prev, [\`error-\${buttonId}\`]: true }));
+      // setTimeout(() => {
+      //   setCopiedStates(prev => ({ ...prev, [\`error-\${buttonId}\`]: false }));
+      // }, 2000);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] p-4 md:p-8">
       <header className="text-center mb-12 md:mb-16 animate-fadeInDown">
@@ -35,6 +58,59 @@ export default function RemoteConnectionPage() {
 
         <section className="bg-[var(--light-bg)] p-6 md:p-8 rounded-xl shadow-lg animate-fadeInUp animation-delay-400">
           <h2 className="text-2xl md:text-3xl font-semibold mb-6 border-b-2 border-[var(--accent-color)] pb-3 text-[var(--accent-color)]/90">
+            Connecting via MCP (Model Context Protocol)
+          </h2>
+          <p className="text-md md:text-lg leading-relaxed mb-4">
+            For integrating with AI assistants or more complex workflows, the Model Context Protocol (MCP) is the recommended method. MCP communication primarily uses a Server-Sent Events (SSE) endpoint.
+          </p>
+          <p className="text-md md:text-lg leading-relaxed mb-4">
+            The specific endpoint for MCP is: <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp/sse</code>. This path is distinct from the standard HTTP REST API endpoints (like <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/barcode/generate</code>) which are used for direct barcode generation requests.
+          </p>
+          <p className="text-md md:text-lg leading-relaxed mb-6">
+            MCP allows for a richer interaction model, where an AI assistant can call various tools provided by the server. Below is a conceptual example of a JSON payload for an MCP `tools/call` request, specifically for the `generate_barcode` tool:
+          </p>
+
+          <div className="mt-6 bg-slate-200 dark:bg-slate-800 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg md:text-xl font-semibold text-[var(--accent-color)] font-bold">MCP `tools/call` JSON Example</h3>
+              <button
+                onClick={() => handleCopy('mcpCode', 'mcpCopyBtn')}
+                disabled={copiedStates['mcpCopyBtn']}
+                className="py-1 px-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 transition-all"
+              >
+                {copiedStates['mcpCopyBtn'] ? 'Copied!' : 'Copy Code'}
+              </button>
+            </div>
+            <pre className="bg-slate-100 dark:bg-slate-700 p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base">
+              <code id="mcpCode" className="language-json text-black dark:text-slate-200">
+                {`{
+  "type": "tools/call",
+  "id": "call_YAgP8AgYLp5sVybdy0MvL1Co",
+  "tool_name": "generate_barcode",
+  "tool_version": "1.0.0",
+  "tool_input": {
+    "text": "Hello from MCP",
+    "format": "qrcode",
+    "scale": 3,
+    "background": "#FFFFFF",
+    "foreground": "#000000",
+    "output_format": "url"
+  },
+  "context": {
+    "user_id": "user_12345",
+    "session_id": "session_abcde"
+  }
+}`}
+              </code>
+            </pre>
+            <p className="mt-4 text-xs md:text-sm text-slate-400 dark:text-slate-500">
+              This example illustrates how parameters for barcode generation are passed within the <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">tool_input</code> object. The actual data exchanged would be part of an SSE stream.
+            </p>
+          </div>
+        </section>
+
+        <section className="bg-[var(--light-bg)] p-6 md:p-8 rounded-xl shadow-lg animate-fadeInUp animation-delay-600">
+          <h2 className="text-2xl md:text-3xl font-semibold mb-6 border-b-2 border-[var(--accent-color)] pb-3 text-[var(--accent-color)]/90">
             Connecting with C# (Visual Studio)
           </h2>
           <p className="text-md md:text-lg leading-relaxed mb-6">
@@ -58,10 +134,19 @@ export default function RemoteConnectionPage() {
             <li><strong>Run the Application:</strong> Execute the code. It will make a POST request to the barcode generation endpoint and print the response (which could be an image URL or binary data depending on the API).</li>
           </ol>
 
-          <div className="mt-6 bg-black/20 dark:bg-black/30 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
-            <h3 className="text-lg md:text-xl font-semibold mb-3 text-[var(--accent-color)]/70">C# Code Example</h3>
-            <pre className="bg-transparent p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base">
-              <code className="language-csharp text-slate-300 dark:text-slate-200">
+          <div className="mt-6 bg-slate-200 dark:bg-slate-800 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg md:text-xl font-semibold text-[var(--accent-color)] font-bold">C# Code Example</h3>
+              <button
+                onClick={() => handleCopy('csharpCode', 'csharpCopyBtn')}
+                disabled={copiedStates['csharpCopyBtn']}
+                className="py-1 px-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 transition-all"
+              >
+                {copiedStates['csharpCopyBtn'] ? 'Copied!' : 'Copy Code'}
+              </button>
+            </div>
+            <pre className="bg-slate-100 dark:bg-slate-700 p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base">
+              <code id="csharpCode" className="language-csharp text-black dark:text-slate-200">
                 {`using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -158,7 +243,7 @@ public class BarcodeGenerator
           </div>
         </section>
 
-        <section className="bg-[var(--light-bg)] p-6 md:p-8 rounded-xl shadow-lg animate-fadeInUp animation-delay-600">
+        <section className="bg-[var(--light-bg)] p-6 md:p-8 rounded-xl shadow-lg animate-fadeInUp animation-delay-800">
           <h2 className="text-2xl md:text-3xl font-semibold mb-6 border-b-2 border-[var(--accent-color)] pb-3 text-[var(--accent-color)]/90">
             Connecting with Python
           </h2>
@@ -182,10 +267,19 @@ public class BarcodeGenerator
             <li><strong>Run the Script:</strong> Execute the script from your terminal: `python barcode_request.py`. It will send the request and print the server&apos;s response.</li>
           </ol>
           
-          <div className="mt-6 bg-black/20 dark:bg-black/30 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
-            <h3 className="text-lg md:text-xl font-semibold mb-3 text-[var(--accent-color)]/70">Python Code Example</h3>
-            <pre className="bg-transparent p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base">
-              <code className="language-python text-slate-300 dark:text-slate-200">
+          <div className="mt-6 bg-slate-200 dark:bg-slate-800 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg md:text-xl font-semibold text-[var(--accent-color)] font-bold">Python Code Example</h3>
+              <button
+                onClick={() => handleCopy('pythonCode', 'pythonCopyBtn')}
+                disabled={copiedStates['pythonCopyBtn']}
+                className="py-1 px-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 transition-all"
+              >
+                {copiedStates['pythonCopyBtn'] ? 'Copied!' : 'Copy Code'}
+              </button>
+            </div>
+            <pre className="bg-slate-100 dark:bg-slate-700 p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base">
+              <code id="pythonCode" className="language-python text-black dark:text-slate-200">
                 {`import requests
 import json
 
@@ -258,7 +352,122 @@ if __name__ == "__main__":
           </div>
         </section>
 
-        <section className="text-center mt-12 md:mt-16 animate-fadeInUp animation-delay-800">
+        <section className="bg-[var(--light-bg)] p-6 md:p-8 rounded-xl shadow-lg animate-fadeInUp animation-delay-1000">
+          <h2 className="text-2xl md:text-3xl font-semibold mb-6 border-b-2 border-[var(--accent-color)] pb-3 text-[var(--accent-color)]/90">
+            Connecting with JavaScript (Node.js / Browser)
+          </h2>
+          <p className="text-md md:text-lg leading-relaxed mb-6">
+            This guide shows how to connect to `thebarcodeapi.com` using JavaScript. The example uses the `fetch` API, which is available in modern browsers and Node.js (v18+).
+          </p>
+
+          <h3 className="text-xl md:text-2xl font-medium mb-4 text-[var(--accent-color)]/80">Prerequisites</h3>
+          <ul className="list-disc list-inside mb-6 space-y-1">
+            <li>For backend: Node.js (v18+ recommended for built-in `fetch`).</li>
+            <li>For frontend: A modern web browser that supports the `fetch` API.</li>
+            <li>Alternatively, you can use a library like `axios` (`npm install axios` or include via CDN).</li>
+            <li>Your API Key from theBarcodeAPI.com (replace &quot;YOUR_API_KEY&quot; in the code).</li>
+          </ul>
+
+          <h3 className="text-xl md:text-2xl font-medium mb-4 text-[var(--accent-color)]/80">Step-by-Step Guide</h3>
+          <ol className="list-decimal list-inside space-y-3 mb-6">
+            <li><strong>Prepare your environment:</strong> Ensure you have Node.js installed for server-side use, or a modern browser for client-side.</li>
+            <li><strong>Write the Code:</strong> Use the JavaScript code snippet below. Adapt it for your specific HTML/JS project or Node.js file.</li>
+            <li><strong>Replace API Key:</strong> Update the `apiKey` variable with your actual API key.</li>
+            <li><strong>Run the Code:</strong> Execute your HTML file in a browser, or run your Node.js script. It will make a POST request and process the response.</li>
+          </ol>
+
+          <div className="mt-6 bg-slate-200 dark:bg-slate-800 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="text-lg md:text-xl font-semibold text-[var(--accent-color)] font-bold">JavaScript Code Example (using `fetch`)</h3>
+              <button
+                onClick={() => handleCopy('javascriptCode', 'javascriptCopyBtn')}
+                disabled={copiedStates['javascriptCopyBtn']}
+                className="py-1 px-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 transition-all"
+              >
+                {copiedStates['javascriptCopyBtn'] ? 'Copied!' : 'Copy Code'}
+              </button>
+            </div>
+            <pre className="bg-slate-100 dark:bg-slate-700 p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base">
+              <code id="javascriptCode" className="language-javascript text-black dark:text-slate-200">
+                {`async function generateBarcodeWithJS() {
+  const apiKey = "YOUR_API_KEY"; // Replace with your actual API key
+  const apiUrl = "https://api.thebarcodeapi.com/api/barcode/generate";
+
+  const payload = {
+    text: "Hello from JavaScript",
+    format: "qrcode",
+    scale: 3,
+    rotate: "N",
+    background: "#ffffff",
+    foreground: "#000000"
+    // output_format: "url" // to get a JSON response with URL
+    // output_format: "image" // to get direct image (set Accept header accordingly)
+  };
+
+  const headers = {
+    "X-API-Key": apiKey,
+    "Content-Type": "application/json",
+    // "Accept": "image/png" // Use this if you expect a direct image stream
+    "Accept": "application/json" // Use this if you expect a JSON response
+  };
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(\`HTTP error! status: \${response.status}, message: \${errorText}\`);
+    }
+
+    console.log("API Request Successful!");
+
+    const contentType = response.headers.get("content-type");
+
+    if (contentType && contentType.includes("application/json")) {
+      const data = await response.json();
+      console.log("Response JSON:", data);
+      // Example: if (data.imageUrl) { console.log("Barcode Image URL:", data.imageUrl); }
+      // If using in browser, you could set an image src:
+      // document.getElementById('barcodeImage').src = data.imageUrl;
+    } else if (contentType && contentType.startsWith("image/")) {
+      const imageBlob = await response.blob();
+      console.log("Received image data (blob).");
+      // Example: In a browser, you can create an object URL and display the image
+      // const imageUrl = URL.createObjectURL(imageBlob);
+      // document.getElementById('barcodeImage').src = imageUrl;
+      // For Node.js, you might convert blob to buffer and save to file:
+      // const buffer = Buffer.from(await imageBlob.arrayBuffer());
+      // require('fs').writeFileSync('barcode.png', buffer);
+      // console.log('Barcode image saved as barcode.png');
+    } else {
+      const textData = await response.text();
+      console.log("Received text data:", textData);
+    }
+
+  } catch (error) {
+    console.error("Error generating barcode:", error);
+  }
+}
+
+// Call the function
+generateBarcodeWithJS();
+
+// Example HTML structure if running in browser:
+// <img id="barcodeImage" alt="Barcode will appear here" />
+`}
+              </code>
+            </pre>
+            <p className="mt-4 text-xs md:text-sm text-slate-400 dark:text-slate-500">
+              Remember to replace &quot;YOUR_API_KEY&quot;. This example provides comments for handling both JSON (e.g., with an image URL) and direct image blob responses. Adjust the `Accept` header and `output_format` in payload according to your needs.
+            </p>
+          </div>
+        </section>
+
+        <section className="text-center mt-12 md:mt-16 animate-fadeInUp animation-delay-1200">
           <p className="text-slate-500 dark:text-slate-400">
             For more advanced features or other programming languages, please refer to our full API documentation.
           </p>
@@ -276,6 +485,8 @@ if __name__ == "__main__":
         .animation-delay-400 { animation-delay: 0.4s; }
         .animation-delay-600 { animation-delay: 0.6s; }
         .animation-delay-800 { animation-delay: 0.8s; }
+        .animation-delay-1000 { animation-delay: 1.0s; }
+        .animation-delay-1200 { animation-delay: 1.2s; }
 
         /* FadeInDown Animation */
         @keyframes fadeInDown {
