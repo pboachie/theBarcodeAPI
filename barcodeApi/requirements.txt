@@ -39,6 +39,7 @@ psutil==6.1.0
 sse-starlette==2.3.5
 
 # Testing
+pytest
 pytest-asyncio==0.23.7
 
 # Data Handling
