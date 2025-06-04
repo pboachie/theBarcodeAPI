@@ -117,6 +117,7 @@ SECRET_KEY=${API_SECRET_KEY}
 MASTER_API_KEY=${API_MASTER_KEY}
 EOF"
         exec_sudo chmod 644 "${GLOBAL_ENV_VARS_FILE}"
+        exec_sudo cp "${GLOBAL_ENV_VARS_FILE}" /tmp/env_vars
 
         CURRENT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
         # SCRIPTS_INFRA_DIR is the same as CURRENT_SCRIPT_DIR if manage-infra.sh is in scripts/infra
@@ -173,7 +174,7 @@ EOF"
 
         # Prepare environment for application deployment scripts
         echo "Preparing environment for initial application deployment scripts..."
-        exec_sudo cp "${GLOBAL_ENV_VARS_FILE}" /tmp/env_vars
+        # /tmp/env_vars already copied above
         if command -v docker-compose >/dev/null 2>&1; then
             exec_sudo bash -c 'echo "DOCKER_COMPOSE=docker-compose" > /tmp/docker_vars'
         elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
