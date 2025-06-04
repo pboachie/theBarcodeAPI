@@ -358,7 +358,7 @@ EOF"
         cd /opt/thebarcodeapi/barcodeAPI # Script expects to be in this directory for docker-compose commands.
 
         # Determine docker compose command
-        if command -v docker-compose &> /dev/null; then
+        if command -v docker-compose >/dev/null 2>&1; then
           COMPOSE_CMD="docker-compose"
         else
           COMPOSE_CMD="docker compose"
