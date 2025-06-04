@@ -24,7 +24,7 @@
 set -e
 
 # Ensure all required variables are present
-REQUIRED_VARS=("SUDO_PASSWORD" "API_VERSION" "DB_PASSWORD" "POSTGRES_PASSWORD" "API_SECRET_KEY" "API_MASTER_KEY" "ENVIRONMENT")
+REQUIRED_VARS=("SUDO_PASSWORD" "API_VERSION" "DB_PASSWORD" "POSTGRES_PASSWORD" "API_SECRET_KEY" "API_MASTER_KEY" "ENVIRONMENT" "DOMAIN_NAME")
 for var_name in "${REQUIRED_VARS[@]}"; do
   if [ -z "${!var_name}" ]; then
     echo "Error: Environment variable ${var_name} is not set."
@@ -37,19 +37,20 @@ echo "Creating backend .env file at /opt/thebarcodeapi/barcodeAPI/.env..."
 # Using sudo to write the .env file to a privileged location.
 # The heredoc content is expanded with shell variables passed from the GitHub Actions workflow.
 echo "${SUDO_PASSWORD}" | sudo -S bash -c 'cat > /opt/thebarcodeapi/barcodeAPI/.env << EOF
-API_VERSION=${API_VERSION}
+API_VERSION=\${API_VERSION}
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 REDIS_URL=redis://redis:6379/1
-SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api
-LOG_DIRECTORY=/app # Or /app/logs, ensure consistency with Docker image and app config
+SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:\${DB_PASSWORD}@db/barcode_api
+LOG_DIRECTORY=logs
 ROOT_PATH=/api/v1
-DB_PASSWORD=${DB_PASSWORD}
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD} # Used by docker-compose.yml for initial DB setup
-SECRET_KEY=${API_SECRET_KEY} # Primary secret key for the application
-MASTER_API_KEY=${API_MASTER_KEY} # For privileged API access
-DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api # Main database connection string
-ENVIRONMENT=${ENVIRONMENT} # Deployment environment
+DB_PASSWORD=\${DB_PASSWORD}
+POSTGRES_PASSWORD=\${POSTGRES_PASSWORD} # Used by docker-compose.yml for initial DB setup
+SECRET_KEY=\${API_SECRET_KEY} # Primary secret key for the application
+MASTER_API_KEY=\${API_MASTER_KEY} # For privileged API access
+DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:\${DB_PASSWORD}@db/barcode_api # Main database connection string
+ENVIRONMENT=\${ENVIRONMENT} # Deployment environment
+SERVER_URL=https://\${DOMAIN_NAME}
 EOF'
 
 # Set ownership and permissions for the .env file.
