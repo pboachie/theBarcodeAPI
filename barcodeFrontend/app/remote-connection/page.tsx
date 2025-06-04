@@ -73,6 +73,7 @@ export default function RemoteConnectionPage() {
           </ul>
           <p className="text-md md:text-lg leading-relaxed mb-4">
             These paths are distinct from the standard HTTP REST API endpoints (like <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/barcode/generate</code>) which are used for direct barcode generation requests.
+            While some basic interactions with the MCP server might be possible without an API key during development, providing one in your request headers (e.g., <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">Authorization: Bearer YOUR_API_KEY</code> or <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">X-API-Key: YOUR_API_KEY</code>) is crucial for production use to identify your application and manage your usage quotas and rate limits.
           </p>
           <p className="text-md md:text-lg leading-relaxed mb-6">
             MCP allows for a richer interaction model, where an AI assistant can call various tools provided by the server. Below is a conceptual example of a JSON payload for an MCP `tools/call` request (typically used with the HTTP streaming endpoint), specifically for the `generate_barcode` tool:
@@ -122,7 +123,8 @@ export default function RemoteConnectionPage() {
           </h2>
           <p className="text-md md:text-lg leading-relaxed mb-4">
             Below are examples of how to configure various clients or tools to connect to the MCP server. We primarily show connection to the recommended HTTP streaming endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp</code>).
-            A token is not currently required for this public demonstration API, but we include examples of how to add an Authorization header if one were needed.
+            When an API key (often referred to as a token in contexts like "Bearer Token") is used via the <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">Authorization</code> header, it's for identifying you to the MCP server, primarily for usage tracking and applying appropriate rate limits based on your plan.
+            While this public demonstration API might not strictly enforce a key for all interactions, it's good practice to include it as shown in the examples if you have one.
           </p>
           <div className="mb-6 flex space-x-2 border-b border-slate-300 dark:border-slate-700">
             {(['vscode', 'curl'] as const).map((platform) => (
@@ -179,7 +181,7 @@ export default function RemoteConnectionPage() {
               <div>
                 <h4 className="text-lg font-semibold mb-2 text-[var(--foreground)]/90">VSCode `settings.json` (HTTP with Token)</h4>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-                  Example of how to include an Authorization token if it were required.
+                  Example of how to include an API key using the Authorization header.
                 </p>
                 <div className="bg-slate-200 dark:bg-slate-800 p-4 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
                   <div className="flex justify-between items-center mb-2">
@@ -207,6 +209,9 @@ export default function RemoteConnectionPage() {
 }`}
                     </code>
                   </pre>
+                  <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                    The <code className="bg-black/20 dark:bg-black/30 p-0.5 rounded text-[var(--accent-color)] text-[0.7rem]">Authorization</code> header provides your API key (token), linking requests to your usage limits and plan.
+                  </p>
                 </div>
               </div>
             </div>
@@ -250,7 +255,7 @@ export default function RemoteConnectionPage() {
               <div>
                 <h4 className="text-lg font-semibold mb-2 text-[var(--foreground)]/90">cURL (HTTP Stream with Token)</h4>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-                  Example including an <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">Authorization</code> header if a token were required.
+                  Example including an API key via the <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">Authorization</code> header.
                 </p>
                 <div className="bg-slate-200 dark:bg-slate-800 p-4 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
                   <div className="flex justify-between items-center mb-2">
@@ -267,7 +272,7 @@ export default function RemoteConnectionPage() {
                     <code id="curlTokenCode" className="language-bash text-black dark:text-slate-200">
 {`curl -N -X POST \\
      -H "Content-Type: application/json" \\
-     -H "Authorization: Bearer YOUR_TOKEN_HERE" \\
+     -H "Authorization: Bearer YOUR_TOKEN_HERE" \\ # This line adds your API key
      -d '{
          "jsonrpc": "2.0",
          "method": "generate_barcode",
@@ -277,10 +282,13 @@ export default function RemoteConnectionPage() {
      https://api.thebarcodeapi.com/api/v1/mcp`}
                     </code>
                   </pre>
+                  <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                    The <code className="bg-black/20 dark:bg-black/30 p-0.5 rounded text-[var(--accent-color)] text-[0.7rem]">-H "Authorization: Bearer YOUR_TOKEN_HERE"</code> line adds your API key to the request, used for tracking usage and applying limits.
+                  </p>
                 </div>
               </div>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-4">
-                <strong>Note on SSE with cURL:</strong> To connect to the legacy SSE endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">/api/v1/mcp/sse</code>), you would typically use <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">-H "Accept: text/event-stream"</code> and might not need the JSON-RPC structure in the POST body, depending on the specific SSE implementation of the server. However, the HTTP streaming endpoint is generally preferred.
+                <strong>Note on SSE with cURL:</strong> To connect to the legacy SSE endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">/api/v1/mcp/sse</code>), you would typically use <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">-H "Accept: text/event-stream"</code>. If an API key is needed, it would also be sent as a header in the initial GET request establishing the SSE connection. However, the HTTP streaming endpoint is generally preferred.
               </p>
             </div>
           )}

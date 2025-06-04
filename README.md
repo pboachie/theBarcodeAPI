@@ -240,11 +240,19 @@ This project includes a **Model Context Protocol (MCP) server** for seamless AI 
   - *This endpoint is maintained for compatibility with older clients.*
 - *Refer to `barcodeApi/README.md` for details on MCP if running the backend standalone.*
 
+**API Key Usage for MCP Endpoints:**
+While the MCP endpoints might be accessible for basic calls during development or for certain public tools, utilizing an API key is important for production use and accessing your specific usage tier. API keys are used for:
+- **Usage Tracking**: To monitor your API consumption against your plan.
+- **Rate Limiting**: To ensure fair use and protect the service, different rate limits may apply based on the API key's tier.
+Include your API key in the request headers, typically as `Authorization: Bearer YOUR_API_KEY` or `X-API-Key: YOUR_API_KEY`.
+
 ### **Available MCP Tools**
 - `generate_barcode`: Provides comprehensive barcode generation capabilities. It supports numerous formats and customization options (e.g., data content, barcode type, dimensions, colors, image format, text display, DPI, checksums, etc.). Refer to the tool's schema for a full list of parameters.
 
 ### **Usage Example (Illustrative - HTTP Stream)**
-The following shows an illustrative example of how an MCP client might request a barcode generation via the HTTP streaming endpoint (`/mcp`):
+The following shows an illustrative example of how an MCP client might request a barcode generation via the HTTP streaming endpoint (`/mcp`). Remember to include your API key in the request headers for authenticated access, usage tracking, and appropriate rate limiting (e.g., `-H "Authorization: Bearer YOUR_API_KEY"` if using cURL).
+
+**Request Body:**
 ```json
 {
   "method": "tools/call",
@@ -261,7 +269,7 @@ The following shows an illustrative example of how an MCP client might request a
   }
 }
 ```
-**Note**: The exact structure of the `params` and the specific values for enums like `format` and `image_format` should align with the MCP server's registration and the tool's schema definition. The tool name `generate_barcode` corresponds to the function available to the MCP system. Interaction with the `/mcp/sse` endpoint might differ slightly based on SSE client implementation specifics.
+**Note**: The exact structure of the `params` (request body) and the specific values for enums like `format` and `image_format` should align with the MCP server's registration and the tool's schema definition. The tool name `generate_barcode` corresponds to the function available to the MCP system. Interaction with the `/mcp/sse` endpoint might differ slightly based on SSE client implementation specifics.
 
 ## 🧪 Development & Testing
 
