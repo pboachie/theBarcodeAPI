@@ -5,6 +5,7 @@ import ScrollButtons from '@/components/ui/ScrollButtons';
 
 export default function RemoteConnectionPage() {
   const [copiedStates, setCopiedStates] = React.useState<{ [key: string]: boolean }>({});
+  const [selectedPlatform, setSelectedPlatform] = React.useState<'vscode' | 'curl' | 'generic'>('vscode');
 
   const handleCopy = async (codeElementId: string, buttonId: string) => {
     try {
@@ -61,52 +62,237 @@ export default function RemoteConnectionPage() {
             Connecting via MCP (Model Context Protocol)
           </h2>
           <p className="text-md md:text-lg leading-relaxed mb-4">
-            For integrating with AI assistants or more complex workflows, the Model Context Protocol (MCP) is the recommended method. MCP communication primarily uses a Server-Sent Events (SSE) endpoint.
+            For integrating with AI assistants or more complex workflows, the Model Context Protocol (MCP) is the recommended method. The primary and recommended MCP communication method is via an <strong>HTTP streaming endpoint</strong>, which provides efficient, bidirectional communication. A legacy Server-Sent Events (SSE) endpoint is also available for compatibility.
           </p>
           <p className="text-md md:text-lg leading-relaxed mb-4">
-            The specific endpoint for MCP is: <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp/sse</code>. This path is distinct from the standard HTTP REST API endpoints (like <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/barcode/generate</code>) which are used for direct barcode generation requests.
+            The MCP endpoints are:
+          </p>
+          <ul className="list-disc list-inside mb-4 space-y-1 text-md md:text-lg">
+            <li><strong>Recommended HTTP Stream:</strong> <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp</code></li>
+            <li><strong>Legacy SSE:</strong> <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp/sse</code></li>
+          </ul>
+          <p className="text-md md:text-lg leading-relaxed mb-4">
+            These paths are distinct from the standard HTTP REST API endpoints (like <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/barcode/generate</code>) which are used for direct barcode generation requests.
+            While some basic interactions with the MCP server might be possible without an API key during development, providing one in your request headers (e.g., <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">Authorization: Bearer YOUR_API_KEY</code> or <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">X-API-Key: YOUR_API_KEY</code>) is crucial for production use to identify your application and manage your usage quotas and rate limits.
           </p>
           <p className="text-md md:text-lg leading-relaxed mb-6">
-            MCP allows for a richer interaction model, where an AI assistant can call various tools provided by the server. Below is a conceptual example of a JSON payload for an MCP `tools/call` request, specifically for the `generate_barcode` tool:
+            MCP allows for a richer interaction model, where an AI assistant can call various tools provided by the server. Below is a conceptual example of a JSON payload for an MCP `tools/call` request (typically used with the HTTP streaming endpoint), specifically for the `generate_barcode` tool:
           </p>
 
           <div className="mt-6 bg-slate-200 dark:bg-slate-800 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
             <div className="flex justify-between items-center mb-3">
-              <h3 className="text-lg md:text-xl font-semibold text-[var(--accent-color)] font-bold">MCP `tools/call` JSON Example</h3>
+              <h3 className="text-lg md:text-xl font-semibold text-[var(--accent-color)] font-bold">MCP `tools/call` JSON Example (for HTTP Stream)</h3>
               <button
-                onClick={() => handleCopy('mcpCode', 'mcpCopyBtn')}
-                disabled={copiedStates['mcpCopyBtn']}
+                onClick={() => handleCopy('mcpCallCode', 'mcpCallCopyBtn')}
+                disabled={copiedStates['mcpCallCopyBtn']}
                 className="py-1 px-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 transition-all"
               >
-                {copiedStates['mcpCopyBtn'] ? 'Copied!' : 'Copy Code'}
+                {copiedStates['mcpCallCopyBtn'] ? 'Copied!' : 'Copy Code'}
               </button>
             </div>
             <pre className="bg-slate-100 dark:bg-slate-700 p-3 md:p-4 rounded-md overflow-x-auto text-sm md:text-base">
-              <code id="mcpCode" className="language-json text-black dark:text-slate-200">
+              <code id="mcpCallCode" className="language-json text-black dark:text-slate-200">
                 {`{
-  "type": "tools/call",
-  "id": "call_YAgP8AgYLp5sVybdy0MvL1Co",
-  "tool_name": "generate_barcode",
-  "tool_version": "1.0.0",
-  "tool_input": {
-    "text": "Hello from MCP",
-    "format": "qrcode",
-    "scale": 3,
-    "background": "#FFFFFF",
-    "foreground": "#000000",
-    "output_format": "url"
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "generate_barcode",
+    "version": "1.0.0",
+    "arguments": {
+      "data": "Hello from MCP",
+      "format": "QRCODE",
+      "width": 200,
+      "height": 200,
+      "image_format": "PNG",
+      "show_text": false
+    }
   },
-  "context": {
-    "user_id": "user_12345",
-    "session_id": "session_abcde"
-  }
+  "id": "call_YAgP8AgYLp5sVybdy0MvL1Co"
 }`}
               </code>
             </pre>
             <p className="mt-4 text-xs md:text-sm text-slate-400 dark:text-slate-500">
-              This example illustrates how parameters for barcode generation are passed within the <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">tool_input</code> object. The actual data exchanged would be part of an SSE stream.
+              This example illustrates how parameters for barcode generation are passed. The structure follows JSON-RPC 2.0 for HTTP streaming. The legacy SSE endpoint might have a slightly different top-level structure for messages.
             </p>
           </div>
+        </section>
+
+        <section className="bg-[var(--light-bg)] p-6 md:p-8 rounded-xl shadow-lg animate-fadeInUp animation-delay-500">
+          <h2 className="text-2xl md:text-3xl font-semibold mb-6 border-b-2 border-[var(--accent-color)] pb-3 text-[var(--accent-color)]/90">
+            Client Configuration Examples
+          </h2>
+          <p className="text-md md:text-lg leading-relaxed mb-4">
+            Below are examples of how to configure various clients or tools to connect to the MCP server. We primarily show connection to the recommended HTTP streaming endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp</code>).
+            When an API key (often referred to as a token in contexts like "Bearer Token") is used via the <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">Authorization</code> header, it's for identifying you to the MCP server, primarily for usage tracking and applying appropriate rate limits based on your plan.
+            While this public demonstration API might not strictly enforce a key for all interactions, it's good practice to include it as shown in the examples if you have one.
+          </p>
+          <div className="mb-6 flex space-x-2 border-b border-slate-300 dark:border-slate-700">
+            {(['vscode', 'curl'] as const).map((platform) => (
+              <button
+                key={platform}
+                onClick={() => setSelectedPlatform(platform)}
+                className={`pb-2 px-4 text-sm font-medium transition-colors
+                  ${selectedPlatform === platform
+                    ? 'border-b-2 border-[var(--accent-color)] text-[var(--accent-color)]'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-[var(--accent-color)]/80'}`}
+              >
+                {platform === 'vscode' ? 'VSCode' : 'cURL/CLI'}
+              </button>
+            ))}
+          </div>
+
+          {selectedPlatform === 'vscode' && (
+            <div className="space-y-6">
+              <div>
+                <h4 className="text-lg font-semibold mb-2 text-[var(--foreground)]/90">VSCode `settings.json` (HTTP and SSE)</h4>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
+                  This configuration defines two MCP servers: one for the recommended HTTP streaming and one for the legacy SSE endpoint.
+                </p>
+                <div className="bg-slate-200 dark:bg-slate-800 p-4 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-[var(--accent-color)]">JSON</span>
+                    <button
+                      onClick={() => handleCopy('vscodeHttpSseCode', 'vscodeHttpSseCopyBtn')}
+                      disabled={copiedStates['vscodeHttpSseCopyBtn']}
+                      className="py-1 px-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 transition-all"
+                    >
+                      {copiedStates['vscodeHttpSseCopyBtn'] ? 'Copied!' : 'Copy Code'}
+                    </button>
+                  </div>
+                  <pre className="bg-slate-100 dark:bg-slate-700 p-3 rounded-md overflow-x-auto text-xs">
+                    <code id="vscodeHttpSseCode" className="language-json text-black dark:text-slate-200">
+{`"mcp": {
+  "servers": {
+    "theBarcodeAPI_HTTP": {
+      "type": "http",
+      "url": "https://api.thebarcodeapi.com/api/v1/mcp"
+    },
+    "theBarcodeAPI_SSE_Legacy": {
+      "type": "sse",
+      "url": "https://api.thebarcodeapi.com/api/v1/mcp/sse"
+    }
+  }
+}`}
+                    </code>
+                  </pre>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-lg font-semibold mb-2 text-[var(--foreground)]/90">VSCode `settings.json` (HTTP with Token)</h4>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
+                  Example of how to include an API key using the Authorization header.
+                </p>
+                <div className="bg-slate-200 dark:bg-slate-800 p-4 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-[var(--accent-color)]">JSON</span>
+                    <button
+                      onClick={() => handleCopy('vscodeTokenCode', 'vscodeTokenCopyBtn')}
+                      disabled={copiedStates['vscodeTokenCopyBtn']}
+                      className="py-1 px-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 transition-all"
+                    >
+                      {copiedStates['vscodeTokenCopyBtn'] ? 'Copied!' : 'Copy Code'}
+                    </button>
+                  </div>
+                  <pre className="bg-slate-100 dark:bg-slate-700 p-3 rounded-md overflow-x-auto text-xs">
+                    <code id="vscodeTokenCode" className="language-json text-black dark:text-slate-200">
+{`"mcp": {
+  "servers": {
+    "theBarcodeAPI_HTTP_Token": {
+      "type": "http",
+      "url": "https://api.thebarcodeapi.com/api/v1/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_TOKEN_HERE"
+      }
+    }
+  }
+}`}
+                    </code>
+                  </pre>
+                  <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                    The <code className="bg-black/20 dark:bg-black/30 p-0.5 rounded text-[var(--accent-color)] text-[0.7rem]">Authorization</code> header provides your API key (token), linking requests to your usage limits and plan.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedPlatform === 'curl' && (
+            <div className="space-y-6">
+              <div>
+                <h4 className="text-lg font-semibold mb-2 text-[var(--foreground)]/90">cURL (HTTP Stream)</h4>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
+                  Connect to the recommended HTTP streaming endpoint. The <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">Content-Type</code> should be <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">application/json</code> for JSON-RPC.
+                  The <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">-N</code> flag disables buffering, which is useful for streaming responses.
+                </p>
+                <div className="bg-slate-200 dark:bg-slate-800 p-4 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-[var(--accent-color)]">Bash</span>
+                    <button
+                      onClick={() => handleCopy('curlHttpCode', 'curlHttpCopyBtn')}
+                      disabled={copiedStates['curlHttpCopyBtn']}
+                      className="py-1 px-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 transition-all"
+                    >
+                      {copiedStates['curlHttpCopyBtn'] ? 'Copied!' : 'Copy Code'}
+                    </button>
+                  </div>
+                  <pre className="bg-slate-100 dark:bg-slate-700 p-3 rounded-md overflow-x-auto text-xs">
+                    <code id="curlHttpCode" className="language-bash text-black dark:text-slate-200">
+{`curl -N -X POST \\
+     -H "Content-Type: application/json" \\
+     -d '{
+         "jsonrpc": "2.0",
+         "method": "generate_barcode",
+         "params": {"data": "Test via cURL", "format": "QRCODE", "image_format": "PNG"},
+         "id": "curl-test-1"
+     }' \\
+     https://api.thebarcodeapi.com/api/v1/mcp`}
+                    </code>
+                  </pre>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-lg font-semibold mb-2 text-[var(--foreground)]/90">cURL (HTTP Stream with Token)</h4>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
+                  Example including an API key via the <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">Authorization</code> header.
+                </p>
+                <div className="bg-slate-200 dark:bg-slate-800 p-4 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm font-medium text-[var(--accent-color)]">Bash</span>
+                    <button
+                      onClick={() => handleCopy('curlTokenCode', 'curlTokenCopyBtn')}
+                      disabled={copiedStates['curlTokenCopyBtn']}
+                      className="py-1 px-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 transition-all"
+                    >
+                      {copiedStates['curlTokenCopyBtn'] ? 'Copied!' : 'Copy Code'}
+                    </button>
+                  </div>
+                  <pre className="bg-slate-100 dark:bg-slate-700 p-3 rounded-md overflow-x-auto text-xs">
+                    <code id="curlTokenCode" className="language-bash text-black dark:text-slate-200">
+{`curl -N -X POST \\
+     -H "Content-Type: application/json" \\
+     -H "Authorization: Bearer YOUR_TOKEN_HERE" \\ # This line adds your API key
+     -d '{
+         "jsonrpc": "2.0",
+         "method": "generate_barcode",
+         "params": {"data": "Test via cURL with Token", "format": "QRCODE", "image_format": "PNG"},
+         "id": "curl-test-token-1"
+     }' \\
+     https://api.thebarcodeapi.com/api/v1/mcp`}
+                    </code>
+                  </pre>
+                  <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                    The <code className="bg-black/20 dark:bg-black/30 p-0.5 rounded text-[var(--accent-color)] text-[0.7rem]">-H "Authorization: Bearer YOUR_TOKEN_HERE"</code> line adds your API key to the request, used for tracking usage and applying limits.
+                  </p>
+                </div>
+              </div>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-4">
+                <strong>Note on SSE with cURL:</strong> To connect to the legacy SSE endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">/api/v1/mcp/sse</code>), you would typically use <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">-H "Accept: text/event-stream"</code>. If an API key is needed, it would also be sent as a header in the initial GET request establishing the SSE connection. However, the HTTP streaming endpoint is generally preferred.
+              </p>
+            </div>
+          )}
+
         </section>
 
         <section className="bg-[var(--light-bg)] p-6 md:p-8 rounded-xl shadow-lg animate-fadeInUp animation-delay-600">
