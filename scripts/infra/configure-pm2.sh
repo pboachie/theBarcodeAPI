@@ -27,26 +27,14 @@
 set -e
 
 echo "Starting PM2 configuration for frontend..."
-echo "Current user: $USER"
-echo "Current HOME: ${HOME:-'NOT SET'}"
-echo "Current working directory: $(pwd)"
 
 # Attempt to source environment variables from /tmp/env_vars
 # This file should be created by a preceding step in the GitHub Actions workflow.
 if [ -f /tmp/env_vars ]; then
-  echo "Found /tmp/env_vars file. Contents:"
-  cat /tmp/env_vars
-  echo "Sourcing environment variables from /tmp/env_vars..."
   source /tmp/env_vars
-  echo "Environment variables after sourcing:"
-  echo "ENVIRONMENT: ${ENVIRONMENT:-'NOT SET'}"
-  echo "SUDO_PASSWORD: ${SUDO_PASSWORD:+'SET (hidden)'}"
   echo "Sourced environment variables from /tmp/env_vars."
 else
   echo "Error: /tmp/env_vars not found. Required variables (ENVIRONMENT, SUDO_PASSWORD) might be missing."
-  echo "Current working directory: $(pwd)"
-  echo "Files in /tmp:"
-  ls -la /tmp/ | head -20
   exit 1
 fi
 
@@ -76,47 +64,24 @@ echo "Creating required directories: ${CURRENT_APP_PATH}, ${LOGS_PATH}"
 echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${CURRENT_APP_PATH}"
 echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${LOGS_PATH}"
 # github-runner should own the /opt/thebarcodeapi directory and its subdirectories for PM2 management and app files
-echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "/opt/thebarcodeapi"
+echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner "/opt/thebarcodeapi"
 echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "/opt/thebarcodeapi" # Ensure runner can rwx, others rx
 
 # Configure PM2: Copy template and replace placeholders
 echo "Configuring PM2 ecosystem file at ${TARGET_ECOSYSTEM_CONFIG_PATH}..."
 echo "$SUDO_PASSWORD" | sudo -S cp "${PWD}/${ECOSYSTEM_TEMPLATE_PATH}" "${TARGET_ECOSYSTEM_CONFIG_PATH}"
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__ENVIRONMENT__/${ENVIRONMENT}/g" "${TARGET_ECOSYSTEM_CONFIG_PATH}"
-echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "${TARGET_ECOSYSTEM_CONFIG_PATH}"
+echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner "${TARGET_ECOSYSTEM_CONFIG_PATH}"
 echo "$SUDO_PASSWORD" | sudo -S chmod 644 "${TARGET_ECOSYSTEM_CONFIG_PATH}" # Readable by all, writable by owner
 
 # PM2 process management
-# PM2_HOME must be set to the home directory of the user that will run PM2.
-echo "Current user context:"
-echo "USER: ${USER}"
-echo "HOME: ${HOME:-'NOT SET'}"
-echo "PWD: ${PWD}"
-echo "whoami: $(whoami)"
-
-# Use $HOME if available, otherwise construct based on user
-if [ "$USER" = "root" ]; then
-    PM2_HOME_DIR="/root/.pm2"
-else
-    PM2_HOME_DIR="${HOME:-/home/$USER}/.pm2"
-fi
-echo "Setting PM2_HOME to: ${PM2_HOME_DIR}"
-
-# Ensure PM2 home directory exists with proper permissions
-echo "Ensuring PM2 home directory exists: ${PM2_HOME_DIR}"
-if [ "$USER" = "root" ]; then
-    mkdir -p "${PM2_HOME_DIR}"
-    chmod 755 "${PM2_HOME_DIR}"
-else
-    echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${PM2_HOME_DIR}"
-    echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "${PM2_HOME_DIR}"
-    echo "$SUDO_PASSWORD" | sudo -S chmod 755 "${PM2_HOME_DIR}"
-fi
+# PM2_HOME must be set to the home directory of the user that will run PM2 (github-runner).
+PM2_RUN_CMD="PM2_HOME=/home/github-runner/.pm2 pm2"
 
 echo "Managing PM2 process: ${PM2_APP_NAME}..."
 # Delete existing process if it's running to ensure a clean start/reload
 echo "Attempting to delete existing PM2 process: ${PM2_APP_NAME} (if any)..."
-PM2_HOME="${PM2_HOME_DIR}" pm2 delete "${PM2_APP_NAME}" || echo "PM2 process ${PM2_APP_NAME} not found or already stopped. This is fine."
+$PM2_RUN_CMD delete "${PM2_APP_NAME}" || echo "PM2 process ${PM2_APP_NAME} not found or already stopped. This is fine."
 
 # Wait for processes to fully stop (PM2 delete can be asynchronous)
 echo "Waiting for PM2 process to fully stop (10 seconds)..."
@@ -124,16 +89,16 @@ sleep 10
 
 # Clear PM2 logs before starting to ensure fresh logs for the new instance
 echo "Flushing PM2 logs..."
-PM2_HOME="${PM2_HOME_DIR}" pm2 flush || echo "Warning: PM2 flush command failed. Logs might not be cleared."
+$PM2_RUN_CMD flush || echo "Warning: PM2 flush command failed. Logs might not be cleared."
 
 # Start PM2 with the new configuration
 # The ecosystem file's `cwd` directive points to CURRENT_APP_PATH.
 # PM2 needs read access to the ecosystem file.
 echo "Starting PM2 process ${PM2_APP_NAME} with configuration: ${TARGET_ECOSYSTEM_CONFIG_PATH}"
-PM2_HOME="${PM2_HOME_DIR}" pm2 start "${TARGET_ECOSYSTEM_CONFIG_PATH}"
+$PM2_RUN_CMD start "${TARGET_ECOSYSTEM_CONFIG_PATH}"
 if [ $? -ne 0 ]; then
     echo "Error: PM2 start command failed for ${TARGET_ECOSYSTEM_CONFIG_PATH}."
-    PM2_HOME="${PM2_HOME_DIR}" pm2 logs --lines 50 # Show all PM2 logs if start fails
+    $PM2_RUN_CMD logs --lines 50 # Show all PM2 logs if start fails
     exit 1
 fi
 
@@ -143,13 +108,13 @@ sleep 10
 
 # Save the current PM2 process list to allow resurrection on server reboot
 echo "Saving PM2 process list..."
-PM2_HOME="${PM2_HOME_DIR}" pm2 save --force # --force ensures it overwrites if a save file already exists
+$PM2_RUN_CMD save --force # --force ensures it overwrites if a save file already exists
 echo "PM2 process status after start/save:"
-PM2_HOME="${PM2_HOME_DIR}" pm2 list
+$PM2_RUN_CMD list
 
 # Final permissions check for the application base path (already set, but good for verification)
 echo "Verifying final permissions for /opt/thebarcodeapi..."
-echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "/opt/thebarcodeapi"
+echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner "/opt/thebarcodeapi"
 echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "/opt/thebarcodeapi" # Ensure scripts inside are executable if needed by PM2
 
 # Show recent logs from the application for debugging purposes

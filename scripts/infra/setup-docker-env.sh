@@ -36,18 +36,10 @@ echo "Starting backend Docker environment setup..."
 
 # Attempt to source environment variables from /tmp/env_vars
 if [ -f /tmp/env_vars ]; then
-  echo "Found /tmp/env_vars file, sourcing environment variables..."
   source /tmp/env_vars
   echo "Sourced environment variables from /tmp/env_vars."
-  echo "Key variables after sourcing:"
-  echo "ENVIRONMENT: ${ENVIRONMENT:-'NOT SET'}"
-  echo "SUDO_PASSWORD: ${SUDO_PASSWORD:+'SET (hidden)'}"
-  echo "DB_PASSWORD: ${DB_PASSWORD:+'SET (hidden)'}"
 else
   echo "Error: /tmp/env_vars not found. This script requires numerous variables from it."
-  echo "Current working directory: $(pwd)"
-  echo "Files in /tmp:"
-  ls -la /tmp/ | head -20
   exit 1
 fi
 
@@ -70,15 +62,8 @@ ENV_SPECIFIC_DATA_PATH="${APP_DEPLOY_BASE_PATH}/${ENVIRONMENT}" # For releases, 
 
 # Path to the checked-out code in the GitHub Actions runner workspace.
 # This path might need to be passed as an argument or discovered if it's not fixed.
-# Defaulting to a common structure based on current user and GitHub Actions patterns.
-if [ -n "${GITHUB_WORKSPACE}" ]; then
-    WORKFLOW_CHECKOUT_PATH="${GITHUB_WORKSPACE}"
-elif [ "$USER" = "root" ]; then
-    WORKFLOW_CHECKOUT_PATH="/root/actions-runner/_work/theBarcodeAPI/theBarcodeAPI"
-else
-    WORKFLOW_CHECKOUT_PATH="/home/${USER}/actions-runner/_work/theBarcodeAPI/theBarcodeAPI"
-fi
-echo "Using workflow checkout path: ${WORKFLOW_CHECKOUT_PATH}"
+# Defaulting to a common structure.
+WORKFLOW_CHECKOUT_PATH="${GITHUB_WORKSPACE:-/home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI}"
 SOURCE_BACKEND_CODE_PATH="${WORKFLOW_CHECKOUT_PATH}/barcodeAPI"
 SOURCE_TEMPLATES_PATH="${WORKFLOW_CHECKOUT_PATH}/scripts/infra/templates"
 
@@ -118,7 +103,7 @@ echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__API_MASTER_KEY__/${API_MASTER_KEY}/g
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__API_VERSION__/${API_VERSION}/g" ".env"
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__ENVIRONMENT__/${ENVIRONMENT}/g" ".env"
 echo "$SUDO_PASSWORD" | sudo -S chmod 600 ".env" # Restrict permissions: only owner can read/write
-echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER ".env"
+echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner ".env"
 
 # Create docker-compose.yml from template
 echo "  Creating docker-compose.yml from template: ${SOURCE_TEMPLATES_PATH}/docker-compose.yml.template"
@@ -126,7 +111,7 @@ echo "$SUDO_PASSWORD" | sudo -S cp "${SOURCE_TEMPLATES_PATH}/docker-compose.yml.
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__ENVIRONMENT__/${ENVIRONMENT}/g" "docker-compose.yml"
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__POSTGRES_PASSWORD__/${POSTGRES_PASSWORD}/g" "docker-compose.yml"
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__DB_PASSWORD__/${DB_PASSWORD}/g" "docker-compose.yml"
-echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "docker-compose.yml"
+echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner "docker-compose.yml"
 echo "$SUDO_PASSWORD" | sudo -S chmod 644 "docker-compose.yml" # Readable by all
 
 # Create backup.sh from template
@@ -144,13 +129,13 @@ echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__ENVIRONMENT__/${ENVIRONMENT}/g" "bac
 # The sed command below tries to fix this if the template has the literal "$SUDO_PASSWORD".
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/echo \"\\\$SUDO_PASSWORD\"/echo \"${SUDO_PASSWORD}\"/g" "backup.sh"
 echo "$SUDO_PASSWORD" | sudo -S chmod +x "backup.sh"
-echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "backup.sh"
+echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner "backup.sh"
 
 # Create wait-for-it.sh from template
 echo "  Creating wait-for-it.sh from template: ${SOURCE_TEMPLATES_PATH}/wait-for-it.sh.template"
 echo "$SUDO_PASSWORD" | sudo -S cp "${SOURCE_TEMPLATES_PATH}/wait-for-it.sh.template" "wait-for-it.sh"
 echo "$SUDO_PASSWORD" | sudo -S chmod +x "wait-for-it.sh"
-echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "wait-for-it.sh"
+echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner "wait-for-it.sh"
 
 # Ensure start.sh (copied from source repo) is executable
 # This script is typically used as the CMD or ENTRYPOINT in the Dockerfile.
@@ -164,7 +149,7 @@ fi
 # Set final overall permissions for the application deployment directory
 # This ensures the github-runner user owns everything and has appropriate execution rights.
 echo "Setting final permissions for ${APP_DEPLOY_BASE_PATH}..."
-echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "${APP_DEPLOY_BASE_PATH}"
+echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner "${APP_DEPLOY_BASE_PATH}"
 # Set base backend app path to 755, scripts inside should already be +x
 echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "${BACKEND_APP_PATH}"
 # Re-ensure .env has strict permissions after chmod -R

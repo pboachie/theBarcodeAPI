@@ -83,7 +83,7 @@ chmod +x "$TEMP_SCRIPT_PATH"
 TARGET_SCRIPT_PATH="/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh"
 echo "Moving temporary script to ${TARGET_SCRIPT_PATH} using sudo..."
 echo "${SUDO_PASSWORD}" | sudo -S mv "$TEMP_SCRIPT_PATH" "$TARGET_SCRIPT_PATH"
-echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "$TARGET_SCRIPT_PATH"
+echo "${SUDO_PASSWORD}" | sudo -S chown github-runner:github-runner "$TARGET_SCRIPT_PATH"
 echo "${SUDO_PASSWORD}" | sudo -S chmod 755 "$TARGET_SCRIPT_PATH"
 echo "Pre-backup check script deployed to ${TARGET_SCRIPT_PATH}."
 

@@ -22,14 +22,6 @@
 #!/bin/bash
 set -e
 
-# Set PM2_HOME based on current user
-if [ "$USER" = "root" ]; then
-    PM2_HOME_DIR="/root/.pm2"
-else
-    PM2_HOME_DIR="${HOME:-/home/$USER}/.pm2"
-fi
-echo "Using PM2_HOME: ${PM2_HOME_DIR}"
-
 # Ensure critical variables are set
 if [ -z "$ENVIRONMENT" ] || [ -z "$SUDO_PASSWORD" ] || [ -z "$STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES" ]; then
   echo "Error: Required environment variables (ENVIRONMENT, SUDO_PASSWORD, STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES) are not set."
@@ -65,18 +57,18 @@ check_health() {
     # Log PM2 status and recent app logs periodically during health check failures for debugging
     if [ $((i % 5)) -eq 0 ]; then # Every 5 attempts (25 seconds)
       echo "Current PM2 status:"
-      PM2_HOME="${PM2_HOME_DIR}" pm2 list # Ensure PM2_HOME is set if runner user is different
+      PM2_HOME="/home/github-runner/.pm2" pm2 list # Ensure PM2_HOME is set if runner user is different
       echo "Recent logs for thebarcodeapi-frontend-${ENVIRONMENT}:"
-      PM2_HOME="${PM2_HOME_DIR}" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 20 --nostream
+      PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 20 --nostream
     fi
     sleep 5 # Wait before retrying
   done
 
   echo "Health check failed for ${url} after $max_attempts attempts."
   echo "Final PM2 status:"
-  PM2_HOME="${PM2_HOME_DIR}" pm2 list
+  PM2_HOME="/home/github-runner/.pm2" pm2 list
   echo "Recent logs for thebarcodeapi-frontend-${ENVIRONMENT} (last 50 lines):"
-  PM2_HOME="${PM2_HOME_DIR}" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50 --nostream
+  PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50 --nostream
   return 1 # Failure
 }
 
@@ -89,7 +81,7 @@ PREVIOUS_RELEASE_LINK="${APP_BASE_PATH}/previous" # Symlink to the previous rele
 # Ensure base directories exist with proper permissions (runner should own /opt/thebarcodeapi for creating subdirs)
 echo "Ensuring base directories exist: ${RELEASES_PATH}, ${CURRENT_LINK_PATH}"
 echo "${SUDO_PASSWORD}" | sudo -S mkdir -p "${RELEASES_PATH}" # -p creates parent dirs if they don't exist
-echo "${SUDO_PASSWORD}" | sudo -S chown -R $USER:$USER "/opt/thebarcodeapi" # Runner owns the top dir
+echo "${SUDO_PASSWORD}" | sudo -S chown -R github-runner:github-runner "/opt/thebarcodeapi" # Runner owns the top dir
 
 # Deployment steps if changes are detected
 if [ "${STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES}" == "true" ]; then
@@ -107,7 +99,7 @@ if [ "${STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES}" == "true" ]; then
   echo "${SUDO_PASSWORD}" | sudo -S cp ./package.json ./package-lock.json ./.git-commit "${NEW_RELEASE_PATH}/"
 
   # Set ownership and basic permissions for the new release (runner needs to install deps)
-  echo "${SUDO_PASSWORD}" | sudo -S chown -R $USER:$USER "${NEW_RELEASE_PATH}"
+  echo "${SUDO_PASSWORD}" | sudo -S chown -R github-runner:github-runner "${NEW_RELEASE_PATH}"
   echo "${SUDO_PASSWORD}" | sudo -S chmod -R 755 "${NEW_RELEASE_PATH}" # Read/execute for all, write for owner
 
   echo "Installing production dependencies in new release directory..."
@@ -169,7 +161,7 @@ PM2_APP_NAME="thebarcodeapi-frontend-${ENVIRONMENT}"
 PM2_ECOSYSTEM_CONFIG="${APP_BASE_PATH}/ecosystem.config.js" # This file should be created by infra-ci.yml
 
 echo "Managing PM2 process: ${PM2_APP_NAME}"
-if ! PM2_HOME="${PM2_HOME_DIR}" pm2 list | grep -q "${PM2_APP_NAME}"; then
+if ! PM2_HOME="/home/github-runner/.pm2" pm2 list | grep -q "${PM2_APP_NAME}"; then
   echo "PM2 process ${PM2_APP_NAME} not found. Starting new instance..."
   # Ensure current directory exists for PM2 CWD, though actual CWD is in ecosystem file
   if [ ! -d "${CURRENT_LINK_PATH}" ]; then
@@ -183,15 +175,15 @@ if ! PM2_HOME="${PM2_HOME_DIR}" pm2 list | grep -q "${PM2_APP_NAME}"; then
       echo "Error: PM2 ecosystem config file not found at ${PM2_ECOSYSTEM_CONFIG}"
       exit 1
   fi
-  PM2_HOME="${PM2_HOME_DIR}" pm2 start "${PM2_ECOSYSTEM_CONFIG}"
+  PM2_HOME="/home/github-runner/.pm2" pm2 start "${PM2_ECOSYSTEM_CONFIG}"
 else
   echo "PM2 process ${PM2_APP_NAME} found. Reloading..."
-  PM2_HOME="${PM2_HOME_DIR}" pm2 reload "${PM2_APP_NAME}" --update-env # Reloads with 0 downtime
+  PM2_HOME="/home/github-runner/.pm2" pm2 reload "${PM2_APP_NAME}" --update-env # Reloads with 0 downtime
 fi
 # Save current PM2 process list to be resurrected on reboot
-PM2_HOME="${PM2_HOME_DIR}" pm2 save --force
+PM2_HOME="/home/github-runner/.pm2" pm2 save --force
 echo "PM2 process status:"
-PM2_HOME="${PM2_HOME_DIR}" pm2 list
+PM2_HOME="/home/github-runner/.pm2" pm2 list
 
 # Health check and rollback if needed
 echo "Performing post-deployment health check..."
@@ -203,14 +195,14 @@ if ! check_health; then
     echo "${SUDO_PASSWORD}" | sudo -S ln -sfn "${PREVIOUS_ACTUAL_RELEASE}" "${CURRENT_LINK_PATH}"
 
     echo "Restarting PM2 process for rollback..."
-    PM2_HOME="${PM2_HOME_DIR}" pm2 reload "${PM2_APP_NAME}" --update-env
-    PM2_HOME="${PM2_HOME_DIR}" pm2 save --force
+    PM2_HOME="/home/github-runner/.pm2" pm2 reload "${PM2_APP_NAME}" --update-env
+    PM2_HOME="/home/github-runner/.pm2" pm2 save --force
 
     echo "Performing health check after rollback..."
     if ! check_health; then
       echo "CRITICAL: Rollback failed! Site may be down. Manual intervention required."
-      PM2_HOME="${PM2_HOME_DIR}" pm2 list
-      PM2_HOME="${PM2_HOME_DIR}" pm2 logs "${PM2_APP_NAME}" --lines 100 --nostream
+      PM2_HOME="/home/github-runner/.pm2" pm2 list
+      PM2_HOME="/home/github-runner/.pm2" pm2 logs "${PM2_APP_NAME}" --lines 100 --nostream
       exit 1 # Critical failure
     fi
     echo "Rollback to ${PREVIOUS_ACTUAL_RELEASE} successful, but the new deployment failed."

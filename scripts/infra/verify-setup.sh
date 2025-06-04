@@ -50,7 +50,7 @@ ensure_directory_exists() {
     echo "NOT FOUND. Attempting to create..."
     # This creation is a fallback; directories should ideally be created by their respective setup scripts.
     echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$dir_path"
-    echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "$dir_path"
+    echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner "$dir_path"
     echo "$SUDO_PASSWORD" | sudo -S chmod 755 "$dir_path"
     echo "CREATED."
   else
@@ -118,11 +118,11 @@ fi
 # --- Permissions Verification (Spot Check) ---
 # fix-permissions.sh should handle comprehensive permission setting. This is a spot check.
 echo "Performing spot check on key permissions..."
-# Overall ownership of /opt/thebarcodeapi (should be $USER)
-if [ "$(stat -c '%U:%G' /opt/thebarcodeapi)" == "$USER:$USER" ]; then
-    echo "/opt/thebarcodeapi ownership is OK ($USER:$USER)."
+# Overall ownership of /opt/thebarcodeapi (should be github-runner)
+if [ "$(stat -c '%U:%G' /opt/thebarcodeapi)" == "github-runner:github-runner" ]; then
+    echo "/opt/thebarcodeapi ownership is OK (github-runner:github-runner)."
 else
-    echo "Warning: /opt/thebarcodeapi ownership is $(stat -c '%U:%G' /opt/thebarcodeapi), expected $USER:$USER."
+    echo "Warning: /opt/thebarcodeapi ownership is $(stat -c '%U:%G' /opt/thebarcodeapi), expected github-runner:github-runner."
 fi
 
 # Backend .env file permissions

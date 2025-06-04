@@ -93,7 +93,7 @@ chmod +x "$TEMP_CLEANUP_SCRIPT"
 TARGET_CLEANUP_SCRIPT="/opt/thebarcodeapi/cleanup.sh"
 echo "Moving temporary cleanup script to ${TARGET_CLEANUP_SCRIPT} using sudo..."
 echo "${SUDO_PASSWORD}" | sudo -S mv "$TEMP_CLEANUP_SCRIPT" "$TARGET_CLEANUP_SCRIPT"
-echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "$TARGET_CLEANUP_SCRIPT"
+echo "${SUDO_PASSWORD}" | sudo -S chown github-runner:github-runner "$TARGET_CLEANUP_SCRIPT"
 echo "${SUDO_PASSWORD}" | sudo -S chmod 755 "$TARGET_CLEANUP_SCRIPT"
 echo "Cleanup script deployed to ${TARGET_CLEANUP_SCRIPT}."
 
