@@ -278,24 +278,19 @@ jobs:
 
         # Create /tmp/env_vars file with environment variables needed by the backend deployment script.
         # This file is sourced by scripts/deploy-backend-docker.sh.
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << EOF
-ENVIRONMENT=\${{ env.ENVIRONMENT }}
-DB_PASSWORD=\${{ env.DB_PASSWORD }}
-POSTGRES_PASSWORD=\${{ env.POSTGRES_PASSWORD }}
-API_SECRET_KEY=\${{ env.API_SECRET_KEY }}
-API_MASTER_KEY=\${{ env.API_MASTER_KEY }}
-API_VERSION=\${{ vars.API_VERSION }}
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-REDIS_URL=redis://redis:6379/1
-SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:\${{ env.DB_PASSWORD }}@db/barcode_api
-LOG_DIRECTORY=logs
-ROOT_PATH=/api/v1
-SECRET_KEY=\${{ env.API_SECRET_KEY }}
-MASTER_API_KEY=\${{ env.API_MASTER_KEY }}
-DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:\${{ env.DB_PASSWORD }}@db/barcode_api
-SERVER_URL=https://\${{ env.DOMAIN_NAME }}
-EOF"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c \
+        "cat > /tmp/env_vars << EOF
+        ENVIRONMENT=\\${{ env.ENVIRONMENT }}
+        DB_PASSWORD=\\${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD=\\${{ env.POSTGRES_PASSWORD }}
+        API_SECRET_KEY=\\${{ env.API_SECRET_KEY }}
+        API_MASTER_KEY=\\${{ env.API_MASTER_KEY }}
+        API_VERSION=\\${{ vars.API_VERSION }}
+        ALGORITHM=HS256
+        ACCESS_TOKEN_EXPIRE_MINUTES=30
+        REDIS_URL=redis://redis:6379/1
+        SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:\\${{ env.DB_PASSWORD }}@db/barcode_api
+        EOF"
 
         # Determines the correct Docker Compose command (docker-compose or docker compose)
         # and saves it to /tmp/docker_vars for use in subsequent scripts.
