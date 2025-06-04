@@ -215,10 +215,11 @@ class RedisManager:
                 pipe.evalsha(
                     self.increment_usage_sha,
                     1,  # number of keys
-                    key,
-                    str(current_time), # Ensure current_time is a string
-                    str(settings.RateLimit.get_limit("unauthenticated")), # Ensure limit is a string
-                    "86400"  # Ensure expiry is a string
+                    key, # KEYS[1]
+                    str(user_id if user_id is not None else ip_address), # ARGV[1] - Lua user_id (string)
+                    str(ip_address), # ARGV[2] - Lua ip_address (string)
+                    str(settings.RateLimit.get_limit("unauthenticated")), # ARGV[3] - Lua rate_limit (string for tonumber)
+                    str(current_time) # ARGV[4] - Lua current_time (string)
                 )
 
             results = await pipe.execute()
@@ -237,8 +238,8 @@ class RedisManager:
                                 'tier': 'unauthenticated',
                                 'requests_today': int(lua_result[0]) if lua_result[0] else 1,
                                 'remaining_requests': int(lua_result[1]) if lua_result[1] else settings.RateLimit.get_limit("unauthenticated") - 1,
-                                'last_request': datetime.fromisoformat(lua_result[2]) if lua_result[2] else datetime.now(pytz.utc),
-                                'last_reset': datetime.fromisoformat(lua_result[3]) if lua_result[3] else datetime.now(pytz.utc)
+                                'last_request': datetime.fromisoformat(lua_result[2].decode('utf-8')) if lua_result[2] else datetime.now(pytz.utc),
+                                'last_reset': datetime.fromisoformat(lua_result[3].decode('utf-8')) if lua_result[3] else datetime.now(pytz.utc)
                             }
                             user_data = UserData(**user_data_dict)
                             pending_results[internal_id].set_result(user_data)
