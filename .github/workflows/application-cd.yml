@@ -34,9 +34,8 @@ env:
 jobs:
   frontend-deployment:
     runs-on: self-hosted
-    # This job runs if a previous workflow run (e.g., infrastructure setup) completed successfully,
-    # OR if the workflow is manually dispatched.
-    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    # This job runs if the event is a push or a manual workflow dispatch.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     steps:
     # Determines the branch to checkout.
     # For manual 'workflow_dispatch', it uses the 'branch' input or the current ref_name if input is not provided.
