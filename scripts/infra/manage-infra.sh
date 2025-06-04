@@ -135,10 +135,10 @@ EOF"
         exec_sudo mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres"
         exec_sudo mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis"
         exec_sudo mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/backups"
-        exec_sudo chown -R github-runner:github-runner "/opt/thebarcodeapi" # Own parent first
-        exec_sudo chown -R github-runner:github-runner "/opt/thebarcodeapi/${ENVIRONMENT}"
-        exec_sudo chown -R github-runner:github-runner "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
-        exec_sudo chown -R github-runner:github-runner "/opt/thebarcodeapi/${ENVIRONMENT}/backups"
+        exec_sudo chown -R "${USER}:${USER}" "/opt/thebarcodeapi" # Own parent first
+        exec_sudo chown -R "${USER}:${USER}" "/opt/thebarcodeapi/${ENVIRONMENT}"
+        exec_sudo chown -R "${USER}:${USER}" "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
+        exec_sudo chown -R "${USER}:${USER}" "/opt/thebarcodeapi/${ENVIRONMENT}/backups"
 
         echo "Configuring Nginx..."
         exec_sudo bash "${SCRIPTS_INFRA_DIR}/configure-nginx.sh"
@@ -204,7 +204,7 @@ EOF"
         echo "Infrastructure and initial application deployment initialized successfully for ${ENVIRONMENT}."
         echo "Creating marker file: ${MARKER_FILE}"
         exec_sudo touch "${MARKER_FILE}"
-        exec_sudo chown github-runner:github-runner "${MARKER_FILE}"
+        exec_sudo chown "${USER}:${USER}" "${MARKER_FILE}"
 
     else
         echo "Existing infrastructure detected for ${ENVIRONMENT} (Marker file found: ${MARKER_FILE}). Skipping initialization."

@@ -63,7 +63,7 @@ fi
 echo "Creating required directories: ${CURRENT_APP_PATH}, ${LOGS_PATH}"
 echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${CURRENT_APP_PATH}"
 echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${LOGS_PATH}"
-# github-runner should own the /opt/thebarcodeapi directory and its subdirectories for PM2 management and app files
+# Current user should own the /opt/thebarcodeapi directory and its subdirectories for PM2 management and app files
 echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "/opt/thebarcodeapi"
 echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "/opt/thebarcodeapi" # Ensure runner can rwx, others rx
 

@@ -173,7 +173,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeApi/* /opt/thebarcodeapi/barcodeApi/
 
         # Set proper permissions
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeApi
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeApi
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/barcodeApi
 
         # Debug output
@@ -265,7 +265,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/backups/
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeApi
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeApi
 
     - name: Setup Docker and Environment
       run: |
@@ -365,7 +365,7 @@ jobs:
         fi
 
         # Set proper permissions
-        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeApi/.env
+        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeApi/.env
         # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeApi/.env
 
         echo "Verifying backend deployment..."
