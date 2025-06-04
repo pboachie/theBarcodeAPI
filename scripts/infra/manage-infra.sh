@@ -119,7 +119,7 @@ GITHUB_WORKSPACE=${GITHUB_WORKSPACE}
 EOF"
         exec_sudo chmod 644 "${GLOBAL_ENV_VARS_FILE}"
 
-        CURRENT_SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+        CURRENT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
         # SCRIPTS_INFRA_DIR is the same as CURRENT_SCRIPT_DIR if manage-infra.sh is in scripts/infra
         SCRIPTS_INFRA_DIR="${CURRENT_SCRIPT_DIR}"
 
