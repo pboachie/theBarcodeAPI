@@ -44,6 +44,7 @@ fi
 source /tmp/docker_vars
 echo "Sourced /tmp/docker_vars. DOCKER_COMPOSE is set to: ${DOCKER_COMPOSE}"
 
+export PROJECT_VERSION="${API_VERSION}"
 
 # Ensure critical variables sourced from /tmp/env_vars are available
 if [ -z "$ENVIRONMENT" ] || [ -z "$SUDO_PASSWORD" ]; then
