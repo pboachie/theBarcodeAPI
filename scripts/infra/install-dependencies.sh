@@ -157,7 +157,7 @@ declare -A commands_to_verify=(
 
 for name in "${!commands_to_verify[@]}"; do
   echo -n "Verifying $name: "
-  if eval "${commands_to_verify[$name]}" &> /dev/null; then
+  if eval "${commands_to_verify[$name]}" >/dev/null 2>&1; then
     echo "OK ($(${commands_to_verify[$name]} 2>&1 | head -n 1))"
   else
     echo "FAILED. $name might not be installed correctly."

@@ -8,12 +8,18 @@ name: theBarcodeApi Application Deployment
 #       - completed
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+    tags:
+      - 'v*.*.*' # For tags like v0.1.0
+      - '*.*.*'  # For tags like 0.1.0 (without v prefix)
+      - '*'      # Fallback for any other tag format if needed, be cautious with too broad patterns
   workflow_dispatch:
     inputs:
       branch:
-        description: 'Branch to deploy'
+        description: 'Branch or Tag to deploy'
         required: false
+        default: 'main'
 
 env:
   # Domain name for the application, used by web server configurations (e.g., in Nginx)
@@ -128,9 +134,9 @@ jobs:
       id: get_branch # Note: ID is same as in frontend job, but it's a local ID to this job.
       run: |
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-          echo "branch=${{ github.ref }}" >> $GITHUB_OUTPUT
-        else
-          echo "branch=main" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.event.inputs.branch || github.ref }}" >> $GITHUB_OUTPUT
+        else # For push events (to main branch or a tag)
+          echo "branch=${{ github.ref }}" >> $GITHUB_OUTPUT # Use the pushed ref (branch or tag)
         fi
 
     - uses: actions/checkout@v3
