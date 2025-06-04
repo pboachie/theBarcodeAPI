@@ -101,7 +101,6 @@ else
     PM2_HOME_DIR="${HOME:-/home/$USER}/.pm2"
 fi
 echo "Setting PM2_HOME to: ${PM2_HOME_DIR}"
-PM2_RUN_CMD="PM2_HOME=${PM2_HOME_DIR} pm2"
 
 # Ensure PM2 home directory exists with proper permissions
 echo "Ensuring PM2 home directory exists: ${PM2_HOME_DIR}"
@@ -117,7 +116,7 @@ fi
 echo "Managing PM2 process: ${PM2_APP_NAME}..."
 # Delete existing process if it's running to ensure a clean start/reload
 echo "Attempting to delete existing PM2 process: ${PM2_APP_NAME} (if any)..."
-$PM2_RUN_CMD delete "${PM2_APP_NAME}" || echo "PM2 process ${PM2_APP_NAME} not found or already stopped. This is fine."
+PM2_HOME="${PM2_HOME_DIR}" pm2 delete "${PM2_APP_NAME}" || echo "PM2 process ${PM2_APP_NAME} not found or already stopped. This is fine."
 
 # Wait for processes to fully stop (PM2 delete can be asynchronous)
 echo "Waiting for PM2 process to fully stop (10 seconds)..."
@@ -125,16 +124,16 @@ sleep 10
 
 # Clear PM2 logs before starting to ensure fresh logs for the new instance
 echo "Flushing PM2 logs..."
-$PM2_RUN_CMD flush || echo "Warning: PM2 flush command failed. Logs might not be cleared."
+PM2_HOME="${PM2_HOME_DIR}" pm2 flush || echo "Warning: PM2 flush command failed. Logs might not be cleared."
 
 # Start PM2 with the new configuration
 # The ecosystem file's `cwd` directive points to CURRENT_APP_PATH.
 # PM2 needs read access to the ecosystem file.
 echo "Starting PM2 process ${PM2_APP_NAME} with configuration: ${TARGET_ECOSYSTEM_CONFIG_PATH}"
-$PM2_RUN_CMD start "${TARGET_ECOSYSTEM_CONFIG_PATH}"
+PM2_HOME="${PM2_HOME_DIR}" pm2 start "${TARGET_ECOSYSTEM_CONFIG_PATH}"
 if [ $? -ne 0 ]; then
     echo "Error: PM2 start command failed for ${TARGET_ECOSYSTEM_CONFIG_PATH}."
-    $PM2_RUN_CMD logs --lines 50 # Show all PM2 logs if start fails
+    PM2_HOME="${PM2_HOME_DIR}" pm2 logs --lines 50 # Show all PM2 logs if start fails
     exit 1
 fi
 
@@ -144,9 +143,9 @@ sleep 10
 
 # Save the current PM2 process list to allow resurrection on server reboot
 echo "Saving PM2 process list..."
-$PM2_RUN_CMD save --force # --force ensures it overwrites if a save file already exists
+PM2_HOME="${PM2_HOME_DIR}" pm2 save --force # --force ensures it overwrites if a save file already exists
 echo "PM2 process status after start/save:"
-$PM2_RUN_CMD list
+PM2_HOME="${PM2_HOME_DIR}" pm2 list
 
 # Final permissions check for the application base path (already set, but good for verification)
 echo "Verifying final permissions for /opt/thebarcodeapi..."
