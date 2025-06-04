@@ -62,10 +62,33 @@ ENV_SPECIFIC_DATA_PATH="${APP_DEPLOY_BASE_PATH}/${ENVIRONMENT}" # For releases, 
 
 # Path to the checked-out code in the GitHub Actions runner workspace.
 # This path might need to be passed as an argument or discovered if it's not fixed.
-# Defaulting to a common structure.
-WORKFLOW_CHECKOUT_PATH="${GITHUB_WORKSPACE:-/home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI}"
-SOURCE_BACKEND_CODE_PATH="${WORKFLOW_CHECKOUT_PATH}/barcodeAPI"
+# Try multiple methods to find the correct checkout path:
+if [ -n "${GITHUB_WORKSPACE}" ]; then
+    WORKFLOW_CHECKOUT_PATH="${GITHUB_WORKSPACE}"
+elif [ -d "$(pwd)/barcodeApi" ]; then
+    # If barcodeApi exists in current directory, use current directory
+    WORKFLOW_CHECKOUT_PATH="$(pwd)"
+elif [ -d "/home/gitaction/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeApi" ]; then
+    WORKFLOW_CHECKOUT_PATH="/home/gitaction/actions-runner/_work/theBarcodeAPI/theBarcodeAPI"
+elif [ "$USER" = "root" ]; then
+    WORKFLOW_CHECKOUT_PATH="/root/actions-runner/_work/theBarcodeAPI/theBarcodeAPI"
+else
+    WORKFLOW_CHECKOUT_PATH="/home/${USER}/actions-runner/_work/theBarcodeAPI/theBarcodeAPI"
+fi
+echo "Using workflow checkout path: ${WORKFLOW_CHECKOUT_PATH}"
+SOURCE_BACKEND_CODE_PATH="${WORKFLOW_CHECKOUT_PATH}/barcodeApi"
 SOURCE_TEMPLATES_PATH="${WORKFLOW_CHECKOUT_PATH}/scripts/infra/templates"
+
+# Debug: Show what paths we're using and what exists
+echo "Debug - Path information:"
+echo "  WORKFLOW_CHECKOUT_PATH: ${WORKFLOW_CHECKOUT_PATH}"
+echo "  SOURCE_BACKEND_CODE_PATH: ${SOURCE_BACKEND_CODE_PATH}"
+echo "  SOURCE_TEMPLATES_PATH: ${SOURCE_TEMPLATES_PATH}"
+echo "  Current working directory: $(pwd)"
+echo "  Contents of WORKFLOW_CHECKOUT_PATH:"
+ls -la "${WORKFLOW_CHECKOUT_PATH}" 2>/dev/null || echo "    Directory does not exist or is not accessible"
+echo "  Contents of current directory:"
+ls -la "$(pwd)"
 
 echo "Ensuring necessary directories exist for environment: ${ENVIRONMENT}..."
 echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${BACKEND_APP_PATH}"

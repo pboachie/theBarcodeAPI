@@ -91,26 +91,34 @@ sleep 10
 echo "Flushing PM2 logs..."
 $PM2_RUN_CMD flush || echo "Warning: PM2 flush command failed. Logs might not be cleared."
 
-# Start PM2 with the new configuration
-# The ecosystem file's `cwd` directive points to CURRENT_APP_PATH.
-# PM2 needs read access to the ecosystem file.
-echo "Starting PM2 process ${PM2_APP_NAME} with configuration: ${TARGET_ECOSYSTEM_CONFIG_PATH}"
-$PM2_RUN_CMD start "${TARGET_ECOSYSTEM_CONFIG_PATH}"
-if [ $? -ne 0 ]; then
-    echo "Error: PM2 start command failed for ${TARGET_ECOSYSTEM_CONFIG_PATH}."
-    $PM2_RUN_CMD logs --lines 50 # Show all PM2 logs if start fails
-    exit 1
+# Check if frontend application is actually deployed before starting PM2
+if [ -f "${CURRENT_APP_PATH}/package.json" ]; then
+    # Start PM2 with the new configuration
+    # The ecosystem file's `cwd` directive points to CURRENT_APP_PATH.
+    # PM2 needs read access to the ecosystem file.
+    echo "Starting PM2 process ${PM2_APP_NAME} with configuration: ${TARGET_ECOSYSTEM_CONFIG_PATH}"
+    PM2_HOME="${PM2_HOME_DIR}" pm2 start "${TARGET_ECOSYSTEM_CONFIG_PATH}"
+    if [ $? -ne 0 ]; then
+        echo "Error: PM2 start command failed for ${TARGET_ECOSYSTEM_CONFIG_PATH}."
+        PM2_HOME="${PM2_HOME_DIR}" pm2 logs --lines 50 # Show all PM2 logs if start fails
+        exit 1
+    fi
+
+    # Wait for the process to stabilize after starting
+    echo "Waiting for PM2 process to stabilize (10 seconds)..."
+    sleep 10
+
+    # Save the current PM2 process list to allow resurrection on server reboot
+    echo "Saving PM2 process list..."
+    PM2_HOME="${PM2_HOME_DIR}" pm2 save --force # --force ensures it overwrites if a save file already exists
+    echo "PM2 process status after start/save:"
+    PM2_HOME="${PM2_HOME_DIR}" pm2 list
+else
+    echo "Frontend application not yet deployed (${CURRENT_APP_PATH}/package.json not found)."
+    echo "PM2 configuration prepared but application will be started during deployment."
+    echo "Current PM2 status:"
+    PM2_HOME="${PM2_HOME_DIR}" pm2 list
 fi
-
-# Wait for the process to stabilize after starting
-echo "Waiting for PM2 process to stabilize (10 seconds)..."
-sleep 10
-
-# Save the current PM2 process list to allow resurrection on server reboot
-echo "Saving PM2 process list..."
-$PM2_RUN_CMD save --force # --force ensures it overwrites if a save file already exists
-echo "PM2 process status after start/save:"
-$PM2_RUN_CMD list
 
 # Final permissions check for the application base path (already set, but good for verification)
 echo "Verifying final permissions for /opt/thebarcodeapi..."
