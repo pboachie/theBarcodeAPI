@@ -30,9 +30,9 @@ echo "Changing directory to ${APP_DIR}..."
 cd "${APP_DIR}" || { echo "Error: Failed to change directory to ${APP_DIR}"; exit 1; }
 
 # Determine the correct docker compose command available on the system
-if command -v docker-compose &> /dev/null; then
+if command -v docker-compose >/dev/null 2>&1; then
   COMPOSE_CMD="docker-compose"
-elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
+elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
   COMPOSE_CMD="docker compose"
 else
   echo "Error: Neither 'docker-compose' nor 'docker compose' command found. Cannot run migrations."

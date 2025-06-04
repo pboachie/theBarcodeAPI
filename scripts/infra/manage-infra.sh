@@ -118,7 +118,7 @@ MASTER_API_KEY=${API_MASTER_KEY}
 EOF"
         exec_sudo chmod 644 "${GLOBAL_ENV_VARS_FILE}"
 
-        CURRENT_SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+        CURRENT_SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
         # SCRIPTS_INFRA_DIR is the same as CURRENT_SCRIPT_DIR if manage-infra.sh is in scripts/infra
         SCRIPTS_INFRA_DIR="${CURRENT_SCRIPT_DIR}"
 
@@ -174,9 +174,9 @@ EOF"
         # Prepare environment for application deployment scripts
         echo "Preparing environment for initial application deployment scripts..."
         exec_sudo cp "${GLOBAL_ENV_VARS_FILE}" /tmp/env_vars
-        if command -v docker-compose &> /dev/null; then
+        if command -v docker-compose >/dev/null 2>&1; then
             exec_sudo bash -c 'echo "DOCKER_COMPOSE=docker-compose" > /tmp/docker_vars'
-        elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
+        elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
             exec_sudo bash -c 'echo "DOCKER_COMPOSE=docker compose" > /tmp/docker_vars'
         else
             echo "Error: Neither docker-compose nor docker compose command found during initial setup!"
