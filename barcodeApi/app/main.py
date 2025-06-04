@@ -311,30 +311,20 @@ def mount_mcp_sse_app():
             logger.error("MCP instance (app.state.mcp_instance) not found. Cannot mount SSE app.")
             return
 
-        mcp_sse_app = app.state.mcp_instance.sse_app(path="/sse")
-        mcp_http_app = app.state.mcp_instance.http_app()
+        # Mount the HTTP endpoint
+        app.mount("/mcp", app.state.mcp_instance.http_app(), name="mcp_http_endpoint")
+        logger.info(f"FastMCP HTTP app mounted at /mcp (full path: {settings.ROOT_PATH}/mcp)")
 
-        mount_path = "/mcp"
-        app.mount(mount_path, mcp_sse_app, name="mcp_sse_app")
-        app.mount(mount_path, mcp_http_app, name="mcp_http_app")
-        logger.info(f"FastMCP SSE app mounted at {mount_path} (full path: {settings.ROOT_PATH}{mount_path})")
+        # Mount the SSE endpoint
+        app.mount("/mcp/sse", app.state.mcp_instance.http_app(transport="sse"), name="mcp_sse_endpoint")
+        logger.info(f"FastMCP SSE app mounted at /mcp/sse (full path: {settings.ROOT_PATH}/mcp/sse)")
 
-        # # Log the available routes for debugging
+        # Log the available routes for debugging
         for route in app.routes:
             logger.debug(f"Available route: {route}")
 
-        # For Streamable HTTP at /mcp
-        mcp_main_http_app = app.state.mcp_instance.http_app(path="/")
-        app.mount("/mcp", mcp_main_http_app, name="mcp_http_endpoint")
-        # Streamable HTTP endpoint will be at /mcp/
-
-        # For SSE at /mcp/sse
-        mcp_dedicated_sse_app = app.state.mcp_instance.http_app(transport="sse", path="/")
-        app.mount("/mcp/sse", mcp_dedicated_sse_app, name="mcp_sse_endpoint")
-        # SSE endpoint will be at /mcp/sse/
-
     except Exception as e:
-        logger.error(f"Failed to mount FastMCP SSE app: {e}", exc_info=True)
+        logger.error(f"Failed to mount FastMCP apps: {e}", exc_info=True)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

@@ -85,8 +85,8 @@ A production-ready barcode generation service featuring a sleek Next.js frontend
 - **Deployment**: Production-ready with environment configuration
 
 ### **Integrations**
-- **MCP Server**: Model Context Protocol for AI assistant integration via the `/api/v1/mcp/sse` endpoint.
-- **Server-Sent Events**: Real-time communication
+- **MCP Server**: Model Context Protocol for AI assistant integration. Endpoints available at `/api/v1/mcp` (HTTP streaming) and `/api/v1/mcp/sse` (legacy Server-Sent Events).
+- **Server-Sent Events**: Used for legacy MCP communication.
 - **Bulk Processing**: Asynchronous batch operations
 
 ## 🏗️ Architecture & Design
@@ -227,17 +227,24 @@ curl -X POST "https://api.thebarcodeapi.com/api/v1/generate" \
 
 ## 🤖 MCP Server Integration
 
-This project includes a **Model Context Protocol (MCP) server** for seamless AI assistant integration. The MCP endpoint is `/api/v1/mcp/sse`.
+This project includes a **Model Context Protocol (MCP) server** for seamless AI assistant integration, offering both modern HTTP streaming and legacy Server-Sent Events (SSE) options.
 
 ### **Connection Details**
-- **Production MCP Endpoint**: `https://api.thebarcodeapi.com/api/v1/mcp/sse`
-- **Local MCP Endpoint (when running via Docker Compose)**: `http://localhost:8000/api/v1/mcp/sse` (or your configured API port). Refer to `barcodeApi/README.md` for details on MCP if running the backend standalone.
+- **HTTP Streaming Endpoint (Recommended)**:
+  - **Production**: `https://api.thebarcodeapi.com/api/v1/mcp`
+  - **Local (Docker Compose)**: `http://localhost:8000/api/v1/mcp`
+  - *Use this endpoint for new integrations requiring efficient, bidirectional communication.*
+- **Legacy SSE Endpoint**:
+  - **Production**: `https://api.thebarcodeapi.com/api/v1/mcp/sse`
+  - **Local (Docker Compose)**: `http://localhost:8000/api/v1/mcp/sse`
+  - *This endpoint is maintained for compatibility with older clients.*
+- *Refer to `barcodeApi/README.md` for details on MCP if running the backend standalone.*
 
 ### **Available MCP Tools**
 - `generate_barcode`: Provides comprehensive barcode generation capabilities. It supports numerous formats and customization options (e.g., data content, barcode type, dimensions, colors, image format, text display, DPI, checksums, etc.). Refer to the tool's schema for a full list of parameters.
 
-### **Usage Example (Illustrative)**
-The following shows an illustrative example of how an MCP client might request a barcode generation:
+### **Usage Example (Illustrative - HTTP Stream)**
+The following shows an illustrative example of how an MCP client might request a barcode generation via the HTTP streaming endpoint (`/mcp`):
 ```json
 {
   "method": "tools/call",
@@ -254,7 +261,7 @@ The following shows an illustrative example of how an MCP client might request a
   }
 }
 ```
-**Note**: The exact structure of the `params` and the specific values for enums like `format` and `image_format` should align with the MCP server's registration and the tool's schema definition. The tool name `generate_barcode` corresponds to the function available to the MCP system.
+**Note**: The exact structure of the `params` and the specific values for enums like `format` and `image_format` should align with the MCP server's registration and the tool's schema definition. The tool name `generate_barcode` corresponds to the function available to the MCP system. Interaction with the `/mcp/sse` endpoint might differ slightly based on SSE client implementation specifics.
 
 ## 🧪 Development & Testing
 
