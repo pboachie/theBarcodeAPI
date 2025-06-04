@@ -27,6 +27,9 @@
 set -e
 
 echo "Starting PM2 configuration for frontend..."
+echo "Current user: $USER"
+echo "Current HOME: ${HOME:-'NOT SET'}"
+echo "Current working directory: $(pwd)"
 
 # Attempt to source environment variables from /tmp/env_vars
 # This file should be created by a preceding step in the GitHub Actions workflow.
@@ -84,8 +87,19 @@ echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "${TARGET_ECOSYSTEM_CONFIG_PAT
 echo "$SUDO_PASSWORD" | sudo -S chmod 644 "${TARGET_ECOSYSTEM_CONFIG_PATH}" # Readable by all, writable by owner
 
 # PM2 process management
-# PM2_HOME must be set to the home directory of the user that will run PM2 (github-runner).
-PM2_RUN_CMD="PM2_HOME=/home/$USER/.pm2 pm2"
+# PM2_HOME must be set to the home directory of the user that will run PM2.
+# Use $HOME if available, otherwise construct based on user
+if [ "$USER" = "root" ]; then
+    PM2_HOME_DIR="/root/.pm2"
+else
+    PM2_HOME_DIR="${HOME:-/home/$USER}/.pm2"
+fi
+echo "Setting PM2_HOME to: ${PM2_HOME_DIR}"
+PM2_RUN_CMD="PM2_HOME=${PM2_HOME_DIR} pm2"
+
+# Ensure PM2 home directory exists
+echo "Ensuring PM2 home directory exists: ${PM2_HOME_DIR}"
+mkdir -p "${PM2_HOME_DIR}"
 
 echo "Managing PM2 process: ${PM2_APP_NAME}..."
 # Delete existing process if it's running to ensure a clean start/reload
