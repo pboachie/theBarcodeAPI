@@ -31,10 +31,19 @@ echo "Starting PM2 configuration for frontend..."
 # Attempt to source environment variables from /tmp/env_vars
 # This file should be created by a preceding step in the GitHub Actions workflow.
 if [ -f /tmp/env_vars ]; then
+  echo "Found /tmp/env_vars file. Contents:"
+  cat /tmp/env_vars
+  echo "Sourcing environment variables from /tmp/env_vars..."
   source /tmp/env_vars
+  echo "Environment variables after sourcing:"
+  echo "ENVIRONMENT: ${ENVIRONMENT:-'NOT SET'}"
+  echo "SUDO_PASSWORD: ${SUDO_PASSWORD:+'SET (hidden)'}"
   echo "Sourced environment variables from /tmp/env_vars."
 else
   echo "Error: /tmp/env_vars not found. Required variables (ENVIRONMENT, SUDO_PASSWORD) might be missing."
+  echo "Current working directory: $(pwd)"
+  echo "Files in /tmp:"
+  ls -la /tmp/ | head -20
   exit 1
 fi
 

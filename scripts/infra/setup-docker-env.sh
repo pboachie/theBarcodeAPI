@@ -36,10 +36,18 @@ echo "Starting backend Docker environment setup..."
 
 # Attempt to source environment variables from /tmp/env_vars
 if [ -f /tmp/env_vars ]; then
+  echo "Found /tmp/env_vars file, sourcing environment variables..."
   source /tmp/env_vars
   echo "Sourced environment variables from /tmp/env_vars."
+  echo "Key variables after sourcing:"
+  echo "ENVIRONMENT: ${ENVIRONMENT:-'NOT SET'}"
+  echo "SUDO_PASSWORD: ${SUDO_PASSWORD:+'SET (hidden)'}"
+  echo "DB_PASSWORD: ${DB_PASSWORD:+'SET (hidden)'}"
 else
   echo "Error: /tmp/env_vars not found. This script requires numerous variables from it."
+  echo "Current working directory: $(pwd)"
+  echo "Files in /tmp:"
+  ls -la /tmp/ | head -20
   exit 1
 fi
 
