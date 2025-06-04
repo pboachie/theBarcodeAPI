@@ -20,6 +20,7 @@ echo "Starting system package update and upgrade process..."
 
 # Update package lists from repositories
 echo "Updating package lists (apt-get update)..."
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq # -qq for quieter output, less verbose
 
 # Upgrade installed packages to their newest versions

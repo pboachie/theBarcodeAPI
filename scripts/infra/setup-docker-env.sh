@@ -103,7 +103,7 @@ echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__API_MASTER_KEY__/${API_MASTER_KEY}/g
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__API_VERSION__/${API_VERSION}/g" ".env"
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__ENVIRONMENT__/${ENVIRONMENT}/g" ".env"
 echo "$SUDO_PASSWORD" | sudo -S chmod 600 ".env" # Restrict permissions: only owner can read/write
-echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner ".env"
+echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER ".env"
 
 # Create docker-compose.yml from template
 echo "  Creating docker-compose.yml from template: ${SOURCE_TEMPLATES_PATH}/docker-compose.yml.template"
@@ -111,7 +111,7 @@ echo "$SUDO_PASSWORD" | sudo -S cp "${SOURCE_TEMPLATES_PATH}/docker-compose.yml.
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__ENVIRONMENT__/${ENVIRONMENT}/g" "docker-compose.yml"
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__POSTGRES_PASSWORD__/${POSTGRES_PASSWORD}/g" "docker-compose.yml"
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__DB_PASSWORD__/${DB_PASSWORD}/g" "docker-compose.yml"
-echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner "docker-compose.yml"
+echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "docker-compose.yml"
 echo "$SUDO_PASSWORD" | sudo -S chmod 644 "docker-compose.yml" # Readable by all
 
 # Create backup.sh from template
@@ -129,13 +129,13 @@ echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__ENVIRONMENT__/${ENVIRONMENT}/g" "bac
 # The sed command below tries to fix this if the template has the literal "$SUDO_PASSWORD".
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/echo \"\\\$SUDO_PASSWORD\"/echo \"${SUDO_PASSWORD}\"/g" "backup.sh"
 echo "$SUDO_PASSWORD" | sudo -S chmod +x "backup.sh"
-echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner "backup.sh"
+echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "backup.sh"
 
 # Create wait-for-it.sh from template
 echo "  Creating wait-for-it.sh from template: ${SOURCE_TEMPLATES_PATH}/wait-for-it.sh.template"
 echo "$SUDO_PASSWORD" | sudo -S cp "${SOURCE_TEMPLATES_PATH}/wait-for-it.sh.template" "wait-for-it.sh"
 echo "$SUDO_PASSWORD" | sudo -S chmod +x "wait-for-it.sh"
-echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner "wait-for-it.sh"
+echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "wait-for-it.sh"
 
 # Ensure start.sh (copied from source repo) is executable
 # This script is typically used as the CMD or ENTRYPOINT in the Dockerfile.
@@ -149,7 +149,7 @@ fi
 # Set final overall permissions for the application deployment directory
 # This ensures the github-runner user owns everything and has appropriate execution rights.
 echo "Setting final permissions for ${APP_DEPLOY_BASE_PATH}..."
-echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner "${APP_DEPLOY_BASE_PATH}"
+echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "${APP_DEPLOY_BASE_PATH}"
 # Set base backend app path to 755, scripts inside should already be +x
 echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "${BACKEND_APP_PATH}"
 # Re-ensure .env has strict permissions after chmod -R

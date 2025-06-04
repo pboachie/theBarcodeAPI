@@ -71,6 +71,7 @@ install_docker_compose() {
 echo "Checking Nginx..."
 if ! command_exists nginx; then
   echo "Installing Nginx..."
+  export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq # Update package lists quietly
   apt-get install -y nginx
 else
@@ -82,6 +83,7 @@ echo "Checking Node.js..."
 if ! command_exists node; then
   echo "Installing Node.js 20.x..."
   # Download and run NodeSource setup script for Node.js 20.x
+  export DEBIAN_FRONTEND=noninteractive
   curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
   apt-get install -y nodejs
 else
@@ -109,6 +111,7 @@ fi
 echo "Checking Docker Engine..."
 if ! command_exists docker; then
   echo "Installing Docker Engine..."
+  export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y ca-certificates curl gnupg lsb-release
 
@@ -128,8 +131,8 @@ if ! command_exists docker; then
   systemctl start docker
   systemctl enable docker
 
-  echo "Adding 'github-runner' user to the 'docker' group..."
-  usermod -aG docker github-runner || echo "Warning: Failed to add github-runner to docker group. May require manual intervention or relogin."
+  echo "Adding current user ($USER) to the 'docker' group..."
+  usermod -aG docker "$USER" || echo "Warning: Failed to add $USER to docker group. May require manual intervention or relogin."
 else
   echo "Docker Engine already installed."
 fi
@@ -166,21 +169,21 @@ for name in "${!commands_to_verify[@]}"; do
 done
 
 # Ensure 'github-runner' user is part of the 'docker' group for non-root Docker access
-echo "Verifying 'github-runner' Docker group membership..."
-if groups github-runner | grep -q '\bdocker\b'; then
-  echo "'github-runner' is already a member of the 'docker' group."
+echo "Verifying 'current user ($USER)' Docker group membership..."
+if groups "$USER" | grep -q '\\bdocker\\b'; then
+    echo "$USER is already a member of the docker group."
 else
-  echo "Attempting to add 'github-runner' to 'docker' group..."
-  usermod -aG docker github-runner
-  if groups github-runner | grep -q '\bdocker\b'; then
-     echo "'github-runner' successfully added to 'docker' group."
-     echo "NOTE: A logout/login or new session might be required for group changes to take full effect for the runner's current session."
-  else
-     echo "Warning: Failed to add 'github-runner' to 'docker' group or verification failed. Docker commands might require sudo."
-  fi
+    echo "Attempting to add '$USER' to 'docker' group..."
+    # This was already attempted during Docker Engine installation,
+    # but we can re-check or re-attempt if necessary.
+    # For now, rely on the earlier attempt. If issues persist, this could be a point of re-attempt.
+    if ! groups "$USER" | grep -q '\\bdocker\\b'; then
+        echo "Warning: $USER was not successfully added to the docker group or changes have not taken effect."
+        echo "A logout/login or 'newgrp docker' might be required for changes to apply."
+    fi
 fi
 
-echo "All dependency installations and checks completed."
+echo "Dependency installation and setup completed."
 
 # Display final versions for confirmation
 echo "--- Final Installed Versions ---"

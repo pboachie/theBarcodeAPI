@@ -118,11 +118,11 @@ fi
 # --- Permissions Verification (Spot Check) ---
 # fix-permissions.sh should handle comprehensive permission setting. This is a spot check.
 echo "Performing spot check on key permissions..."
-# Overall ownership of /opt/thebarcodeapi (should be github-runner)
-if [ "$(stat -c '%U:%G' /opt/thebarcodeapi)" == "github-runner:github-runner" ]; then
-    echo "/opt/thebarcodeapi ownership is OK (github-runner:github-runner)."
+# Overall ownership of /opt/thebarcodeapi (should be $USER)
+if [ "$(stat -c '%U:%G' /opt/thebarcodeapi)" == "$USER:$USER" ]; then
+    echo "/opt/thebarcodeapi ownership is OK ($USER:$USER)."
 else
-    echo "Warning: /opt/thebarcodeapi ownership is $(stat -c '%U:%G' /opt/thebarcodeapi), expected github-runner:github-runner."
+    echo "Warning: /opt/thebarcodeapi ownership is $(stat -c '%U:%G' /opt/thebarcodeapi), expected $USER:$USER."
 fi
 
 # Backend .env file permissions
