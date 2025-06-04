@@ -70,8 +70,15 @@ ENV_SPECIFIC_DATA_PATH="${APP_DEPLOY_BASE_PATH}/${ENVIRONMENT}" # For releases, 
 
 # Path to the checked-out code in the GitHub Actions runner workspace.
 # This path might need to be passed as an argument or discovered if it's not fixed.
-# Defaulting to a common structure.
-WORKFLOW_CHECKOUT_PATH="${GITHUB_WORKSPACE:-/home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI}"
+# Defaulting to a common structure based on current user and GitHub Actions patterns.
+if [ -n "${GITHUB_WORKSPACE}" ]; then
+    WORKFLOW_CHECKOUT_PATH="${GITHUB_WORKSPACE}"
+elif [ "$USER" = "root" ]; then
+    WORKFLOW_CHECKOUT_PATH="/root/actions-runner/_work/theBarcodeAPI/theBarcodeAPI"
+else
+    WORKFLOW_CHECKOUT_PATH="/home/${USER}/actions-runner/_work/theBarcodeAPI/theBarcodeAPI"
+fi
+echo "Using workflow checkout path: ${WORKFLOW_CHECKOUT_PATH}"
 SOURCE_BACKEND_CODE_PATH="${WORKFLOW_CHECKOUT_PATH}/barcodeAPI"
 SOURCE_TEMPLATES_PATH="${WORKFLOW_CHECKOUT_PATH}/scripts/infra/templates"
 

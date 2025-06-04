@@ -53,7 +53,7 @@ echo "$SUDO_PASSWORD" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/logs
 
 # Set overall ownership for the application's root directory
 # All subsequent specific ownerships are fine but this sets a baseline.
-echo "Setting ownership of /opt/thebarcodeapi to github-runner:github-runner..."
+echo "Setting ownership of /opt/thebarcodeapi to ${USER}:${USER}..."
 echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "/opt/thebarcodeapi"
 
 # Set standardized directory permissions (rwxr-xr-x)

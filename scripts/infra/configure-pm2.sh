@@ -88,6 +88,12 @@ echo "$SUDO_PASSWORD" | sudo -S chmod 644 "${TARGET_ECOSYSTEM_CONFIG_PATH}" # Re
 
 # PM2 process management
 # PM2_HOME must be set to the home directory of the user that will run PM2.
+echo "Current user context:"
+echo "USER: ${USER}"
+echo "HOME: ${HOME:-'NOT SET'}"
+echo "PWD: ${PWD}"
+echo "whoami: $(whoami)"
+
 # Use $HOME if available, otherwise construct based on user
 if [ "$USER" = "root" ]; then
     PM2_HOME_DIR="/root/.pm2"
@@ -97,9 +103,16 @@ fi
 echo "Setting PM2_HOME to: ${PM2_HOME_DIR}"
 PM2_RUN_CMD="PM2_HOME=${PM2_HOME_DIR} pm2"
 
-# Ensure PM2 home directory exists
+# Ensure PM2 home directory exists with proper permissions
 echo "Ensuring PM2 home directory exists: ${PM2_HOME_DIR}"
-mkdir -p "${PM2_HOME_DIR}"
+if [ "$USER" = "root" ]; then
+    mkdir -p "${PM2_HOME_DIR}"
+    chmod 755 "${PM2_HOME_DIR}"
+else
+    echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${PM2_HOME_DIR}"
+    echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "${PM2_HOME_DIR}"
+    echo "$SUDO_PASSWORD" | sudo -S chmod 755 "${PM2_HOME_DIR}"
+fi
 
 echo "Managing PM2 process: ${PM2_APP_NAME}..."
 # Delete existing process if it's running to ensure a clean start/reload

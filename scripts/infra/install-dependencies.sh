@@ -39,7 +39,11 @@ install_docker_compose() {
 
   # Create directories for Docker CLI plugins if they don't exist
   # User-specific plugin directory (for `docker compose` run by user)
-  mkdir -p "$HOME/.docker/cli-plugins/"
+  if [ "$USER" = "root" ]; then
+    mkdir -p "/root/.docker/cli-plugins/"
+  else
+    mkdir -p "${HOME:-/home/$USER}/.docker/cli-plugins/"
+  fi
   # System-wide plugin directory (might require sudo for this path)
   # Using /usr/local/lib/docker/cli-plugins as it's often in PATH for root
   echo "$SUDO_PASSWORD" | sudo -S mkdir -p "/usr/local/lib/docker/cli-plugins"
@@ -190,7 +194,14 @@ echo "--- Final Installed Versions ---"
 nginx -v 2>&1
 node -v
 npm -v
-PM2_HOME=/home/github-runner/.pm2 pm2 --version # Ensure PM2_HOME if checking version as runner
+# Verify final PM2 version with proper PM2_HOME
+if [ "$USER" = "root" ]; then
+  PM2_HOME_DIR="/root/.pm2"
+else
+  PM2_HOME_DIR="${HOME:-/home/$USER}/.pm2"
+fi
+echo "Verifying PM2 with PM2_HOME=${PM2_HOME_DIR}:"
+PM2_HOME=${PM2_HOME_DIR} pm2 --version
 docker --version
 docker compose version || docker-compose --version || echo "Docker Compose not found for version display."
 echo "--------------------------------"

@@ -50,7 +50,7 @@ ensure_directory_exists() {
     echo "NOT FOUND. Attempting to create..."
     # This creation is a fallback; directories should ideally be created by their respective setup scripts.
     echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$dir_path"
-    echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner "$dir_path"
+    echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "$dir_path"
     echo "$SUDO_PASSWORD" | sudo -S chmod 755 "$dir_path"
     echo "CREATED."
   else
