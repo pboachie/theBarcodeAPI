@@ -28,7 +28,7 @@ export default function RemoteConnectionPage() {
 
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)] p-4 md:p-8">
-      <header className="text-center mb-12 md:mb-16 animate-fadeInDown">
+      <header className="text-center mb-12 md:mb-16 animate-fadeInDown bg-white">
         <h1 className="text-4xl md:text-5xl font-extrabold mb-4 tracking-tight text-[var(--accent-color)]">
           Remote Connection Guide
         </h1>
@@ -330,17 +330,17 @@ def generate_barcode():
             print(f"Barcode image saved as {file_name}")
 
         else:
-            print(f"Unexpected content type: {response.headers.get('Content-Type')}")
-            print("Raw response:", response.text)
+            print(f"Unexpected content type: {response.headers.get('Content-Type')}");
+            print("Raw response:", response.text);
 
 
     except requests.exceptions.HTTPError as http_err:
-        print(f"HTTP error occurred: {http_err}")
-        print(f"Response content: {response.content.decode()}")
+        print(f"HTTP error occurred: {http_err}");
+        print(f"Response content: {response.content.decode()}");
     except requests.exceptions.RequestException as req_err:
-        print(f"Request error occurred: {req_err}")
+        print(f"Request error occurred: {req_err}");
     except Exception as ex:
-        print(f"An unexpected error occurred: {ex}")
+        print(f"An unexpected error occurred: {ex}");
 
 if __name__ == "__main__":
     generate_barcode()`}
