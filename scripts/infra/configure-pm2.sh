@@ -28,19 +28,27 @@ set -e
 
 echo "Starting PM2 configuration for frontend..."
 
-# Attempt to source environment variables from /tmp/env_vars
-# This file should be created by a preceding step in the GitHub Actions workflow.
-if [ -f /tmp/env_vars ]; then
+# Attempt to source environment variables
+echo "Attempting to source environment variables for PM2 configuration..."
+ENV_FILE_SOURCED=false
+if [ -n "\${GLOBAL_ENV_VARS_FILE}" ] && [ -f "\${GLOBAL_ENV_VARS_FILE}" ]; then
+  source "\${GLOBAL_ENV_VARS_FILE}"
+  echo "Sourced environment variables from \${GLOBAL_ENV_VARS_FILE} (via GLOBAL_ENV_VARS_FILE env var)."
+  ENV_FILE_SOURCED=true
+elif [ -f /tmp/env_vars ]; then
   source /tmp/env_vars
-  echo "Sourced environment variables from /tmp/env_vars."
-else
-  echo "Error: /tmp/env_vars not found. Required variables (ENVIRONMENT, SUDO_PASSWORD) might be missing."
+  echo "Sourced environment variables from /tmp/env_vars (fallback)."
+  ENV_FILE_SOURCED=true
+fi
+
+if [ "\$ENV_FILE_SOURCED" = false ]; then
+  echo "Error: Environment variable file not found. Neither GLOBAL_ENV_VARS_FILE (env var: '\${GLOBAL_ENV_VARS_FILE}') was valid nor /tmp/env_vars existed."
   exit 1
 fi
 
-# Ensure critical variables sourced from /tmp/env_vars are available
-if [ -z "$ENVIRONMENT" ] || [ -z "$SUDO_PASSWORD" ]; then
-  echo "Error: Key environment variables (ENVIRONMENT, SUDO_PASSWORD) from /tmp/env_vars are missing."
+# Ensure critical variables sourced are available
+if [ -z "\$ENVIRONMENT" ] || [ -z "\$SUDO_PASSWORD" ]; then
+  echo "Error: Key environment variables (ENVIRONMENT, SUDO_PASSWORD) from the sourced file are missing or empty."
   exit 1
 fi
 

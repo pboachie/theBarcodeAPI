@@ -25,16 +25,23 @@ set -e
 
 echo "Starting Nginx configuration..."
 
-# Attempt to source environment variables from /tmp/env_vars
-# This file should be created by a preceding step in the GitHub Actions workflow.
-if [ -f /tmp/env_vars ]; then
+# Attempt to source environment variables
+echo "Attempting to source environment variables for Nginx configuration..."
+ENV_FILE_SOURCED=false
+if [ -n "\${GLOBAL_ENV_VARS_FILE}" ] && [ -f "\${GLOBAL_ENV_VARS_FILE}" ]; then
+  source "\${GLOBAL_ENV_VARS_FILE}"
+  echo "Sourced environment variables from \${GLOBAL_ENV_VARS_FILE} (via GLOBAL_ENV_VARS_FILE env var)."
+  ENV_FILE_SOURCED=true
+elif [ -f /tmp/env_vars ]; then
   source /tmp/env_vars
-  echo "Sourced environment variables from /tmp/env_vars."
+  echo "Sourced environment variables from /tmp/env_vars (fallback)."
+  ENV_FILE_SOURCED=true
 else
-  echo "Warning: /tmp/env_vars not found. DOMAIN_NAME might not be set correctly for Nginx."
-  # DOMAIN_NAME could also be passed directly as an environment variable to this script.
-  # If neither is available, it will default to '_' (hostname catch-all).
+  echo "Warning: Neither GLOBAL_ENV_VARS_FILE (env var: '\${GLOBAL_ENV_VARS_FILE}') nor /tmp/env_vars found. DOMAIN_NAME might not be set correctly for Nginx."
 fi
+
+# DOMAIN_NAME could also be passed directly as an environment variable to this script.
+# If neither is available, it will default to '_' (hostname catch-all).
 
 # Default to '_' if DOMAIN_NAME is not set (catches all hostnames)
 NGINX_SERVER_NAME="${DOMAIN_NAME:-_}"
