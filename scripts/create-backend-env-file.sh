@@ -16,7 +16,7 @@
 #      in the template but could be parameterized if needed.)
 #
 # Outputs:
-#   - Creates /opt/thebarcodeapi/barcodeAPI/.env with the specified content.
+#   - Creates /opt/thebarcodeapi/barcodeApi/.env with the specified content.
 #   - Sets ownership to www-data:www-data and permissions to 644.
 #   - Verifies file creation and prints its details; exits with error if creation fails.
 # ---
@@ -32,11 +32,11 @@ for var_name in "${REQUIRED_VARS[@]}"; do
   fi
 done
 
-echo "Creating backend .env file at /opt/thebarcodeapi/barcodeAPI/.env..."
+echo "Creating backend .env file at /opt/thebarcodeapi/barcodeApi/.env..."
 
 # Using sudo to write the .env file to a privileged location.
 # The heredoc content is expanded with shell variables passed from the GitHub Actions workflow.
-echo "${SUDO_PASSWORD}" | sudo -S bash -c 'cat > /opt/thebarcodeapi/barcodeAPI/.env << EOF
+echo "${SUDO_PASSWORD}" | sudo -S bash -c 'cat > /opt/thebarcodeapi/barcodeApi/.env << EOF
 API_VERSION=\${API_VERSION}
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -60,19 +60,19 @@ EOF'
 # might be read by root and passed to the container differently.
 # The original workflow set www-data, so retaining for now.
 echo "Setting permissions for .env file..."
-echo "${SUDO_PASSWORD}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeAPI/.env
-echo "${SUDO_PASSWORD}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env # Read for owner/group, readonly for others. Consider 600 if only owner needs access.
+echo "${SUDO_PASSWORD}" | sudo -S chown www-data:www-data /opt/thebarcodeapi/barcodeApi/.env
+echo "${SUDO_PASSWORD}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeApi/.env # Read for owner/group, readonly for others. Consider 600 if only owner needs access.
 
 # Verify .env file was created and has content
 echo "Verifying .env file creation..."
-if [ -f "/opt/thebarcodeapi/barcodeAPI/.env" ]; then
-  echo "File /opt/thebarcodeapi/barcodeAPI/.env created successfully."
+if [ -f "/opt/thebarcodeapi/barcodeApi/.env" ]; then
+  echo "File /opt/thebarcodeapi/barcodeApi/.env created successfully."
   echo "File permissions:"
-  sudo ls -l /opt/thebarcodeapi/barcodeAPI/.env
+  sudo ls -l /opt/thebarcodeapi/barcodeApi/.env
   echo "File contents (first few lines):" # Avoid printing full .env with secrets
-  sudo head -n 5 /opt/thebarcodeapi/barcodeAPI/.env
+  sudo head -n 5 /opt/thebarcodeapi/barcodeApi/.env
 else
-  echo "ERROR: .env file /opt/thebarcodeapi/barcodeAPI/.env not created!"
+  echo "ERROR: .env file /opt/thebarcodeapi/barcodeApi/.env not created!"
   exit 1
 fi
 

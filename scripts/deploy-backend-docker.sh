@@ -57,7 +57,7 @@ if [ -z "$CHANGES" ]; then
 fi
 
 # Navigate to the backend application directory where docker-compose.yml is located
-TARGET_DIR="/opt/thebarcodeapi/barcodeAPI"
+TARGET_DIR="/opt/thebarcodeapi/barcodeApi"
 echo "Changing directory to ${TARGET_DIR}"
 cd "${TARGET_DIR}" || { echo "Error: Failed to change directory to ${TARGET_DIR}"; exit 1; }
 

@@ -45,7 +45,7 @@ fi
 echo "Ensuring required directories exist for environment: ${ENVIRONMENT}..."
 # These directories should ideally be created by more specific setup scripts (e.g., setup-docker-env.sh)
 # but ensuring their existence here provides a fallback or verification.
-echo "$SUDO_PASSWORD" | sudo -S mkdir -p "/opt/thebarcodeapi/barcodeAPI"
+echo "$SUDO_PASSWORD" | sudo -S mkdir -p "/opt/thebarcodeapi/barcodeApi"
 echo "$SUDO_PASSWORD" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data" # For Docker volumes
 echo "$SUDO_PASSWORD" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/backups"
 echo "$SUDO_PASSWORD" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/current" # For frontend current release
@@ -70,7 +70,7 @@ echo "Making all .sh scripts under /opt/thebarcodeapi executable (chmod +x)..."
 echo "$SUDO_PASSWORD" | sudo -S find "/opt/thebarcodeapi" -name "*.sh" -exec chmod u+x,g+x,o+x {} \; # Equivalent to +x ensuring execute for all
 
 # Ensure special, stricter permissions for sensitive files like the backend .env
-BACKEND_ENV_FILE="/opt/thebarcodeapi/barcodeAPI/.env"
+BACKEND_ENV_FILE="/opt/thebarcodeapi/barcodeApi/.env"
 echo "Checking permissions for sensitive file: ${BACKEND_ENV_FILE}..."
 if [ -f "$BACKEND_ENV_FILE" ]; then
   echo "Setting permissions for ${BACKEND_ENV_FILE} to 600 (rw-------)..."
@@ -102,7 +102,7 @@ fi
 
 # Redundant chowns if the top-level chown -R worked, but confirm specific important paths.
 echo "Verifying ownership for specific sub-directories..."
-echo "$SUDO_PASSWORD" | sudo -S chown -R "${USER}:${USER}" "/opt/thebarcodeapi/barcodeAPI"
+echo "$SUDO_PASSWORD" | sudo -S chown -R "${USER}:${USER}" "/opt/thebarcodeapi/barcodeApi"
 echo "$SUDO_PASSWORD" | sudo -S chown -R "${USER}:${USER}" "/opt/thebarcodeapi/${ENVIRONMENT}/backups"
 echo "$SUDO_PASSWORD" | sudo -S chown -R "${USER}:${USER}" "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
 echo "$SUDO_PASSWORD" | sudo -S chown -R "${USER}:${USER}" "/opt/thebarcodeapi/${ENVIRONMENT}/current" # If it's a symlink, this affects the link itself

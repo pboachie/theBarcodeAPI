@@ -21,11 +21,11 @@
 #   - scripts/infra/templates/docker-compose.yml.template
 #   - scripts/infra/templates/backup.sh.template
 #   - scripts/infra/templates/wait-for-it.sh.template
-#   The script also expects the main backend application code (barcodeAPI directory) to be present
+#   The script also expects the main backend application code (barcodeApi directory) to be present
 #   in the GitHub Actions workflow's checkout path.
 #
 # Outputs:
-#   - A fully configured backend application directory (/opt/thebarcodeapi/barcodeAPI) ready for Docker Compose.
+#   - A fully configured backend application directory (/opt/thebarcodeapi/barcodeApi) ready for Docker Compose.
 #   - Necessary scripts (backup.sh, wait-for-it.sh) placed within this directory.
 #   - Logs the setup process.
 # ---
