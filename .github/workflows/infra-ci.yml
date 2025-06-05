@@ -30,6 +30,10 @@ jobs:
     - name: Checkout repository code
       uses: actions/checkout@v3
 
+    - name: Run Infrastructure Integration Tests
+      run: |
+        bash scripts/infra/tests/test_infra_setup.sh
+
     - name: Run Infrastructure and Initial Deployment Script
       run: |
         bash scripts/infra/manage-infra.sh
