@@ -1,11 +1,11 @@
 # ---
 # Purpose:
-#   Creates a pre-backup check script (/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh)
+#   Creates a pre-backup check script (/opt/thebarcodeapi/barcodeApi/pre-backup-check.sh)
 #   and sets up a cron job to run it daily.
 #   The pre-backup-check.sh script is intended to:
 #     - Check if a deployment is currently in progress (by looking for a lock file).
 #     - If no deployment is in progress, it executes the main backup script
-#       (/opt/thebarcodeapi/barcodeAPI/backup.sh, which should be created by setup-docker-env.sh).
+#       (/opt/thebarcodeapi/barcodeApi/backup.sh, which should be created by setup-docker-env.sh).
 #
 # Environment Variables (expected from /tmp/env_vars or direct pass for SUDO_PASSWORD):
 #   - SUDO_PASSWORD: Password for sudo execution, used for file operations and crontab management.
@@ -14,7 +14,7 @@
 #                  The generated pre-backup-check.sh does not currently use $ENVIRONMENT.
 #
 # Outputs:
-#   - Creates /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh.
+#   - Creates /opt/thebarcodeapi/barcodeApi/pre-backup-check.sh.
 #   - Adds a cron job to execute this script daily.
 #   - Logs the setup process.
 # ---
@@ -62,7 +62,7 @@ fi
 
 echo "No deployment lock found. Proceeding with backup..."
 # Path to the main backup script (created by setup-docker-env.sh)
-MAIN_BACKUP_SCRIPT="/opt/thebarcodeapi/barcodeAPI/backup.sh"
+MAIN_BACKUP_SCRIPT="/opt/thebarcodeapi/barcodeApi/backup.sh"
 
 if [ -x "\$MAIN_BACKUP_SCRIPT" ]; then
   "\$MAIN_BACKUP_SCRIPT"
@@ -80,10 +80,10 @@ printf '%s\n' "$PRE_BACKUP_CHECK_CONTENT" > "$TEMP_SCRIPT_PATH"
 chmod +x "$TEMP_SCRIPT_PATH"
 
 # Define the target path for the script on the server
-TARGET_SCRIPT_PATH="/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh"
+TARGET_SCRIPT_PATH="/opt/thebarcodeapi/barcodeApi/pre-backup-check.sh"
 echo "Moving temporary script to ${TARGET_SCRIPT_PATH} using sudo..."
 echo "${SUDO_PASSWORD}" | sudo -S mv "$TEMP_SCRIPT_PATH" "$TARGET_SCRIPT_PATH"
-echo "${SUDO_PASSWORD}" | sudo -S chown github-runner:github-runner "$TARGET_SCRIPT_PATH"
+echo "${SUDO_PASSWORD}" | sudo -S chown "${USER}:${USER}" "$TARGET_SCRIPT_PATH"
 echo "${SUDO_PASSWORD}" | sudo -S chmod 755 "$TARGET_SCRIPT_PATH"
 echo "Pre-backup check script deployed to ${TARGET_SCRIPT_PATH}."
 
@@ -94,7 +94,7 @@ CRON_SCHEDULE="0 0 * * *" # Runs daily at midnight
 
 # Safely remove any existing cron job for this specific script path or the old backup.sh path, then add the new one.
 # This prevents duplicate cron entries.
-echo "${SUDO_PASSWORD}" | sudo -S bash -c "(crontab -l 2>/dev/null | grep -v -F '${CRON_JOB_EXEC_PATH}' | grep -v -F '/opt/thebarcodeapi/barcodeAPI/backup.sh' ; echo '${CRON_SCHEDULE} ${CRON_JOB_EXEC_PATH}') | crontab -"
+echo "${SUDO_PASSWORD}" | sudo -S bash -c "(crontab -l 2>/dev/null | grep -v -F '${CRON_JOB_EXEC_PATH}' | grep -v -F '/opt/thebarcodeapi/barcodeApi/backup.sh' ; echo '${CRON_SCHEDULE} ${CRON_JOB_EXEC_PATH}') | crontab -"
 echo "Cron job for backup coordination updated/added. Current crontab (for the user executing this, likely root via sudo):"
 echo "${SUDO_PASSWORD}" | sudo -S crontab -l
 

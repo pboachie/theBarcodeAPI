@@ -63,25 +63,22 @@ fi
 echo "Creating required directories: ${CURRENT_APP_PATH}, ${LOGS_PATH}"
 echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${CURRENT_APP_PATH}"
 echo "$SUDO_PASSWORD" | sudo -S mkdir -p "${LOGS_PATH}"
-# github-runner should own the /opt/thebarcodeapi directory and its subdirectories for PM2 management and app files
-echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner "/opt/thebarcodeapi"
+# Current user should own the /opt/thebarcodeapi directory and its subdirectories for PM2 management and app files
+echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "/opt/thebarcodeapi"
 echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "/opt/thebarcodeapi" # Ensure runner can rwx, others rx
 
 # Configure PM2: Copy template and replace placeholders
 echo "Configuring PM2 ecosystem file at ${TARGET_ECOSYSTEM_CONFIG_PATH}..."
 echo "$SUDO_PASSWORD" | sudo -S cp "${PWD}/${ECOSYSTEM_TEMPLATE_PATH}" "${TARGET_ECOSYSTEM_CONFIG_PATH}"
 echo "$SUDO_PASSWORD" | sudo -S sed -i "s/__ENVIRONMENT__/${ENVIRONMENT}/g" "${TARGET_ECOSYSTEM_CONFIG_PATH}"
-echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner "${TARGET_ECOSYSTEM_CONFIG_PATH}"
+echo "$SUDO_PASSWORD" | sudo -S chown $USER:$USER "${TARGET_ECOSYSTEM_CONFIG_PATH}"
 echo "$SUDO_PASSWORD" | sudo -S chmod 644 "${TARGET_ECOSYSTEM_CONFIG_PATH}" # Readable by all, writable by owner
 
 # PM2 process management
-# PM2_HOME must be set to the home directory of the user that will run PM2 (github-runner).
-PM2_RUN_CMD="PM2_HOME=/home/github-runner/.pm2 pm2"
-
 echo "Managing PM2 process: ${PM2_APP_NAME}..."
 # Delete existing process if it's running to ensure a clean start/reload
 echo "Attempting to delete existing PM2 process: ${PM2_APP_NAME} (if any)..."
-$PM2_RUN_CMD delete "${PM2_APP_NAME}" || echo "PM2 process ${PM2_APP_NAME} not found or already stopped. This is fine."
+PM2_HOME="${PM2_HOME_DIR}" pm2 delete "${PM2_APP_NAME}" || echo "PM2 process ${PM2_APP_NAME} not found or already stopped. This is fine."
 
 # Wait for processes to fully stop (PM2 delete can be asynchronous)
 echo "Waiting for PM2 process to fully stop (10 seconds)..."
@@ -89,32 +86,33 @@ sleep 10
 
 # Clear PM2 logs before starting to ensure fresh logs for the new instance
 echo "Flushing PM2 logs..."
-$PM2_RUN_CMD flush || echo "Warning: PM2 flush command failed. Logs might not be cleared."
+PM2_HOME="${PM2_HOME_DIR}" pm2 flush || echo "Warning: PM2 flush command failed. Logs might not be cleared."
 
-# Start PM2 with the new configuration
-# The ecosystem file's `cwd` directive points to CURRENT_APP_PATH.
-# PM2 needs read access to the ecosystem file.
-echo "Starting PM2 process ${PM2_APP_NAME} with configuration: ${TARGET_ECOSYSTEM_CONFIG_PATH}"
-$PM2_RUN_CMD start "${TARGET_ECOSYSTEM_CONFIG_PATH}"
-if [ $? -ne 0 ]; then
-    echo "Error: PM2 start command failed for ${TARGET_ECOSYSTEM_CONFIG_PATH}."
-    $PM2_RUN_CMD logs --lines 50 # Show all PM2 logs if start fails
-    exit 1
+# Determine PM2_HOME_DIR based on current user
+if [ "$USER" = "root" ]; then
+    PM2_HOME_DIR="/root/.pm2"
+else
+    PM2_HOME_DIR="${HOME:-/home/$USER}/.pm2"
 fi
 
-# Wait for the process to stabilize after starting
-echo "Waiting for PM2 process to stabilize (10 seconds)..."
-sleep 10
+echo "PM2_HOME_DIR determined as: ${PM2_HOME_DIR}"
 
-# Save the current PM2 process list to allow resurrection on server reboot
-echo "Saving PM2 process list..."
-$PM2_RUN_CMD save --force # --force ensures it overwrites if a save file already exists
-echo "PM2 process status after start/save:"
-$PM2_RUN_CMD list
+# Check if frontend application is actually deployed before starting PM2
+echo "Checking for frontend application at: ${CURRENT_APP_PATH}/package.json"
+echo "CURRENT_APP_PATH: ${CURRENT_APP_PATH}"
+echo "Contents of ${CURRENT_APP_PATH}:"
+ls -la "${CURRENT_APP_PATH}" 2>/dev/null || echo "Directory does not exist"
+
+# During infrastructure setup, we only prepare PM2 configuration but don't start the application
+# The application will be started during the actual deployment phase
+echo "Infrastructure setup phase: PM2 configuration prepared but application will be started during deployment."
+echo "Skipping PM2 application startup during infrastructure setup."
+echo "Current PM2 status:"
+PM2_HOME="${PM2_HOME_DIR}" pm2 list
 
 # Final permissions check for the application base path (already set, but good for verification)
 echo "Verifying final permissions for /opt/thebarcodeapi..."
-echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner "/opt/thebarcodeapi"
+echo "$SUDO_PASSWORD" | sudo -S chown -R $USER:$USER "/opt/thebarcodeapi"
 echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "/opt/thebarcodeapi" # Ensure scripts inside are executable if needed by PM2
 
 # Show recent logs from the application for debugging purposes

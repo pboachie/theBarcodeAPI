@@ -126,7 +126,7 @@ else
 fi
 
 # Backend .env file permissions
-BACKEND_ENV_FILE="/opt/thebarcodeapi/barcodeAPI/.env"
+BACKEND_ENV_FILE="/opt/thebarcodeapi/barcodeApi/.env"
 if [ -f "$BACKEND_ENV_FILE" ]; then
     actual_perms=$(stat -c "%a" "$BACKEND_ENV_FILE")
     # Expect 600 (rw-------) or 400 (r-------- if only root/runner needs to read for processes)

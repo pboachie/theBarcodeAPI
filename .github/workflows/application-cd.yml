@@ -160,25 +160,25 @@ jobs:
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
         # Create backup of current deployment if it exists
-        if [ -d "/opt/thebarcodeapi/barcodeAPI" ]; then
+        if [ -d "/opt/thebarcodeapi/barcodeApi" ]; then
           BACKUP_DIR="/opt/thebarcodeapi/${{ vars.ENVIRONMENT }}/backups/$(date +%Y%m%d_%H%M%S)"
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "${BACKUP_DIR}"
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r /opt/thebarcodeapi/barcodeAPI "${BACKUP_DIR}/"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r /opt/thebarcodeapi/barcodeApi "${BACKUP_DIR}/"
         fi
 
         # Clean the deployment directory
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeAPI/*
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeApi/*
 
         # Copy new files
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeAPI/* /opt/thebarcodeapi/barcodeAPI/
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeApi/* /opt/thebarcodeapi/barcodeApi/
 
         # Set proper permissions
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/barcodeAPI
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeApi
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/barcodeApi
 
         # Debug output
         echo "Contents of deployment directory:"
-        ls -la /opt/thebarcodeapi/barcodeAPI/
+        ls -la /opt/thebarcodeapi/barcodeApi/
 
     # Executes a script to create the .env file required by the backend application.
     # This file contains sensitive information and configuration details.
@@ -208,7 +208,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: |
-          /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+          /opt/thebarcodeapi/barcodeApi/.buildx-cache
           ~/.docker/buildx
         key: ${{ runner.os }}-buildx-${{ github.sha }}
         restore-keys: |
@@ -223,16 +223,16 @@ jobs:
       if: steps.check_backend_changes.outputs.changes == 'true'
       uses: docker/build-push-action@v5
       with:
-        context: /opt/thebarcodeapi/barcodeAPI # Sets the Docker build context to the backend API code directory.
-        file: /opt/thebarcodeapi/barcodeAPI/Dockerfile # Specifies the Dockerfile to be used.
+        context: /opt/thebarcodeapi/barcodeApi # Sets the Docker build context to the backend API code directory.
+        file: /opt/thebarcodeapi/barcodeApi/Dockerfile # Specifies the Dockerfile to be used.
         push: false # The image is not pushed to a container registry.
         load: true  # The built image is loaded into the local Docker daemon on the runner.
         tags: barcodeapi:latest # ${{ steps.meta.outputs.tags }} # Example: barcodeapi:latest or dynamic tags from a meta step.
         labels: ${{ steps.meta.outputs.labels }} # Example: org.opencontainers.image.source=${{ github.repositoryUrl }}
         cache-from: | # Defines sources for build cache.
-          type=local,src=/opt/thebarcodeapi/barcodeAPI/.buildx-cache
+          type=local,src=/opt/thebarcodeapi/barcodeApi/.buildx-cache
           type=gha,scope=${{ github.workflow }}-${{ github.ref_name }} # GitHub Actions cache scoped to workflow and branch.
-        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeAPI/.buildx-cache-new,mode=min # Exports new cache layers locally.
+        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeApi/.buildx-cache-new,mode=min # Exports new cache layers locally.
         build-args: | # Arguments passed to the Docker build.
           DEBIAN_FRONTEND=noninteractive
           PYTHON_ENV=${{ env.ENVIRONMENT }}
@@ -246,8 +246,8 @@ jobs:
     - name: Update local Docker build cache
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
-        rm -rf /opt/thebarcodeapi/barcodeAPI/.buildx-cache
-        mv /opt/thebarcodeapi/barcodeAPI/.buildx-cache-new /opt/thebarcodeapi/barcodeAPI/.buildx-cache
+        rm -rf /opt/thebarcodeapi/barcodeApi/.buildx-cache
+        mv /opt/thebarcodeapi/barcodeApi/.buildx-cache-new /opt/thebarcodeapi/barcodeApi/.buildx-cache
 
     # Stores the current Git commit hash into a .git-commit file within the backend deployment directory.
     # This helps in tracking which version of the code is currently deployed.
@@ -255,17 +255,17 @@ jobs:
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
         git rev-parse HEAD > .git-commit
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeAPI/
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp .git-commit /opt/thebarcodeapi/barcodeApi/
 
     # Sets up essential initial directory structure for the backend application,
     # including directories for persisted data (Postgres, Redis) and backups.
     - name: Setup initial directories for backend data and operations
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeApi
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/backups/
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeApi
 
     - name: Setup Docker and Environment
       run: |
@@ -279,23 +279,23 @@ jobs:
         # Create /tmp/env_vars file with environment variables needed by the backend deployment script.
         # This file is sourced by scripts/deploy-backend-docker.sh.
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << EOF
-ENVIRONMENT=\${{ env.ENVIRONMENT }}
-DB_PASSWORD=\${{ env.DB_PASSWORD }}
-POSTGRES_PASSWORD=\${{ env.POSTGRES_PASSWORD }}
-API_SECRET_KEY=\${{ env.API_SECRET_KEY }}
-API_MASTER_KEY=\${{ env.API_MASTER_KEY }}
-API_VERSION=\${{ vars.API_VERSION }}
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=30
-REDIS_URL=redis://redis:6379/1
-SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:\${{ env.DB_PASSWORD }}@db/barcode_api
-LOG_DIRECTORY=logs
-ROOT_PATH=/api/v1
-SECRET_KEY=\${{ env.API_SECRET_KEY }}
-MASTER_API_KEY=\${{ env.API_MASTER_KEY }}
-DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:\${{ env.DB_PASSWORD }}@db/barcode_api
-SERVER_URL=https://\${{ env.DOMAIN_NAME }}
-EOF"
+        ENVIRONMENT=\${{ env.ENVIRONMENT }}
+        DB_PASSWORD=\${{ env.DB_PASSWORD }}
+        POSTGRES_PASSWORD=\${{ env.POSTGRES_PASSWORD }}
+        API_SECRET_KEY=\${{ env.API_SECRET_KEY }}
+        API_MASTER_KEY=\${{ env.API_MASTER_KEY }}
+        API_VERSION=\${{ vars.API_VERSION }}
+        ALGORITHM=HS256
+        ACCESS_TOKEN_EXPIRE_MINUTES=30
+        REDIS_URL=redis://redis:6379/1
+        SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:\${{ env.DB_PASSWORD }}@db/barcode_api
+        LOG_DIRECTORY=logs
+        ROOT_PATH=/api/v1
+        SECRET_KEY=\${{ env.API_SECRET_KEY }}
+        MASTER_API_KEY=\${{ env.API_MASTER_KEY }}
+        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:\${{ env.DB_PASSWORD }}@db/barcode_api
+        SERVER_URL=https://\${{ env.DOMAIN_NAME }}
+        EOF"
 
         # Determines the correct Docker Compose command (docker-compose or docker compose)
         # and saves it to /tmp/docker_vars for use in subsequent scripts.
@@ -355,18 +355,18 @@ EOF"
     # It also handles cleanup of the temporary .env file used during verification.
     - name: Verify backend deployment status and API health
       run: |
-        cd /opt/thebarcodeapi/barcodeAPI # Script expects to be in this directory for docker-compose commands.
+        cd /opt/thebarcodeapi/barcodeApi # Script expects to be in this directory for docker-compose commands.
 
         # Determine docker compose command
-        if command -v docker-compose &> /dev/null; then
+        if command -v docker-compose >/dev/null 2>&1; then
           COMPOSE_CMD="docker-compose"
         else
           COMPOSE_CMD="docker compose"
         fi
 
         # Set proper permissions
-        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/.env
-        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeAPI/.env
+        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeApi/.env
+        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeApi/.env
 
         echo "Verifying backend deployment..."
 
@@ -388,21 +388,21 @@ EOF"
         if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
           echo "Backend health check failed after $MAX_RETRIES attempts"
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs api
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeApi/.env
           exit 1
         fi
 
         echo "Backend verification completed successfully"
 
         # Cleanup of the .env file specific to this verification step; the main .env for the container is managed by create-backend-env-file.sh.
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeApi/.env
 
     # Performs a Docker system prune to remove unused Docker data (images, containers, volumes, networks)
     # to free up disk space. Runs even if previous steps in the job fail.
     - name: Clean up unused Docker resources on runner
       if: always()
       run: |
-        cd /opt/thebarcodeapi/barcodeAPI # Context for docker-compose related prune if applicable, though `docker system prune` is global.
+        cd /opt/thebarcodeapi/barcodeApi # Context for docker-compose related prune if applicable, though `docker system prune` is global.
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
 
     # Final cleanup of the backend .env file created by 'Create .env file for backend services' step.
@@ -410,7 +410,7 @@ EOF"
     - name: Final cleanup of backend .env file from host
       if: always()
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeApi/.env
 
     # Performs a final status check on all critical services (API, Redis, Database)
     # to ensure they are running and responsive after the deployment process.
@@ -476,7 +476,7 @@ EOF"
         docker ps -a || true
 
         echo "Recent Docker Logs:"
-        docker-compose -f /opt/thebarcodeapi/barcodeAPI/docker-compose.yml logs --tail=50 || true
+        docker-compose -f /opt/thebarcodeapi/barcodeApi/docker-compose.yml logs --tail=50 || true
 
         echo "Nginx Status:"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S systemctl status nginx || true
@@ -484,7 +484,7 @@ EOF"
         echo "Cleaning up temporary files..."
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/docker_vars
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeAPI/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeApi/.env
 
         echo "============================================"
         # exit 1

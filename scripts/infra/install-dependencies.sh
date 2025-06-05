@@ -8,7 +8,7 @@
 #     - Docker Engine (containerization platform)
 #     - Docker Compose (for defining and running multi-container Docker applications)
 #   It attempts to be idempotent by checking if a dependency already exists before installing.
-#   It also verifies the installations and ensures the 'github-runner' user is in the 'docker' group.
+#   It also verifies the installations and ensures the current user is in the 'docker' group.
 #
 # Environment Variables:
 #   - SUDO_PASSWORD: (Implicitly used if this script is called with `sudo -S bash script.sh`)
@@ -16,7 +16,7 @@
 #
 # Outputs:
 #   - Installs missing dependencies.
-#   - Adds 'github-runner' to the 'docker' group if not already a member.
+#   - Adds current user to the 'docker' group if not already a member.
 #   - Logs the installation and verification process.
 #   - Exits with an error if a critical installation or verification fails.
 # ---
@@ -128,8 +128,8 @@ if ! command_exists docker; then
   systemctl start docker
   systemctl enable docker
 
-  echo "Adding 'github-runner' user to the 'docker' group..."
-  usermod -aG docker github-runner || echo "Warning: Failed to add github-runner to docker group. May require manual intervention or relogin."
+  echo "Adding current user '$USER' to the 'docker' group..."
+  usermod -aG docker "$USER" || echo "Warning: Failed to add $USER to docker group. May require manual intervention or relogin."
 else
   echo "Docker Engine already installed."
 fi
@@ -165,18 +165,18 @@ for name in "${!commands_to_verify[@]}"; do
   fi
 done
 
-# Ensure 'github-runner' user is part of the 'docker' group for non-root Docker access
-echo "Verifying 'github-runner' Docker group membership..."
-if groups github-runner | grep -q '\bdocker\b'; then
-  echo "'github-runner' is already a member of the 'docker' group."
+# Ensure current user is part of the 'docker' group for non-root Docker access
+echo "Verifying '$USER' Docker group membership..."
+if groups "$USER" | grep -q '\bdocker\b'; then
+  echo "'$USER' is already a member of the 'docker' group."
 else
-  echo "Attempting to add 'github-runner' to 'docker' group..."
-  usermod -aG docker github-runner
-  if groups github-runner | grep -q '\bdocker\b'; then
-     echo "'github-runner' successfully added to 'docker' group."
+  echo "Attempting to add '$USER' to 'docker' group..."
+  usermod -aG docker "$USER"
+  if groups "$USER" | grep -q '\bdocker\b'; then
+     echo "'$USER' successfully added to 'docker' group."
      echo "NOTE: A logout/login or new session might be required for group changes to take full effect for the runner's current session."
   else
-     echo "Warning: Failed to add 'github-runner' to 'docker' group or verification failed. Docker commands might require sudo."
+     echo "Warning: Failed to add '$USER' to 'docker' group or verification failed. Docker commands might require sudo."
   fi
 fi
 
@@ -187,7 +187,7 @@ echo "--- Final Installed Versions ---"
 nginx -v 2>&1
 node -v
 npm -v
-PM2_HOME=/home/github-runner/.pm2 pm2 --version # Ensure PM2_HOME if checking version as runner
+PM2_HOME="${HOME:-/home/$USER}/.pm2" pm2 --version # Ensure PM2_HOME if checking version as current user
 docker --version
 docker compose version || docker-compose --version || echo "Docker Compose not found for version display."
 echo "--------------------------------"
