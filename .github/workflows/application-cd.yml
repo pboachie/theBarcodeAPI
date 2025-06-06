@@ -254,12 +254,12 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/backups/
-        
+
         # Create logs directory with proper permissions for container access
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeApi/logs
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R 1000:1000 /opt/thebarcodeapi/barcodeApi/logs
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/barcodeApi/logs
-        
+
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeApi
 
     - name: Setup Docker and Environment
@@ -312,7 +312,7 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeApi/logs
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R 1000:1000 /opt/thebarcodeapi/barcodeApi/logs
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 775 /opt/thebarcodeapi/barcodeApi/logs
-        
+
         # Also ensure data directory has proper permissions
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeApi/data
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R 1000:1000 /opt/thebarcodeapi/barcodeApi/data
