@@ -234,60 +234,6 @@ jobs:
         # Verify Docker access
         docker version
 
-    - name: Set up Docker Buildx
-      if: steps.check_backend_changes.outputs.changes == 'true'
-      uses: docker/setup-buildx-action@v3
-      with:
-        install: true
-
-    # Sets up Docker Buildx cache using GitHub Actions cache.
-    # The cache is keyed by OS, current commit SHA, and hashes of key backend definition files (requirements.txt, Dockerfile, Python/Alembic code).
-    # This helps speed up Docker image builds by reusing layers from previous builds.
-    - name: Setup Docker Buildx cache layers
-      if: steps.check_backend_changes.outputs.changes == 'true'
-      uses: actions/cache@v3
-      with:
-        path: |
-          /opt/thebarcodeapi/barcodeApi/.buildx-cache
-          ~/.docker/buildx
-        key: ${{ runner.os }}-buildx-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-buildx-${{ hashFiles('**/requirements.txt', '**/Dockerfile', 'api/**/*.py', 'alembic/**/*.py') }}
-          ${{ runner.os }}-buildx-${{ github.ref_name }}-
-
-    # Builds the Docker image for the backend API.
-    # It uses docker/build-push-action, configured to build locally and load the image into the Docker daemon.
-    # Caching (cache-from, cache-to) is utilized to optimize build times.
-    # `tags` and `labels` would ideally be dynamic e.g. using `docker/metadata-action` if a `meta` step was defined.
-    - name: Build and cache Docker image for backend API
-      if: steps.check_backend_changes.outputs.changes == 'true'
-      uses: docker/build-push-action@v5
-      with:
-        context: /opt/thebarcodeapi/barcodeApi # Sets the Docker build context to the backend API code directory.
-        file: /opt/thebarcodeapi/barcodeApi/Dockerfile # Specifies the Dockerfile to be used.
-        push: false # The image is not pushed to a container registry.
-        load: true  # The built image is loaded into the local Docker daemon on the runner.
-        tags: barcodeapi:latest
-        labels: |
-          org.opencontainers.image.source=${{ github.repositoryUrl }}
-        cache-from: | # Defines sources for build cache.
-          type=local,src=/opt/thebarcodeapi/barcodeApi/.buildx-cache
-          type=gha,scope=${{ github.workflow }}-${{ github.ref_name }} # GitHub Actions cache scoped to workflow and branch.
-        cache-to: type=local,dest=/opt/thebarcodeapi/barcodeApi/.buildx-cache-new,mode=min # Exports new cache layers locally.
-        build-args: | # Arguments passed to the Docker build.
-          DEBIAN_FRONTEND=noninteractive
-          PYTHON_ENV=${{ env.ENVIRONMENT }}
-          PROJECT_VERSION=${{ env.API_VERSION }}
-        platforms: linux/amd64 # Specifies the target platform for the build.
-        provenance: false # Disables build provenance attestations.
-        sbom: false # Disables SBOM attestations.
-
-    # Moves the newly created Docker Buildx cache to the location expected by subsequent workflow runs for cache restoration.
-    - name: Update local Docker build cache
-      if: steps.check_backend_changes.outputs.changes == 'true'
-      run: |
-        rm -rf /opt/thebarcodeapi/barcodeApi/.buildx-cache
-        mv /opt/thebarcodeapi/barcodeApi/.buildx-cache-new /opt/thebarcodeapi/barcodeApi/.buildx-cache
 
     # Stores the current Git commit hash into a .git-commit file within the backend deployment directory.
     # This helps in tracking which version of the code is currently deployed.
