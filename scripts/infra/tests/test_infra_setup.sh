@@ -19,9 +19,13 @@ MOCK_INFRA_DIR=""
 MOCK_SCRIPTS_PARENT_DIR=""
 TEST_MANAGE_INFRA_SCRIPT_PATH=""
 MOCK_BIN_DIR=""
+ORIGINAL_PATH=""
+MOCK_COMMAND_LOG_FILE="/tmp/test_infra_mock_cmds.log"
 
 # Function to set up all mocks
 setup_mocks() {
+    ORIGINAL_PATH="${PATH}"
+    echo "Initializing mock command log file..." > "${MOCK_COMMAND_LOG_FILE}"
     echo "Setting up mocks..." >&2
     MOCK_SCRIPTS_DIR_INTERNAL="$(mktemp -d)"
     # echo "Mock scripts temporary directory: ${MOCK_SCRIPTS_DIR_INTERNAL}" >&2
@@ -29,12 +33,13 @@ setup_mocks() {
     # Mock configure-nginx.sh
     cat << EOF > "${MOCK_SCRIPTS_DIR_INTERNAL}/configure-nginx.sh"
 #!/bin/bash
-echo "MOCK configure-nginx.sh CALLED" >> "${CURRENT_LOG_FILE}"
-echo "GLOBAL_ENV_VARS_FILE=${GLOBAL_ENV_VARS_FILE}" >> "${CURRENT_LOG_FILE}"
+_EFFECTIVE_LOG_FILE="\${CURRENT_LOG_FILE:-${MOCK_COMMAND_LOG_FILE}}"
+echo "MOCK configure-nginx.sh CALLED" >> "\${_EFFECTIVE_LOG_FILE}"
+echo "GLOBAL_ENV_VARS_FILE=${GLOBAL_ENV_VARS_FILE}" >> "\${_EFFECTIVE_LOG_FILE}"
 if [ -n "${GLOBAL_ENV_VARS_FILE}" ] && [ -f "${GLOBAL_ENV_VARS_FILE}" ]; then
-  echo "configure-nginx.sh would source ${GLOBAL_ENV_VARS_FILE}" >> "${CURRENT_LOG_FILE}"
+  echo "configure-nginx.sh would source ${GLOBAL_ENV_VARS_FILE}" >> "\${_EFFECTIVE_LOG_FILE}"
 else
-  echo "configure-nginx.sh ERROR: GLOBAL_ENV_VARS_FILE (${GLOBAL_ENV_VARS_FILE}) not found or not set" >> "${CURRENT_LOG_FILE}"
+  echo "configure-nginx.sh ERROR: GLOBAL_ENV_VARS_FILE (${GLOBAL_ENV_VARS_FILE}) not found or not set" >> "\${_EFFECTIVE_LOG_FILE}"
 fi
 exit 0
 EOF
@@ -43,12 +48,13 @@ EOF
     # Mock configure-pm2.sh
     cat << EOF > "${MOCK_SCRIPTS_DIR_INTERNAL}/configure-pm2.sh"
 #!/bin/bash
-echo "MOCK configure-pm2.sh CALLED" >> "${CURRENT_LOG_FILE}"
-echo "GLOBAL_ENV_VARS_FILE=${GLOBAL_ENV_VARS_FILE}" >> "${CURRENT_LOG_FILE}"
+_EFFECTIVE_LOG_FILE="\${CURRENT_LOG_FILE:-${MOCK_COMMAND_LOG_FILE}}"
+echo "MOCK configure-pm2.sh CALLED" >> "\${_EFFECTIVE_LOG_FILE}"
+echo "GLOBAL_ENV_VARS_FILE=${GLOBAL_ENV_VARS_FILE}" >> "\${_EFFECTIVE_LOG_FILE}"
 if [ -n "${GLOBAL_ENV_VARS_FILE}" ] && [ -f "${GLOBAL_ENV_VARS_FILE}" ]; then
-  echo "configure-pm2.sh would source ${GLOBAL_ENV_VARS_FILE}" >> "${CURRENT_LOG_FILE}"
+  echo "configure-pm2.sh would source ${GLOBAL_ENV_VARS_FILE}" >> "\${_EFFECTIVE_LOG_FILE}"
 else
-  echo "configure-pm2.sh ERROR: GLOBAL_ENV_VARS_FILE (${GLOBAL_ENV_VARS_FILE}) not found or not set" >> "${CURRENT_LOG_FILE}"
+  echo "configure-pm2.sh ERROR: GLOBAL_ENV_VARS_FILE (${GLOBAL_ENV_VARS_FILE}) not found or not set" >> "\${_EFFECTIVE_LOG_FILE}"
 fi
 exit 0
 EOF
@@ -63,7 +69,8 @@ EOF
       mock_path="${MOCK_SCRIPTS_DIR_INTERNAL}/$(basename "${script_name}")"
       cat << EOF > "${mock_path}"
 #!/bin/bash
-echo "MOCK $(basename "${script_name}") CALLED. Args: \$@" >> "${CURRENT_LOG_FILE}"
+_EFFECTIVE_LOG_FILE="\${CURRENT_LOG_FILE:-${MOCK_COMMAND_LOG_FILE}}"
+echo "MOCK $(basename "${script_name}") CALLED. Args: \$@" >> "\${_EFFECTIVE_LOG_FILE}"
 exit 0
 EOF
       chmod +x "${mock_path}"
@@ -99,29 +106,30 @@ EOF
     for cmd_to_mock in "${COMMANDS_TO_MOCK[@]}"; do
       cat << EOF > "${MOCK_BIN_DIR}/${cmd_to_mock}"
 #!/bin/bash
-echo "MOCK CMD: ${cmd_to_mock} \$@" >> "${CURRENT_LOG_FILE}"
+_EFFECTIVE_LOG_FILE="\${CURRENT_LOG_FILE:-${MOCK_COMMAND_LOG_FILE}}"
+echo "MOCK CMD: ${cmd_to_mock} \$@" >> "\${_EFFECTIVE_LOG_FILE}"
 MARKER_FILE_PATH="/opt/thebarcodeapi/${ENVIRONMENT}/.infra_initialized"
 if [ "${cmd_to_mock}" == "test" ] && [ "\${1}" == "-f" ] && [ "\${2}" == "${MARKER_FILE_PATH}" ]; then
   exit 1 # Simulate marker file not found for first-time setup
 fi
 if [ "${cmd_to_mock}" == "id" ] && [ "\${1}" == "-u" ]; then echo "1000"; exit 0; fi
 if [ "${cmd_to_mock}" == "nginx" ] && [ "\${1}" == "-t" ]; then
-    echo "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok" >> "${CURRENT_LOG_FILE}"
-    echo "nginx: configuration file /etc/nginx/nginx.conf test is successful" >> "${CURRENT_LOG_FILE}"
+    echo "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok" >> "\${_EFFECTIVE_LOG_FILE}"
+    echo "nginx: configuration file /etc/nginx/nginx.conf test is successful" >> "\${_EFFECTIVE_LOG_FILE}"
     exit 0
 fi
 if [ "${cmd_to_mock}" == "docker" ] && [ "\${1}" == "ps" ]; then
-    echo "CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES" >> "${CURRENT_LOG_FILE}"
+    echo "CONTAINER ID   IMAGE     COMMAND   CREATED   STATUS    PORTS     NAMES" >> "\${_EFFECTIVE_LOG_FILE}"
     exit 0
 fi
 if [ "${cmd_to_mock}" == "docker" ] && [ "\${1}" == "compose" ] && [ "\${2}" == "version" ]; then
-    echo "Docker Compose version v2.17.2" >> "${CURRENT_LOG_FILE}"
+    echo "Docker Compose version v2.17.2" >> "\${_EFFECTIVE_LOG_FILE}"
     exit 0
 fi
 if [ "${cmd_to_mock}" == "cp" ]; then
     if [[ "\${1}" == *"/tmp/env_vars_infra_setup"* && "\${2}" == "/tmp/env_vars" ]] && [ -f "\$1" ]; then
         /bin/cp -f "\$1" "\$2"
-        echo "Copied (actually) \${1} to \${2} for sourcing test" >> "${CURRENT_LOG_FILE}"
+        echo "Copied (actually) \${1} to \${2} for sourcing test" >> "\${_EFFECTIVE_LOG_FILE}"
         exit 0
     fi
 fi
@@ -132,18 +140,17 @@ EOF
 }
 
 cleanup_mocks() {
+    PATH="${ORIGINAL_PATH}"
     echo "Cleaning up mocks..." >&2
     rm -rf "${MOCK_SCRIPTS_DIR_INTERNAL}"
     rm -rf "${MOCK_TOP_DIR}"
-    if [ -n "${MOCK_BIN_DIR}" ]; then
-      export PATH="$(echo "${PATH}" | sed -e "s|${MOCK_BIN_DIR}:||")"
-    fi
     rm -rf "${MOCK_BIN_DIR}"
-    MOCK_SCRIPTS_DIR_INTERNAL="" MOCK_TOP_DIR="" MOCK_INFRA_DIR="" MOCK_SCRIPTS_PARENT_DIR="" TEST_MANAGE_INFRA_SCRIPT_PATH="" MOCK_BIN_DIR=""
+    MOCK_SCRIPTS_DIR_INTERNAL="" MOCK_TOP_DIR="" MOCK_INFRA_DIR="" MOCK_SCRIPTS_PARENT_DIR="" TEST_MANAGE_INFRA_SCRIPT_PATH="" MOCK_BIN_DIR="" ORIGINAL_PATH="" MOCK_COMMAND_LOG_FILE=""
 }
 
 run_manage_infra_scenario() {
     local test_description="\$1"
+    local exit_code=255 # Default to a non-zero exit code
     echo "--- Running Test Scenario: ${test_description} ---" >&2
     CURRENT_LOG_FILE="$(mktemp "${LOG_FILE_TEMPLATE}.XXXXXX")"
     echo "Test log for '${test_description}': ${CURRENT_LOG_FILE}" >&2
@@ -151,7 +158,7 @@ run_manage_infra_scenario() {
     export GITHUB_WORKSPACE="${local_github_workspace}"
     cd "${local_github_workspace}"
     bash "${TEST_MANAGE_INFRA_SCRIPT_PATH}" >> "${CURRENT_LOG_FILE}" 2>&1
-    local exit_code=\$?
+    exit_code=\$?
     cd "${TEST_DIR}"
     rm -rf "${local_github_workspace}"
     unset GITHUB_WORKSPACE
