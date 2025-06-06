@@ -54,7 +54,7 @@ RUN dos2unix /app/start.sh && \
 # Ensure /app/logs exists with proper ownership
 RUN mkdir -p /app/logs && \
     chown -R appuser:appuser /app/logs && \
-    chmod -R 755 /app/logs
+    chmod -R 775 /app/logs
 
 # Switch to appuser user
 USER appuser

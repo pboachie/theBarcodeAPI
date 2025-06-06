@@ -38,12 +38,24 @@ fi
 if [ ! -d "/app/logs" ]; then
     mkdir -p /app/logs
 fi
-# Ensure the log file exists and is owned by appuser
+
+# Ensure the log file exists and has proper permissions
+# Note: /app/logs may be mounted from host, so we need to handle permissions carefully
 if [ ! -f "/app/logs/app.log" ]; then
-    touch /app/logs/app.log
+    touch /app/logs/app.log 2>/dev/null || {
+        # If touch fails due to permissions, try to create with different approach
+        echo "Warning: Could not create /app/logs/app.log with touch, trying alternative approach..."
+        echo "" > /app/logs/app.log 2>/dev/null || {
+            echo "Error: Cannot create log file. Continuing without file logging..."
+        }
+    }
 fi
-# chown -R appuser:appuser /app/logs
-# chmod -R 775 /app/logs
+
+# Only try to change ownership if we're running as root, otherwise skip
+if [ "$(id -u)" = "0" ]; then
+    chown -R appuser:appuser /app/logs 2>/dev/null || true
+    chmod -R 775 /app/logs 2>/dev/null || true
+fi
 # Wait for the database to be ready
 print_header "Database Check"
 if check_db_connection; then
