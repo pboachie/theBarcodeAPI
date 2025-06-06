@@ -123,8 +123,8 @@ export default function RemoteConnectionPage() {
           </h2>
           <p className="text-md md:text-lg leading-relaxed mb-4">
             Below are examples of how to configure various clients or tools to connect to the MCP server. We primarily show connection to the recommended HTTP streaming endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp</code>).
-            When an API key (often referred to as a token in contexts like "Bearer Token") is used via the <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">Authorization</code> header, it's for identifying you to the MCP server, primarily for usage tracking and applying appropriate rate limits based on your plan.
-            While this public demonstration API might not strictly enforce a key for all interactions, it's good practice to include it as shown in the examples if you have one.
+            When an API key (often referred to as a token in contexts like &ldquo;Bearer Token&rdquo;) is used via the <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">Authorization</code> header, it&rsquo;s for identifying you to the MCP server, primarily for usage tracking and applying appropriate rate limits based on your plan.
+            While this public demonstration API might not strictly enforce a key for all interactions, it&rsquo;s good practice to include it as shown in the examples if you have one.
           </p>
           <div className="mb-6 flex space-x-2 border-b border-slate-300 dark:border-slate-700">
             {(['vscode', 'curl'] as const).map((platform) => (
@@ -283,12 +283,12 @@ export default function RemoteConnectionPage() {
                     </code>
                   </pre>
                   <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
-                    The <code className="bg-black/20 dark:bg-black/30 p-0.5 rounded text-[var(--accent-color)] text-[0.7rem]">-H "Authorization: Bearer YOUR_TOKEN_HERE"</code> line adds your API key to the request, used for tracking usage and applying limits.
+                    The <code className="bg-black/20 dark:bg-black/30 p-0.5 rounded text-[var(--accent-color)] text-[0.7rem]">-H &ldquo;Authorization: Bearer YOUR_TOKEN_HERE&rdquo;</code> line adds your API key to the request, used for tracking usage and applying limits.
                   </p>
                 </div>
               </div>
               <p className="text-sm text-slate-500 dark:text-slate-400 mt-4">
-                <strong>Note on SSE with cURL:</strong> To connect to the legacy SSE endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">/api/v1/mcp/sse</code>), you would typically use <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">-H "Accept: text/event-stream"</code>. If an API key is needed, it would also be sent as a header in the initial GET request establishing the SSE connection. However, the HTTP streaming endpoint is generally preferred.
+                <strong>Note on SSE with cURL:</strong> To connect to the legacy SSE endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">/api/v1/mcp/sse</code>), you would typically use <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">-H &ldquo;Accept: text/event-stream&rdquo;</code>. If an API key is needed, it would also be sent as a header in the initial GET request establishing the SSE connection. However, the HTTP streaming endpoint is generally preferred.
               </p>
             </div>
           )}
