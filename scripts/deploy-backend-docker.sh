@@ -56,8 +56,8 @@ if [ -z "$CHANGES" ]; then
     exit 1
 fi
 
-# Navigate to the backend application directory where docker-compose.yml is located
-TARGET_DIR="/opt/thebarcodeapi/barcodeApi"
+# Navigate to the root directory where docker-compose.yml is located
+TARGET_DIR="/opt/thebarcodeapi"
 echo "Changing directory to ${TARGET_DIR}"
 cd "${TARGET_DIR}" || { echo "Error: Failed to change directory to ${TARGET_DIR}"; exit 1; }
 
@@ -68,6 +68,13 @@ echo "Changes detected: ${CHANGES}"
 # If no changes detected, just check health of existing services and exit
 if [ "$CHANGES" == "false" ]; then
   echo "No changes detected in backend files. Verifying health of existing services only..."
+
+  # Always ensure logs directory has correct permissions, even when no changes detected
+  echo "Ensuring logs directory permissions are correct..."
+  LOGS_DIR="/opt/thebarcodeapi/barcodeApi/logs"
+  echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$LOGS_DIR"
+  echo "$SUDO_PASSWORD" | sudo -S chown -R 1000:1000 "$LOGS_DIR"
+  echo "$SUDO_PASSWORD" | sudo -S chmod -R 775 "$LOGS_DIR"
 
   # Check if services are running, attempt to start if not (e.g., after a reboot)
   if ! $DOCKER_COMPOSE ps | grep -q "Up"; then # This check might be too simple if some services are up and others aren't
@@ -196,6 +203,14 @@ for data_path_segment in "postgres" "redis"; do
         echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 "$path"
     fi
 done
+
+# Fix permissions for logs directory - critical for barcodeapi container
+echo "Setting up logs directory permissions for barcodeapi service..."
+LOGS_DIR="/opt/thebarcodeapi/barcodeApi/logs"
+echo "$SUDO_PASSWORD" | sudo -S mkdir -p "$LOGS_DIR"
+# The barcodeapi container runs as appuser (UID 1000), so ensure logs directory is writable
+echo "$SUDO_PASSWORD" | sudo -S chown -R 1000:1000 "$LOGS_DIR"
+echo "$SUDO_PASSWORD" | sudo -S chmod -R 775 "$LOGS_DIR"
 
 # Rebuild and start services, or just start if image is pre-built and up-to-date.
 # The docker/build-push-action in the workflow should have built and loaded the image as 'barcodeapi:latest'.
