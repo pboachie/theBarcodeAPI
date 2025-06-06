@@ -354,13 +354,14 @@ jobs:
 
     - name: Verify deployment
       run: |
-        # Check container status
-        docker ps | grep -E "barcodeapi_(api|db|redis)"
+        # Check container status (handle both possible naming patterns)
+        docker ps | grep -E "(barcodeapi_(api|db|redis)|thebarcodeapi_(barcodeapi|db|redis))"
 
         # Check API health
         curl -f http://localhost:8000/health || {
             echo "API health check failed."
-            docker logs barcodeapi_api
+            # Show logs for any API container found
+            docker logs $(docker ps --format "table {{.Names}}" | grep -E "(barcodeapi|api)" | head -1) || echo "Could not get API logs"
             exit 1
         }
 
@@ -438,21 +439,24 @@ jobs:
       run: |
         echo "Performing final status check..."
 
-        # Check app containers
-        if ! docker ps | grep -q "barcodeapi_api"; then
+        # Check app containers (handle both possible naming patterns)
+        if ! docker ps | grep -E "(barcodeapi_api|thebarcodeapi_barcodeapi)"; then
           echo "API container is not running!"
+          docker ps -a | grep -E "(barcodeapi|api)" || echo "No API containers found"
           exit 1
         fi
 
-        # Check Redis
-        if ! docker ps | grep -q "barcodeapi_redis"; then
+        # Check Redis (handle both possible naming patterns)
+        if ! docker ps | grep -E "(barcodeapi_redis|thebarcodeapi_redis)"; then
           echo "Redis container is not running!"
+          docker ps -a | grep -E "(redis)" || echo "No Redis containers found"
           exit 1
         fi
 
-        # Check Database
-        if ! docker ps | grep -q "barcodeapi_db"; then
+        # Check Database (handle both possible naming patterns)
+        if ! docker ps | grep -E "(barcodeapi_db|thebarcodeapi_db)"; then
           echo "Database container is not running!"
+          docker ps -a | grep -E "(db|postgres)" || echo "No DB containers found"
           exit 1
         fi
 
