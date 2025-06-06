@@ -162,7 +162,8 @@ run_manage_infra_scenario() {
     cd "${TEST_DIR}"
     rm -rf "${local_github_workspace}"
     unset GITHUB_WORKSPACE
-    return \$exit_code
+    # echo "Debug: exit_code='${exit_code}' (immediately before return)" >&2
+    return \$((exit_code))
 }
 
 set_default_critical_vars() {
