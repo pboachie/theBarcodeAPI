@@ -76,7 +76,7 @@ if [ "$CHANGES" == "false" ]; then
   fi
 
   # Verify health of essential services
-  for service in "db" "redis" "api"; do
+  for service in "db" "redis" "barcodeapi"; do
     echo "Verifying health of service: $service..."
     # Timeout for health check attempts for each service
     timeout 300 bash -c "until $DOCKER_COMPOSE ps $service 2>/dev/null | grep -q 'healthy'; do
@@ -206,10 +206,10 @@ if docker image inspect barcodeapi:latest >/dev/null 2>&1; then
   # '--always-recreate-deps' if dependencies also need to be recreated.
   $DOCKER_COMPOSE up -d --remove-orphans # Remove any orphaned containers from previous versions
 else
-  echo "Image 'barcodeapi:latest' not found. Attempting to build 'api' service and then start all services."
+  echo "Image 'barcodeapi:latest' not found. Attempting to build 'barcodeapi' service and then start all services."
   # This implies the workflow's build step might have failed or tags are different.
   # Building here can be slow; prefer ensuring image is built by workflow's docker/build-push-action.
-  $DOCKER_COMPOSE build --no-cache api # Build the 'api' service specifically if needed
+  $DOCKER_COMPOSE build --no-cache barcodeapi # Build the 'barcodeapi' service specifically if needed
   $DOCKER_COMPOSE up -d --remove-orphans
 fi
 
@@ -242,7 +242,7 @@ check_container_health() {
 }
 
 # Check health of all essential services
-ESSENTIAL_SERVICES=("db" "redis" "api")
+ESSENTIAL_SERVICES=("db" "redis" "barcodeapi")
 for service in "${ESSENTIAL_SERVICES[@]}"; do
     if ! check_container_health "$service" 300; then # 5 minutes timeout per service
         echo "Critical Error: Service $service failed its health check during deployment."

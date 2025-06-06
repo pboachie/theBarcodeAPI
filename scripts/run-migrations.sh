@@ -25,7 +25,7 @@ fi
 echo "Starting database migration process..."
 
 # Navigate to the backend application directory
-APP_DIR="/opt/thebarcodeapi/barcodeAPI"
+APP_DIR="/opt/thebarcodeapi/barcodeApi"
 echo "Changing directory to ${APP_DIR}..."
 cd "${APP_DIR}" || { echo "Error: Failed to change directory to ${APP_DIR}"; exit 1; }
 
@@ -59,10 +59,10 @@ else
 fi
 
 # Run database migrations using Alembic.
-# The command is executed inside the 'api' service container.
+# The command is executed inside the 'barcodeapi' service container.
 # `-T` disables pseudo-tty allocation, suitable for non-interactive exec commands.
 echo "Running Alembic database migrations..."
-echo "${SUDO_PASSWORD}" | sudo -S $COMPOSE_CMD exec -T api alembic upgrade head
+echo "${SUDO_PASSWORD}" | sudo -S $COMPOSE_CMD exec -T barcodeapi alembic upgrade head
 MIGRATION_STATUS=$? # Capture the exit status of the migration command
 
 # Check migration status and provide feedback
@@ -70,8 +70,8 @@ if [ $MIGRATION_STATUS -eq 0 ]; then
   echo "Database migrations completed successfully."
 else
   echo "Error: Database migration failed with status ${MIGRATION_STATUS}."
-  echo "Fetching recent logs from the 'api' service for debugging..."
-  echo "${SUDO_PASSWORD}" | sudo -S $COMPOSE_CMD logs --tail 50 api # Show last 50 log lines from the api container
+  echo "Fetching recent logs from the 'barcodeapi' service for debugging..."
+  echo "${SUDO_PASSWORD}" | sudo -S $COMPOSE_CMD logs --tail 50 barcodeapi # Show last 50 log lines from the barcodeapi container
 fi
 
 # Exit with the migration status, so GitHub Actions can correctly reflect success or failure
