@@ -8,7 +8,7 @@ trap cleanup_mocks EXIT INT TERM
 
 TEST_DIR="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 INFRA_SCRIPTS_DIR="$(cd "${TEST_DIR}/.." && pwd)"
-MANAGE_INFRA_SCRIPT="${INFRA_SCRIPTS_DIR}/manage-infra.sh"
+MANAGE_INFRA_SCRIPT="${GITHUB_WORKSPACE}/scripts/infra/manage-infra.sh"
 LOG_FILE_TEMPLATE="$(mktemp -u)" # Template for log file names, mktemp will make unique ones
 OVERALL_TEST_RESULT=0 # 0 for success, 1 for failure
 
