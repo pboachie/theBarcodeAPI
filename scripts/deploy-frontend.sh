@@ -101,9 +101,9 @@ if [ "${STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES}" == "true" ]; then
 
   echo "Copying build artifacts to new release directory..."
   # Copy Next.js build output, public assets, package files, and the .git-commit file
-  echo "${SUDO_PASSWORD}" | sudo -S cp -R ./.next "${NEW_RELEASE_PATH}/"
-  echo "${SUDO_PASSWORD}" | sudo -S cp -R ./public "${NEW_RELEASE_PATH}/"
-  echo "${SUDO_PASSWORD}" | sudo -S cp ./package.json ./package-lock.json ./.git-commit "${NEW_RELEASE_PATH}/"
+  echo "${SUDO_PASSWORD}" | sudo -S cp -R ./barcodeFrontend/.next "${NEW_RELEASE_PATH}/"
+  echo "${SUDO_PASSWORD}" | sudo -S cp -R ./barcodeFrontend/public "${NEW_RELEASE_PATH}/"
+  echo "${SUDO_PASSWORD}" | sudo -S cp ./barcodeFrontend/package.json ./barcodeFrontend/package-lock.json ./.git-commit "${NEW_RELEASE_PATH}/"
 
   # Set ownership and basic permissions for the new release (runner needs to install deps)
   echo "${SUDO_PASSWORD}" | sudo -S chown -R "${USER}:${USER}" "${NEW_RELEASE_PATH}"
