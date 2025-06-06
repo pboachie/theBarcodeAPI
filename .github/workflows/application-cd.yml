@@ -107,6 +107,7 @@ jobs:
       with:
         node-version: '20.x'
         cache: 'npm'
+        cache-dependency-path: 'barcodeFrontend/package-lock.json'
 
     # Caches Next.js build artifacts (.next/cache) and downloaded dependencies (node_modules)
     # to speed up subsequent builds if frontend changes are detected.
@@ -117,16 +118,17 @@ jobs:
       uses: actions/cache@v3
       with:
         path: |
-          .next/cache
-          node_modules
-        key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+          barcodeFrontend/.next/cache
+          barcodeFrontend/node_modules
+        key: ${{ runner.os }}-nextjs-${{ hashFiles('barcodeFrontend/package-lock.json') }}-${{ hashFiles('barcodeFrontend/**/*.js', 'barcodeFrontend/**/*.jsx', 'barcodeFrontend/**/*.ts', 'barcodeFrontend/**/*.tsx') }}
         restore-keys: |
-          ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+          ${{ runner.os }}-nextjs-${{ hashFiles('barcodeFrontend/package-lock.json') }}-
 
     # Installs npm dependencies using 'npm ci' for a clean, reproducible install from package-lock.json.
     # Then, it runs linting and the build process for the Next.js application.
     - name: Install dependencies, lint, and build frontend
       if: steps.check_frontend_changes.outputs.changes == 'true'
+      working-directory: barcodeFrontend
       run: |
         npm ci
         npm run lint
