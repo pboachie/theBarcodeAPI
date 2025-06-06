@@ -227,10 +227,10 @@ jobs:
         if ! groups | grep -q docker; then
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
         fi
-        
+
         # Fix Docker socket permissions
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
-        
+
         # Verify Docker access
         docker version
 
@@ -238,6 +238,7 @@ jobs:
       if: steps.check_backend_changes.outputs.changes == 'true'
       uses: docker/setup-buildx-action@v3
       with:
+        driver: docker
         install: true
 
     # Sets up Docker Buildx cache using GitHub Actions cache.
@@ -279,7 +280,6 @@ jobs:
           PYTHON_ENV=${{ env.ENVIRONMENT }}
           PROJECT_VERSION=${{ env.API_VERSION }}
         platforms: linux/amd64 # Specifies the target platform for the build.
-        outputs: type=docker # Defines the output type of the build.
         provenance: false # Disables build provenance attestations.
         sbom: false # Disables SBOM attestations.
 
