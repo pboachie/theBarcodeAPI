@@ -23,12 +23,21 @@ set -e # Exit immediately if a command exits with a non-zero status.
 
 echo "Starting infrastructure setup verification..."
 
-# Attempt to source environment variables from /tmp/env_vars
-if [ -f /tmp/env_vars ]; then
+# Attempt to source environment variables
+echo "Attempting to source environment variables for setup verification..."
+ENV_FILE_SOURCED=false
+if [ -n "${GLOBAL_ENV_VARS_FILE}" ] && [ -f "${GLOBAL_ENV_VARS_FILE}" ]; then
+  source "${GLOBAL_ENV_VARS_FILE}"
+  echo "Sourced environment variables from ${GLOBAL_ENV_VARS_FILE} (via GLOBAL_ENV_VARS_FILE env var)."
+  ENV_FILE_SOURCED=true
+elif [ -f /tmp/env_vars ]; then
   source /tmp/env_vars
-  echo "Sourced environment variables from /tmp/env_vars."
-else
-  echo "Warning: /tmp/env_vars not found. Relying on ENVIRONMENT and SUDO_PASSWORD being directly available."
+  echo "Sourced environment variables from /tmp/env_vars (fallback)."
+  ENV_FILE_SOURCED=true
+fi
+
+if [ "$ENV_FILE_SOURCED" = false ]; then
+  echo "Warning: Environment variable file not found. Neither GLOBAL_ENV_VARS_FILE (env var: '${GLOBAL_ENV_VARS_FILE}') was valid nor /tmp/env_vars existed. Relying on ENVIRONMENT and SUDO_PASSWORD being directly available."
 fi
 
 # Ensure critical variables are set

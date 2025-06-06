@@ -23,12 +23,21 @@ set -e
 
 echo "Starting setup of backup coordination..."
 
-# Attempt to source environment variables if /tmp/env_vars exists
-if [ -f /tmp/env_vars ]; then
+# Attempt to source environment variables
+echo "Attempting to source environment variables for backup coordination..."
+ENV_FILE_SOURCED=false
+if [ -n "${GLOBAL_ENV_VARS_FILE}" ] && [ -f "${GLOBAL_ENV_VARS_FILE}" ]; then
+  source "${GLOBAL_ENV_VARS_FILE}"
+  echo "Sourced environment variables from ${GLOBAL_ENV_VARS_FILE} (via GLOBAL_ENV_VARS_FILE env var)."
+  ENV_FILE_SOURCED=true
+elif [ -f /tmp/env_vars ]; then
   source /tmp/env_vars
-  echo "Sourced environment variables from /tmp/env_vars."
-else
-  echo "Warning: /tmp/env_vars not found. Relying on SUDO_PASSWORD being directly available."
+  echo "Sourced environment variables from /tmp/env_vars (fallback)."
+  ENV_FILE_SOURCED=true
+fi
+
+if [ "$ENV_FILE_SOURCED" = false ]; then
+  echo "Warning: Environment variable file not found. Neither GLOBAL_ENV_VARS_FILE (env var: '${GLOBAL_ENV_VARS_FILE}') was valid nor /tmp/env_vars existed. Relying on SUDO_PASSWORD being directly available."
 fi
 
 # Ensure critical variables are set

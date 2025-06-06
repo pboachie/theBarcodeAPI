@@ -149,16 +149,16 @@ EOF
         exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/configure-pm2.sh"
 
         echo "Configuring backend Docker environment (setup-docker-env.sh)..."
-        exec_sudo bash "${SCRIPTS_INFRA_DIR}/setup-docker-env.sh"
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/setup-docker-env.sh"
 
         echo "Fixing permissions..."
-        exec_sudo bash "${SCRIPTS_INFRA_DIR}/fix-permissions.sh"
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/fix-permissions.sh"
 
         echo "Configuring backup coordination..."
-        exec_sudo bash "${SCRIPTS_INFRA_DIR}/configure-backup-coordination.sh"
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/configure-backup-coordination.sh"
 
         echo "Adding cleanup routine..."
-        exec_sudo bash "${SCRIPTS_INFRA_DIR}/add-cleanup-routine.sh"
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/add-cleanup-routine.sh"
 
         echo "Restarting Nginx..."
         exec_sudo systemctl restart nginx || echo "Warning: Nginx restart failed. Check Nginx configuration and status."
@@ -201,7 +201,7 @@ EOF
         exec_sudo bash "${SCRIPTS_INFRA_DIR}/../run-migrations.sh"
 
         echo "Verifying setup using verify-setup.sh..."
-        exec_sudo bash "${SCRIPTS_INFRA_DIR}/verify-setup.sh"
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/verify-setup.sh"
 
         echo "Infrastructure and initial application deployment initialized successfully for ${ENVIRONMENT}."
         echo "Creating marker file: ${MARKER_FILE}"
