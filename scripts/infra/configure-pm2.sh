@@ -31,9 +31,9 @@ echo "Starting PM2 configuration for frontend..."
 # Attempt to source environment variables
 echo "Attempting to source environment variables for PM2 configuration..."
 ENV_FILE_SOURCED=false
-if [ -n "\${GLOBAL_ENV_VARS_FILE}" ] && [ -f "\${GLOBAL_ENV_VARS_FILE}" ]; then
-  source "\${GLOBAL_ENV_VARS_FILE}"
-  echo "Sourced environment variables from \${GLOBAL_ENV_VARS_FILE} (via GLOBAL_ENV_VARS_FILE env var)."
+if [ -n "${GLOBAL_ENV_VARS_FILE}" ] && [ -f "${GLOBAL_ENV_VARS_FILE}" ]; then
+  source "${GLOBAL_ENV_VARS_FILE}"
+  echo "Sourced environment variables from ${GLOBAL_ENV_VARS_FILE} (via GLOBAL_ENV_VARS_FILE env var)."
   ENV_FILE_SOURCED=true
 elif [ -f /tmp/env_vars ]; then
   source /tmp/env_vars
@@ -41,8 +41,8 @@ elif [ -f /tmp/env_vars ]; then
   ENV_FILE_SOURCED=true
 fi
 
-if [ "\$ENV_FILE_SOURCED" = false ]; then
-  echo "Error: Environment variable file not found. Neither GLOBAL_ENV_VARS_FILE (env var: '\${GLOBAL_ENV_VARS_FILE}') was valid nor /tmp/env_vars existed."
+if [ "$ENV_FILE_SOURCED" = false ]; then
+  echo "Error: Environment variable file not found. Neither GLOBAL_ENV_VARS_FILE (env var: '${GLOBAL_ENV_VARS_FILE}') was valid nor /tmp/env_vars existed."
   exit 1
 fi
 
