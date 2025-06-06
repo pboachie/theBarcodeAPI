@@ -55,8 +55,8 @@ DEPLOYMENT_LOCK_FILE="/opt/thebarcodeapi/deployment.lock" # Example lock file pa
 
 echo "Executing pre-backup check at $(date)..."
 
-if [ -f "\$DEPLOYMENT_LOCK_FILE" ]; then
-  echo "Deployment in progress (lock file found: \${DEPLOY_LOCK_FILE}). Skipping backup."
+if [ -f "$DEPLOYMENT_LOCK_FILE" ]; then
+  echo "Deployment in progress (lock file found: ${DEPLOYMENT_LOCK_FILE}). Skipping backup."
   exit 0
 fi
 
@@ -64,11 +64,11 @@ echo "No deployment lock found. Proceeding with backup..."
 # Path to the main backup script (created by setup-docker-env.sh)
 MAIN_BACKUP_SCRIPT="/opt/thebarcodeapi/barcodeApi/backup.sh"
 
-if [ -x "\$MAIN_BACKUP_SCRIPT" ]; then
-  "\$MAIN_BACKUP_SCRIPT"
+if [ -x "$MAIN_BACKUP_SCRIPT" ]; then
+  "$MAIN_BACKUP_SCRIPT"
   echo "Main backup script execution finished."
 else
-  echo "Error: Main backup script \${MAIN_BACKUP_SCRIPT} not found or not executable."
+  echo "Error: Main backup script ${MAIN_BACKUP_SCRIPT} not found or not executable."
   exit 1
 fi
 ' # End of PRE_BACKUP_CHECK_CONTENT

@@ -47,7 +47,7 @@ if [ "$ENV_FILE_SOURCED" = false ]; then
 fi
 
 # Ensure critical variables sourced are available
-if [ -z "\$ENVIRONMENT" ] || [ -z "\$SUDO_PASSWORD" ]; then
+if [ -z "$ENVIRONMENT" ] || [ -z "$SUDO_PASSWORD" ]; then
   echo "Error: Key environment variables (ENVIRONMENT, SUDO_PASSWORD) from the sourced file are missing or empty."
   exit 1
 fi
