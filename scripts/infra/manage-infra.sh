@@ -117,6 +117,7 @@ export SECRET_KEY=\"${API_SECRET_KEY}\"
 export MASTER_API_KEY=\"${API_MASTER_KEY}\"
 export GITHUB_WORKSPACE=\"${GITHUB_WORKSPACE}\"
 export SUDO_PASSWORD=\"${SUDO_PASSWORD}\"
+export CHANGES=\"true\"
 EOF
 "
         exec_sudo chmod 644 "${GLOBAL_ENV_VARS_FILE}"
@@ -193,7 +194,7 @@ EOF
         echo "Executing initial backend deployment..."
         # The backend deployment script also needs API_VERSION, ensure it's in GLOBAL_ENV_VARS_FILE and thus /tmp/env_vars
         # It also might need DOMAIN_NAME if that's used by backend for external URL construction.
-        CHANGES="true" exec_sudo bash "${SCRIPTS_INFRA_DIR}/../deploy-backend-docker.sh"
+        exec_sudo bash "${SCRIPTS_INFRA_DIR}/../deploy-backend-docker.sh"
 
         # Run migrations after initial backend deployment (if not handled by deploy-backend-docker.sh itself for the first run)
         # The application-cd.yml runs migrations after deploy-backend-docker.sh. We should mirror that.

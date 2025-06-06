@@ -70,7 +70,7 @@ ensure_directory_exists() {
 # --- Directory Structure Verification ---
 echo "Verifying essential directory structure for environment: ${ENVIRONMENT}..."
 ensure_directory_exists "/opt/thebarcodeapi"
-ensure_directory_exists "/opt/thebarcodeapi/barcodeAPI" # Backend application deployment
+ensure_directory_exists "/opt/thebarcodeapi/barcodeApi" # Backend application deployment
 ensure_directory_exists "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data" # For Docker persistent data
 ensure_directory_exists "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres"
 ensure_directory_exists "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis"
@@ -81,10 +81,10 @@ ensure_directory_exists "/opt/thebarcodeapi/${ENVIRONMENT}/logs"    # For fronte
 # --- Critical Scripts Verification (formerly "Error Check" step) ---
 echo "Verifying existence and executability of critical operational scripts..."
 CRITICAL_OPERATIONAL_SCRIPTS=(
-  "/opt/thebarcodeapi/barcodeAPI/backup.sh"          # Main backup script
-  "/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh" # Wrapper for backup script, checks lock
+  "/opt/thebarcodeapi/barcodeApi/backup.sh"          # Main backup script
+  "/opt/thebarcodeapi/barcodeApi/pre-backup-check.sh" # Wrapper for backup script, checks lock
   "/opt/thebarcodeapi/cleanup.sh"                   # System cleanup script (old releases, Docker prune)
-  "/opt/thebarcodeapi/barcodeAPI/wait-for-it.sh"    # Utility for Docker startup coordination
+  "/opt/thebarcodeapi/barcodeApi/wait-for-it.sh"    # Utility for Docker startup coordination
 )
 for script_file_path in "${CRITICAL_OPERATIONAL_SCRIPTS[@]}"; do
   echo -n "Checking script: ${script_file_path}... "
@@ -109,7 +109,7 @@ done
 # --- Cron Job Verification (Basic Check) ---
 # This performs a simple grep; more robust checking might involve parsing crontab entries more carefully.
 echo "Verifying installation of cron jobs (basic check)..."
-PRE_BACKUP_CRON_SCRIPT_PATH="/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh"
+PRE_BACKUP_CRON_SCRIPT_PATH="/opt/thebarcodeapi/barcodeApi/pre-backup-check.sh"
 CLEANUP_CRON_SCRIPT_PATH="/opt/thebarcodeapi/cleanup.sh"
 
 if echo "$SUDO_PASSWORD" | sudo -S crontab -l 2>/dev/null | grep -q -F "$PRE_BACKUP_CRON_SCRIPT_PATH"; then
