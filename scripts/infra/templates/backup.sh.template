@@ -7,7 +7,19 @@ docker compose exec db pg_dump -U barcodeboachiefamily barcode_api > "$BACKUP_DI
 
 # Backup Redis
 docker compose exec redis redis-cli SAVE
-echo "$SUDO_PASSWORD" | sudo -S cp /opt/thebarcodeapi/__ENVIRONMENT__/releases/data/redis/dump.rdb "$BACKUP_DIR/redis_backup_$TIMESTAMP.rdb"
+
+# Get Redis container ID and copy dump file from container (works with named volumes)
+REDIS_CONTAINER=$(docker compose ps -q redis)
+if [ -n "$REDIS_CONTAINER" ]; then
+    docker cp "${REDIS_CONTAINER}:/data/dump.rdb" "$BACKUP_DIR/redis_backup_$TIMESTAMP.rdb" || {
+        echo "Warning: Failed to copy Redis dump file. Trying to copy entire data directory..."
+        docker cp "${REDIS_CONTAINER}:/data/" "$BACKUP_DIR/redis_data_backup_$TIMESTAMP/" || {
+            echo "Warning: Failed to backup Redis data."
+        }
+    }
+else
+    echo "Warning: Could not get Redis container ID for backup."
+fi
 
 # Clean old backups (keep last 7 days)
 find $BACKUP_DIR -name "db_backup_*" -mtime +7 -delete

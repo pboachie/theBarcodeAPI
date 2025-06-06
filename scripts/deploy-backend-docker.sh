@@ -140,18 +140,26 @@ backup_redis() {
                 echo "Warning: Failed to execute Redis SAVE command."
                 # Continue to attempt copy if SAVE fails but dump file might exist
             }
-            # Copy the RDB file from the Docker volume
-            # The volume path /data inside the container must match docker-compose.yml
-            REDIS_RDB_HOST_PATH="/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis/dump.rdb"
-            if [ -f "$REDIS_RDB_HOST_PATH" ]; then
-                 echo "$SUDO_PASSWORD" | sudo -S cp "$REDIS_RDB_HOST_PATH" "${BACKUP_DIR}/redis_dump.rdb" || {
-                    echo "Warning: Failed to copy Redis dump file from $REDIS_RDB_HOST_PATH."
-                    return 1 # Indicate failure
+            
+            # For named volumes, we need to copy the RDB file directly from the container
+            # Get the container name for Redis
+            REDIS_CONTAINER=$($DOCKER_COMPOSE ps -q redis)
+            if [ -n "$REDIS_CONTAINER" ]; then
+                # Copy the dump file from the container to the backup directory
+                docker cp "${REDIS_CONTAINER}:/data/dump.rdb" "${BACKUP_DIR}/redis_dump.rdb" 2>/dev/null || {
+                    echo "Warning: Failed to copy Redis dump file from container. File may not exist."
+                    # Try to copy any available Redis data files
+                    docker cp "${REDIS_CONTAINER}:/data/" "${BACKUP_DIR}/redis_data_backup/" 2>/dev/null || {
+                        echo "Warning: Failed to copy any Redis data files."
+                        return 1
+                    }
+                    echo "Redis data directory backed up to: ${BACKUP_DIR}/redis_data_backup/"
+                    return 0
                 }
                 echo "Redis backup completed successfully: ${BACKUP_DIR}/redis_dump.rdb"
                 return 0 # Indicate success
             else
-                echo "Warning: Redis dump file ($REDIS_RDB_HOST_PATH) not found on host after SAVE command."
+                echo "Warning: Could not get Redis container ID."
                 return 1
             fi
         else
