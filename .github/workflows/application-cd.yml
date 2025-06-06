@@ -190,21 +190,32 @@ jobs:
           BACKUP_DIR="/opt/thebarcodeapi/${{ vars.ENVIRONMENT }}/backups/$(date +%Y%m%d_%H%M%S)"
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "${BACKUP_DIR}"
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r /opt/thebarcodeapi/barcodeApi "${BACKUP_DIR}/"
+          # Also backup docker-compose.yml if it exists
+          if [ -f "/opt/thebarcodeapi/docker-compose.yml" ]; then
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp /opt/thebarcodeapi/docker-compose.yml "${BACKUP_DIR}/"
+          fi
         fi
 
         # Clean the deployment directory
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeApi/*
 
-        # Copy new files
+        # Copy new backend files
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeApi/* /opt/thebarcodeapi/barcodeApi/
+
+        # Copy docker-compose.yml to the root deployment directory
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./docker-compose.yml /opt/thebarcodeapi/
 
         # Set proper permissions
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeApi
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/barcodeApi
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/docker-compose.yml
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/docker-compose.yml
 
         # Debug output
         echo "Contents of deployment directory:"
         ls -la /opt/thebarcodeapi/barcodeApi/
+        echo "Contents of root deployment directory:"
+        ls -la /opt/thebarcodeapi/
 
     # Executes a script to create the .env file required by the backend application.
     # This file contains sensitive information and configuration details.
@@ -259,6 +270,14 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeApi/logs
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R 1000:1000 /opt/thebarcodeapi/barcodeApi/logs
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/barcodeApi/logs
+
+        # Ensure docker-compose.yml exists in deployment directory (always needed)
+        if [ ! -f "/opt/thebarcodeapi/docker-compose.yml" ]; then
+          echo "Copying docker-compose.yml to deployment directory..."
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./docker-compose.yml /opt/thebarcodeapi/
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/docker-compose.yml
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/docker-compose.yml
+        fi
 
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeApi
 
