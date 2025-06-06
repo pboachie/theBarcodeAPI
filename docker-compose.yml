@@ -40,34 +40,37 @@ services:
           cpus: '${API_CPUS:-4.0}'
           memory: ${API_MEMORY:-2G}
 
-  barcodefrontend:
-    build:
-      context: ./barcodeFrontend
-      dockerfile: Dockerfile
-      args:
-        - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-    environment:
-      # Example: Making the backend API URL available to Next.js
-      # This needs to be prefixed with NEXT_PUBLIC_ for Next.js to pick it up client-side
-      - NEXT_PUBLIC_API_URL=http://barcodeapi:${API_PORT:-8000}
-      - NEXT_PUBLIC_APP_VERSION=${PROJECT_VERSION:-0.0.0-default} # Pass version for runtime access
-      # Add other necessary frontend environment variables here
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    deploy:
-      resources:
-        limits:
-          cpus: '${FRONTEND_CPUS:-2.0}' # Allow configuration via .env
-          memory: ${FRONTEND_MEMORY:-1G} # Allow configuration via .env
-    # If the frontend needs the backend to be up to start (e.g. for some build steps, unlikely for Next.js)
-    depends_on:
-      - barcodeapi
+# The barcodefrontend service is deployed by a separate process in the CI pipeline (see .github/workflows/application-cd.yml and scripts/deploy-frontend.sh).
+# It is commented out here to prevent redundant builds by the backend deployment process.
+# For local development, this service definition can be moved to a separate docker-compose.dev.yml file or similar.
+#  barcodefrontend:
+#    build:
+#      context: ./barcodeFrontend
+#      dockerfile: Dockerfile
+#      args:
+#        - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
+#    ports:
+#      - "${FRONTEND_PORT:-3000}:3000"
+#    environment:
+#      # Example: Making the backend API URL available to Next.js
+#      # This needs to be prefixed with NEXT_PUBLIC_ for Next.js to pick it up client-side
+#      - NEXT_PUBLIC_API_URL=http://barcodeapi:${API_PORT:-8000}
+#      - NEXT_PUBLIC_APP_VERSION=${PROJECT_VERSION:-0.0.0-default} # Pass version for runtime access
+#      # Add other necessary frontend environment variables here
+#    restart: unless-stopped
+#    logging:
+#      driver: "json-file"
+#      options:
+#        max-size: "10m"
+#        max-file: "3"
+#    deploy:
+#      resources:
+#        limits:
+#          cpus: '${FRONTEND_CPUS:-2.0}' # Allow configuration via .env
+#          memory: ${FRONTEND_MEMORY:-1G} # Allow configuration via .env
+#    # If the frontend needs the backend to be up to start (e.g. for some build steps, unlikely for Next.js)
+#    depends_on:
+#      - barcodeapi
 
   redis:
     image: redislabs/rejson:latest
