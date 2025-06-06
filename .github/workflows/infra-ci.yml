@@ -34,12 +34,16 @@ jobs:
       run: |
         bash scripts/infra/tests/test_infra_setup.sh
 
-    - name: Run Infrastructure and Initial Deployment Script
+    - name: Run Infrastructure and Initial Setup Script
       run: |
         bash scripts/infra/manage-infra.sh
+
+    # Note: This workflow sets up infrastructure only. Application deployment
+    # is handled separately by the application-cd.yml workflow.
 
     # Prints final environment information for debugging and record-keeping.
     - name: Print final environment information
       run: |
         echo "Infrastructure setup workflow completed for environment: ${{ env.ENVIRONMENT }}"
         echo "Domain configured (if applicable): ${{ env.DOMAIN_NAME }}"
+        echo "Note: Application deployment is handled by application-cd.yml workflow"

@@ -42,7 +42,7 @@ if [ "$1" == "-S" ]; then
     # Read password from stdin (but we don't need to validate it in the mock)
     read -r password_input
     shift  # Remove -S flag
-    
+
     # Handle specific commands that exec_sudo uses
     case "$1" in
         "test")
@@ -74,7 +74,7 @@ EOF
     # Create mock scripts for infrastructure components
     local scripts_to_mock=(
         "update-system.sh"
-        "install-dependencies.sh" 
+        "install-dependencies.sh"
         "setup-docker-env.sh"
         "fix-permissions.sh"
         "configure-backup-coordination.sh"
@@ -87,10 +87,10 @@ EOF
     # Create a temporary scripts directory structure
     MOCK_SCRIPTS_DIR="$(mktemp -d)"
     mkdir -p "${MOCK_SCRIPTS_DIR}/scripts/infra"
-    
+
     # Copy the real manage-infra.sh to the mock directory
     cp "${MANAGE_INFRA_SCRIPT}" "${MOCK_SCRIPTS_DIR}/scripts/infra/"
-    
+
     for script in "${scripts_to_mock[@]}"; do
         cat << 'MOCK_SCRIPT_EOF' > "${MOCK_SCRIPTS_DIR}/scripts/infra/${script}"
 #!/bin/bash
@@ -98,16 +98,6 @@ echo "MOCK ${script}: $@" >&2
 exit 0
 MOCK_SCRIPT_EOF
         chmod +x "${MOCK_SCRIPTS_DIR}/scripts/infra/${script}"
-    done
-
-    # Create mock scripts in the parent scripts directory too (for deploy-backend-docker.sh and run-migrations.sh)
-    for script in "deploy-backend-docker.sh" "run-migrations.sh"; do
-        cat << 'MOCK_SCRIPT_EOF' > "${MOCK_SCRIPTS_DIR}/scripts/${script}"
-#!/bin/bash
-echo "MOCK ${script}: $@" >&2
-exit 0
-MOCK_SCRIPT_EOF
-        chmod +x "${MOCK_SCRIPTS_DIR}/scripts/${script}"
     done
 
     # Update the MANAGE_INFRA_SCRIPT to point to our mock copy

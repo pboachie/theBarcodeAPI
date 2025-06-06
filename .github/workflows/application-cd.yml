@@ -1,12 +1,11 @@
 name: theBarcodeApi Application Deployment
 
-# on:
-#   workflow_run:
-#     workflows: ["theBarcodeApi Infrastructure Setup"]
-#     branches: [main]
-#     types:
-#       - completed
 on:
+  workflow_run:
+    workflows: ["theBarcodeApi Infrastructure Setup"]
+    branches: [main]
+    types:
+      - completed
   push:
     branches:
       - main
@@ -42,9 +41,30 @@ env:
 jobs:
   frontend-deployment:
     runs-on: self-hosted
-    # This job runs if the event is a push or a manual workflow dispatch.
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # This job runs if the event is a push, manual workflow dispatch, or after infrastructure setup
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     steps:
+    # Check infrastructure workflow status when triggered by workflow_run
+    - name: Check infrastructure workflow status
+      if: github.event_name == 'workflow_run'
+      run: |
+        echo "Infrastructure workflow completed with status: ${{ github.event.workflow_run.conclusion }}"
+        if [ "${{ github.event.workflow_run.conclusion }}" != "success" ]; then
+          echo "Infrastructure workflow did not complete successfully. Cannot proceed with application deployment."
+          exit 1
+        fi
+
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        ref: ${{ github.ref }}
+
+    # Verify that infrastructure is properly set up before proceeding
+    - name: Verify infrastructure setup
+      run: bash ./scripts/verify-infrastructure-setup.sh
+      env:
+        ENVIRONMENT: ${{ env.ENVIRONMENT }}
+
     # Determines the branch to checkout.
     # For manual 'workflow_dispatch', it uses the 'branch' input or the current ref_name if input is not provided.
     # For other events (like a push, though the trigger is currently commented out), it defaults to github.ref_name.
@@ -69,7 +89,6 @@ jobs:
       run: bash ./scripts/check-frontend-changes.sh
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
-        GITHUB_OUTPUT: ${{ github.outputs.GITHUB_OUTPUT }} # Allows script to set output for other steps
 
     # Validates that essential environment variables are set if frontend changes are detected and a build/deployment is needed.
     - name: Validate essential environment variables
@@ -127,6 +146,12 @@ jobs:
     runs-on: self-hosted
     needs: frontend-deployment # Ensures frontend deployment is attempted first.
     steps:
+    # Verify that infrastructure is properly set up before proceeding
+    - name: Verify infrastructure setup
+      run: bash ./scripts/verify-infrastructure-setup.sh
+      env:
+        ENVIRONMENT: ${{ env.ENVIRONMENT }}
+
     # Determines the branch to checkout for the backend deployment.
     # For manual 'workflow_dispatch', it uses the workflow's own ref (branch or tag).
     # For other events, it defaults to 'main'.
@@ -152,7 +177,6 @@ jobs:
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
         GITHUB_EVENT_NAME: ${{ github.event_name }}
-        GITHUB_OUTPUT: ${{ github.outputs.GITHUB_OUTPUT }} # Allows script to set output
 
     # If backend changes are detected, this step cleans the target deployment directory
     # and copies the new backend files into it. A backup of the existing deployment is made first.
@@ -227,8 +251,9 @@ jobs:
         file: /opt/thebarcodeapi/barcodeApi/Dockerfile # Specifies the Dockerfile to be used.
         push: false # The image is not pushed to a container registry.
         load: true  # The built image is loaded into the local Docker daemon on the runner.
-        tags: barcodeapi:latest # ${{ steps.meta.outputs.tags }} # Example: barcodeapi:latest or dynamic tags from a meta step.
-        labels: ${{ steps.meta.outputs.labels }} # Example: org.opencontainers.image.source=${{ github.repositoryUrl }}
+        tags: barcodeapi:latest
+        labels: |
+          org.opencontainers.image.source=${{ github.repositoryUrl }}
         cache-from: | # Defines sources for build cache.
           type=local,src=/opt/thebarcodeapi/barcodeApi/.buildx-cache
           type=gha,scope=${{ github.workflow }}-${{ github.ref_name }} # GitHub Actions cache scoped to workflow and branch.

@@ -175,36 +175,15 @@ EOF
         fi
         exec_sudo docker ps # Verify docker is up
 
-        # Prepare environment for application deployment scripts
-        echo "Preparing environment for initial application deployment scripts..."
-        exec_sudo cp "${GLOBAL_ENV_VARS_FILE}" /tmp/env_vars
-        if command -v docker-compose >/dev/null 2>&1; then
-            exec_sudo bash -c 'echo "DOCKER_COMPOSE=docker-compose" > /tmp/docker_vars'
-        elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-            exec_sudo bash -c 'echo "DOCKER_COMPOSE=docker compose" > /tmp/docker_vars'
-        else
-            echo "Error: Neither docker-compose nor docker compose command found during initial setup!"
-            exit 1
-        fi
-        exec_sudo chmod 644 /tmp/env_vars /tmp/docker_vars
-
-        # echo "Executing initial frontend deployment..."
-        # STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES="true" exec_sudo bash "${SCRIPTS_INFRA_DIR}/../deploy-frontend.sh"
-
-        echo "Executing initial backend deployment..."
-        # The backend deployment script also needs API_VERSION, ensure it's in GLOBAL_ENV_VARS_FILE and thus /tmp/env_vars
-        # It also might need DOMAIN_NAME if that's used by backend for external URL construction.
-        exec_sudo bash "${SCRIPTS_INFRA_DIR}/../deploy-backend-docker.sh"
-
-        # Run migrations after initial backend deployment (if not handled by deploy-backend-docker.sh itself for the first run)
-        # The application-cd.yml runs migrations after deploy-backend-docker.sh. We should mirror that.
-        echo "Running initial database migrations..."
-        exec_sudo bash "${SCRIPTS_INFRA_DIR}/../run-migrations.sh"
+        # Note: Application deployment is handled by application-cd.yml workflow
+        # Infrastructure setup creates the environment, but does not deploy the application
+        echo "Infrastructure setup complete. Application deployment should be handled by application-cd.yml workflow."
 
         echo "Verifying setup using verify-setup.sh..."
         exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/verify-setup.sh"
 
-        echo "Infrastructure and initial application deployment initialized successfully for ${ENVIRONMENT}."
+        echo "Infrastructure setup completed successfully for ${ENVIRONMENT}."
+        echo "Application deployment should be handled by the application-cd.yml workflow."
         echo "Creating marker file: ${MARKER_FILE}"
         exec_sudo touch "${MARKER_FILE}"
         exec_sudo chown "${USER}:${USER}" "${MARKER_FILE}"
