@@ -220,6 +220,20 @@ jobs:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
         DOMAIN_NAME: ${{ env.DOMAIN_NAME }}
 
+    # Fix Docker permissions before Docker operations
+    - name: Fix Docker Permissions
+      run: |
+        # Add user to docker group if not already added
+        if ! groups | grep -q docker; then
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
+        fi
+        
+        # Fix Docker socket permissions
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 666 /var/run/docker.sock
+        
+        # Verify Docker access
+        docker version
+
     - name: Set up Docker Buildx
       if: steps.check_backend_changes.outputs.changes == 'true'
       uses: docker/setup-buildx-action@v3
@@ -296,13 +310,6 @@ jobs:
 
     - name: Setup Docker and Environment
       run: |
-        # Add runner to docker group if not already added
-        if ! groups | grep -q docker; then
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S usermod -aG docker $USER
-          # Reload groups without logging out
-          exec sg docker newgrp docker
-        fi
-
         # Create /tmp/env_vars file with environment variables needed by the backend deployment script.
         # This file is sourced by scripts/deploy-backend-docker.sh.
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << EOF
