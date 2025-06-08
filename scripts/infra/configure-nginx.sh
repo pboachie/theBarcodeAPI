@@ -70,6 +70,25 @@ NGINX_CONF_CONTENT="server {
         proxy_cache_bypass \$http_upgrade; # Do not cache WebSocket upgrades
     }
 
+    # Specific location for MCP SSE to handle trailing slash and optimize for SSE
+    location = /api/v1/mcp/sse/ {
+        proxy_pass http://localhost:8000/api/v1/mcp/sse; # Note: No trailing slash here
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade; # For potential WebSocket upgrades if ever mixed
+        proxy_set_header Connection 'upgrade';   # For potential WebSocket upgrades
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+
+        # SSE specific settings
+        proxy_buffering off; # Send data to client as soon as it's received from backend
+        proxy_cache off;     # Do not cache SSE responses
+        # Consider keepalive_timeout if long-lived connections are prematurely closed by Nginx
+        # keepalive_timeout 300s; # Example: 5 minutes
+    }
+
     # Location block for the Backend API
     # Requests to /api/ will be proxied to the backend service
     location /api {
