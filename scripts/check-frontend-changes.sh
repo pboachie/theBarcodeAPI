@@ -64,6 +64,56 @@ if [ ! -z "$CHANGES" ]; then
   echo "$CHANGES"
   echo "changes=true" >> $GITHUB_OUTPUT
 else
-  echo "No frontend changes detected."
+  # Define PM2_APP_NAME and PM2_HOME_DIR
+  PM2_APP_NAME="thebarcodeapi-frontend-${ENVIRONMENT}" # Ensure ENVIRONMENT is available
+  if [ -z "$ENVIRONMENT" ]; then
+    echo "Error: ENVIRONMENT variable is not set. Cannot proceed with PM2 check."
+    # Optionally, set changes=true to force a full deployment pass which might re-init PM2
+    # echo "changes=true" >> $GITHUB_OUTPUT
+    # exit 1 # Or handle error as appropriate
+  else
+    echo "No frontend changes detected. Checking PM2 status for ${PM2_APP_NAME}..."
+
+    if [ "$USER" = "root" ]; then
+        PM2_HOME_DIR="/root/.pm2"
+    else
+        PM2_HOME_DIR="${HOME:-/home/$USER}/.pm2"
+    fi
+
+    # Check if PM2 process is running
+    if PM2_HOME="${PM2_HOME_DIR}" pm2 describe "${PM2_APP_NAME}" > /dev/null 2>&1; then
+      echo "PM2 process ${PM2_APP_NAME} is running."
+    else
+      echo "PM2 process ${PM2_APP_NAME} is not running or in a failed state. Attempting to restart/recreate..."
+      # Attempt to restart
+      if PM2_HOME="${PM2_HOME_DIR}" pm2 restart "${PM2_APP_NAME}"; then
+        echo "Successfully restarted PM2 process ${PM2_APP_NAME}."
+      else
+        echo "Failed to restart PM2 process ${PM2_APP_NAME}. Attempting to start it using ecosystem file..."
+        APP_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
+        ECOSYSTEM_FILE="/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js"
+
+        if [ -f "${ECOSYSTEM_FILE}" ]; then
+          # No need to cd, pm2 start command can take a full path to ecosystem file
+          # and the ecosystem file itself contains the cwd for the app.
+          if PM2_HOME="${PM2_HOME_DIR}" pm2 startOrRestart "${ECOSYSTEM_FILE}"; then
+            echo "Successfully started/restarted PM2 process using ${ECOSYSTEM_FILE}."
+          else
+            echo "Error: Failed to start/restart PM2 process using ${ECOSYSTEM_FILE}."
+            # Optionally, set changes=true to trigger a full deployment which includes PM2 setup
+            # echo "changes=true" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "Error: Ecosystem file ${ECOSYSTEM_FILE} not found. Cannot start PM2 process."
+          # Optionally, set changes=true
+          # echo "changes=true" >> $GITHUB_OUTPUT
+        fi
+      fi
+      # Save the PM2 process list and corresponding environments
+      echo "Saving PM2 state..."
+      PM2_HOME="${PM2_HOME_DIR}" pm2 save --force
+    fi
+  fi
+  # Original line for no changes
   echo "changes=false" >> $GITHUB_OUTPUT
 fi
