@@ -77,12 +77,22 @@ Once the application is running, you can access the API documentation at:
 
 ## WebSocket/MCP Support
 
-The API now includes WebSocket support with Model Context Protocol (MCP) for real-time barcode generation:
+The API now includes **authenticated** WebSocket support with Model Context Protocol (MCP) for real-time barcode generation:
 
-### Quick Test
+### 🔐 Authentication Required
+
+**Step 1: Get Client ID**
 ```bash
-# Test the WebSocket MCP endpoint
-ws://localhost:8000/api/v1/mcp/ws/test-client
+# Request authentication (rate limited: 1 per 30 minutes)
+curl -X POST "http://localhost:8000/api/v1/mcp/auth" \
+     -H "Content-Type: application/json" \
+     -d "{}"
+```
+
+**Step 2: Connect with WebSocket URL**
+```bash
+# Use the websocket_url from the auth response
+ws://localhost:8000/api/v1/mcp/ws/YOUR-CLIENT-ID
 ```
 
 ### Documentation
@@ -93,6 +103,11 @@ ws://localhost:8000/api/v1/mcp/ws/test-client
 ```bash
 python3 tests/test_websocket_mcp.py
 ```
+
+**Important Notes:**
+- Client IDs expire in 30 minutes
+- Authentication is rate limited (1 request per 30 minutes per IP)
+- Invalid client IDs will be rejected with WebSocket close code 4003
 
 ## Environment Variables
 

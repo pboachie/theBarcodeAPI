@@ -1,32 +1,56 @@
 # Remote Connections Guide 🚀
 
-Welcome to the comprehensive guide for connecting to theBarcodeAPI's WebSocket MCP endpoint! This guide will help you test the MCP functionality before integrating it with AI agents or other applications.
+Welcome to the comprehensive guide for connecting to theBarcodeAPI's **authenticated** WebSocket MCP endpoint! This guide will help you test the MCP functionality before integrating it with AI agents or other applications.
 
-## 🎯 Quick Start: Test the MCP Endpoint
+## 🔐 Authentication Required
 
-### The Magic URL
-```
-ws://your-domain:8000/api/v1/mcp/ws/test-client
+**IMPORTANT**: As of the latest update, all WebSocket connections require authentication. You must first obtain a client ID before connecting.
+
+## 🎯 Quick Start: 3-Step Process
+
+### Step 1: Get a Client ID
+**Rate Limited**: 1 request per 30 minutes per IP address.
+
+```bash
+# Request authentication (replace with your server URL)
+curl -X POST "http://localhost:8000/api/v1/mcp/auth" \
+     -H "Content-Type: application/json" \
+     -d "{}"
 ```
 
-For local testing:
+**Response Example:**
+```json
+{
+  "client_id": "550e8400-e29b-41d4-a716-446655440000",
+  "expires_in": 1800,
+  "websocket_url": "ws://localhost:8000/api/v1/mcp/ws/550e8400-e29b-41d4-a716-446655440000"
+}
 ```
-ws://localhost:8000/api/v1/mcp/ws/test-client
+
+### Step 2: Use the WebSocket URL
 ```
+ws://localhost:8000/api/v1/mcp/ws/550e8400-e29b-41d4-a716-446655440000
+```
+
+### Step 3: Connect and Test
+Now you can connect using any of the methods below!
 
 ## 🛠️ Testing Methods
 
 ### Method 1: Browser Developer Console (Easiest!)
 
+**Prerequisites**: First get a client ID using the curl command above, then use the returned `websocket_url`.
+
 1. **Open your browser** and navigate to any page
 2. **Open Developer Tools** (F12)
 3. **Go to Console tab**
-4. **Copy and paste this code:**
+4. **Copy and paste this code** (replace the URL with your actual websocket_url):
 
 ```javascript
-// 🔌 Connect to the WebSocket MCP endpoint
+// 🔌 Connect to the WebSocket MCP endpoint with authentication
 console.log('🚀 Connecting to Barcode API WebSocket...');
-const ws = new WebSocket('ws://localhost:8000/api/v1/mcp/ws/test-client');
+// REPLACE THIS URL with your actual websocket_url from the auth response
+const ws = new WebSocket('ws://localhost:8000/api/v1/mcp/ws/550e8400-e29b-41d4-a716-446655440000');
 
 // 📡 Set up event handlers
 ws.onopen = function() {
@@ -115,7 +139,7 @@ Create a file called `test_mcp_connection.py`:
 ```python
 #!/usr/bin/env python3
 """
-🔍 MCP WebSocket Connection Tester
+🔍 MCP WebSocket Connection Tester with Authentication
 Perfect for testing before AI agent integration!
 """
 
@@ -123,17 +147,46 @@ import asyncio
 import websockets
 import json
 import time
+import requests
 
-async def test_mcp_connection():
-    """Test the MCP WebSocket endpoint with various scenarios."""
-    
-    uri = "ws://localhost:8000/api/v1/mcp/ws/test-client"
-    
-    print("🚀 Starting MCP WebSocket Connection Test...")
-    print(f"📡 Connecting to: {uri}")
+async def get_client_id():
+    """Get authenticated client ID from the API."""
+    print("🔐 Requesting client ID authentication...")
     
     try:
-        async with websockets.connect(uri) as websocket:
+        response = requests.post(
+            "http://localhost:8000/api/v1/mcp/auth",
+            headers={"Content-Type": "application/json"},
+            json={}
+        )
+        
+        if response.status_code == 200:
+            auth_data = response.json()
+            print(f"✅ Authentication successful!")
+            print(f"📋 Client ID: {auth_data['client_id']}")
+            print(f"⏰ Expires in: {auth_data['expires_in']} seconds")
+            return auth_data['websocket_url']
+        else:
+            print(f"❌ Authentication failed: {response.status_code} - {response.text}")
+            return None
+    except Exception as e:
+        print(f"❌ Error during authentication: {e}")
+        return None
+
+async def test_mcp_connection():
+    """Test the MCP WebSocket endpoint with authentication."""
+    
+    # Step 1: Get authenticated WebSocket URL
+    websocket_url = await get_client_id()
+    if not websocket_url:
+        print("🚫 Cannot proceed without authentication")
+        return
+    
+    print(f"🚀 Starting MCP WebSocket Connection Test...")
+    print(f"📡 Connecting to: {websocket_url}")
+    
+    try:
+        async with websockets.connect(websocket_url) as websocket:
             print("✅ Connected successfully!")
             
             # Test 1: Initialize MCP session
@@ -224,7 +277,16 @@ python3 test_mcp_connection.py
 
 ### Method 3: cURL + websocat (Command Line Heroes)
 
-Install websocat first:
+**Step 1**: Get a client ID first:
+```bash
+# Get authenticated client ID
+CLIENT_AUTH=$(curl -X POST "http://localhost:8000/api/v1/mcp/auth" -H "Content-Type: application/json" -d "{}")
+echo "Auth Response: $CLIENT_AUTH"
+
+# Extract the websocket URL (you'll need to copy this manually)
+```
+
+**Step 2**: Install websocat:
 ```bash
 # On macOS
 brew install websocat
@@ -235,10 +297,10 @@ sudo apt install websocat
 # Or download from: https://github.com/vi/websocat
 ```
 
-Then test:
+**Step 3**: Connect with the authenticated URL:
 ```bash
-# Connect and send initialize message
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1.0.0","clientInfo":{"name":"curl-test","version":"1.0.0"}}}' | websocat ws://localhost:8000/api/v1/mcp/ws/test-client
+# Replace with your actual websocket URL from Step 1
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1.0.0","clientInfo":{"name":"curl-test","version":"1.0.0"}}}' | websocat ws://localhost:8000/api/v1/mcp/ws/YOUR-CLIENT-ID-HERE
 ```
 
 ## 🎨 Creative Testing Scenarios
@@ -307,7 +369,14 @@ docker-compose up --build
 
 Before giving the endpoint to your AI agent, verify:
 
-- [ ] ✅ Can connect to `ws://localhost:8000/api/v1/mcp/ws/test-client`
+**Authentication & Connection:**
+- [ ] ✅ Can get client ID from `/api/v1/mcp/auth` endpoint
+- [ ] ✅ Client ID is valid (UUID format)
+- [ ] ✅ WebSocket URL is correctly formatted
+- [ ] ✅ Can connect to authenticated WebSocket URL
+- [ ] ✅ Connection rejects invalid/expired client IDs
+
+**MCP Protocol:**
 - [ ] ✅ Initialize method works and returns server info
 - [ ] ✅ Tools/list shows available barcode generation tools
 - [ ] ✅ Can generate Code128 barcodes
@@ -316,20 +385,27 @@ Before giving the endpoint to your AI agent, verify:
 - [ ] ✅ Error handling works for invalid requests
 - [ ] ✅ Connection stays stable during multiple requests
 
+**Rate Limiting & Security:**
+- [ ] ✅ Auth endpoint respects 30-minute rate limit
+- [ ] ✅ Client IDs expire after 30 minutes
+- [ ] ✅ Cannot reuse expired client IDs
+
 ## 🌟 Pro Tips
 
-1. **Use unique client IDs** for different test sessions: `test-client-1`, `test-client-2`, etc.
-2. **Test error scenarios** by sending invalid JSON or missing parameters
-3. **Monitor connection count** via `/api/v1/mcp/status` endpoint
-4. **Test with different data sizes** - try short and long barcode data
-5. **Simulate real AI assistant behavior** with proper initialization and tool discovery
+1. **Get fresh client IDs** - Remember they expire in 30 minutes!
+2. **Handle rate limits** - You can only get 1 client ID per 30 minutes per IP
+3. **Test error scenarios** by sending invalid JSON or missing parameters
+4. **Monitor connection count** via `/api/v1/mcp/status` endpoint
+5. **Test with different data sizes** - try short and long barcode data
+6. **Simulate real AI assistant behavior** with proper initialization and tool discovery
+7. **Plan ahead** - Get your client ID before starting your AI agent session
 
 ## 🔗 Ready for AI Agents!
 
-Once you've successfully tested with `test-client`, your AI agents can connect using:
-- **Claude MCP**: Use the WebSocket URL in your MCP configuration
-- **GPT Actions**: Configure as a WebSocket action endpoint  
-- **Custom Agents**: Use any WebSocket client library
+Once you've successfully tested with authenticated connections, your AI agents can connect using:
+- **Claude MCP**: Use the authenticated WebSocket URL in your MCP configuration
+- **GPT Actions**: Configure as a WebSocket action endpoint with pre-auth step
+- **Custom Agents**: Use any WebSocket client library with the 2-step auth process
 
 ---
 

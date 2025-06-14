@@ -101,30 +101,46 @@ Once the application is running, you can access the API documentation at:
 
 ## WebSocket/MCP Testing
 
-theBarcodeAPI now includes WebSocket support with Model Context Protocol (MCP) for real-time barcode generation, perfect for AI assistants and other real-time applications.
+theBarcodeAPI now includes **authenticated** WebSocket support with Model Context Protocol (MCP) for real-time barcode generation, perfect for AI assistants and other real-time applications.
 
-### Quick Test Connection
+### 🔐 Authentication Required
 
-Test the WebSocket MCP endpoint before integrating with AI agents:
+**Important**: All WebSocket connections now require a valid client ID. You must obtain a client ID from the auth endpoint before connecting.
+
+### Step 1: Get a Client ID
+
+**Rate Limited**: 1 request per 30 minutes per IP address.
 
 ```bash
-# Using the test client endpoint
-ws://localhost:8000/api/v1/mcp/ws/test-client
+# Request a client ID (replace localhost:8000 with your server)
+curl -X POST "http://localhost:8000/api/v1/mcp/auth" \
+     -H "Content-Type: application/json" \
+     -d "{}"
 ```
 
-### Test with Browser Console
+Response:
+```json
+{
+  "client_id": "550e8400-e29b-41d4-a716-446655440000",
+  "expires_in": 1800,
+  "websocket_url": "ws://localhost:8000/api/v1/mcp/ws/550e8400-e29b-41d4-a716-446655440000"
+}
+```
 
-Open your browser's developer console and try:
+### Step 2: Connect to WebSocket
+
+Use the `websocket_url` from the auth response:
 
 ```javascript
-// Connect to the WebSocket MCP endpoint
-const ws = new WebSocket('ws://localhost:8000/api/v1/mcp/ws/test-client');
+// Connect using the authenticated WebSocket URL
+const ws = new WebSocket('ws://localhost:8000/api/v1/mcp/ws/550e8400-e29b-41d4-a716-446655440000');
 
 // Initialize MCP session
 ws.onopen = function() {
+    console.log('Connected to MCP WebSocket');
     ws.send(JSON.stringify({
         "jsonrpc": "2.0",
-        "id": 1,
+        "id": 1,  
         "method": "initialize",
         "params": {
             "protocolVersion": "1.0.0",
@@ -140,9 +156,13 @@ ws.onopen = function() {
 ws.onmessage = function(event) {
     console.log('Response:', JSON.parse(event.data));
 };
+
+ws.onerror = function(error) {
+    console.error('WebSocket error:', error);
+};
 ```
 
-### Generate Barcodes via WebSocket
+### Step 3: Generate Barcodes
 
 Once connected and initialized, generate barcodes in real-time:
 
@@ -163,6 +183,19 @@ ws.send(JSON.stringify({
     }
 }));
 ```
+
+### ⚠️ Important Notes
+
+- **Client IDs expire in 30 minutes** - you'll need to get a new one if it expires
+- **Rate limiting**: Only 1 client ID per 30 minutes per IP address
+- **Invalid client IDs**: WebSocket will close with code 4003 if client ID is invalid/expired
+- **Authentication first**: Always get a client ID before attempting WebSocket connection
+
+### Testing with Different Tools
+
+**Browser Console**: Copy the JavaScript code above  
+**Python**: Use `websockets` library with the authenticated URL  
+**Command Line**: Use `websocat` or similar tools with the full WebSocket URL
 
 For detailed WebSocket/MCP documentation and remote connection guides, see:
 - [WebSocket MCP Documentation](barcodeAPI/WEBSOCKET_MCP.md)
