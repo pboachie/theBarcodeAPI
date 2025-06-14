@@ -13,6 +13,9 @@ theBarcodeAPI is a powerful and flexible showcase website designed to demonstrat
 - Customize barcode appearance and size
 - High-performance and scalable architecture
 - Easy-to-use RESTful API
+- **WebSocket/MCP Support**: Real-time barcode generation via Model Context Protocol
+- **AI Assistant Ready**: AGSC (AI/Assistant Generation Service Compatible) server
+- **Docker Optimized**: Enhanced health checks and container compatibility
 
 ## Project Structure
 
@@ -95,6 +98,75 @@ Once the application is running, you can access the API documentation at:
 
 - **Swagger UI:** `http://localhost:8000/docs`
 - **ReDoc:** `http://localhost:8000/redoc`
+
+## WebSocket/MCP Testing
+
+theBarcodeAPI now includes WebSocket support with Model Context Protocol (MCP) for real-time barcode generation, perfect for AI assistants and other real-time applications.
+
+### Quick Test Connection
+
+Test the WebSocket MCP endpoint before integrating with AI agents:
+
+```bash
+# Using the test client endpoint
+ws://localhost:8000/api/v1/mcp/ws/test-client
+```
+
+### Test with Browser Console
+
+Open your browser's developer console and try:
+
+```javascript
+// Connect to the WebSocket MCP endpoint
+const ws = new WebSocket('ws://localhost:8000/api/v1/mcp/ws/test-client');
+
+// Initialize MCP session
+ws.onopen = function() {
+    ws.send(JSON.stringify({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "1.0.0",
+            "clientInfo": {
+                "name": "browser-test",
+                "version": "1.0.0"
+            }
+        }
+    }));
+};
+
+// Listen for responses
+ws.onmessage = function(event) {
+    console.log('Response:', JSON.parse(event.data));
+};
+```
+
+### Generate Barcodes via WebSocket
+
+Once connected and initialized, generate barcodes in real-time:
+
+```javascript
+// Generate a Code128 barcode
+ws.send(JSON.stringify({
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+        "name": "barcode_generator",
+        "arguments": {
+            "data": "HELLO-WORLD-2024",
+            "format": "code128",
+            "width": 300,
+            "height": 150
+        }
+    }
+}));
+```
+
+For detailed WebSocket/MCP documentation and remote connection guides, see:
+- [WebSocket MCP Documentation](barcodeAPI/WEBSOCKET_MCP.md)
+- [Remote Connections Guide](REMOTE_CONNECTIONS.md)
 
 ## Environment Variables
 

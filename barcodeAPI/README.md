@@ -75,6 +75,25 @@ Once the application is running, you can access the API documentation at:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
+## WebSocket/MCP Support
+
+The API now includes WebSocket support with Model Context Protocol (MCP) for real-time barcode generation:
+
+### Quick Test
+```bash
+# Test the WebSocket MCP endpoint
+ws://localhost:8000/api/v1/mcp/ws/test-client
+```
+
+### Documentation
+- [WebSocket MCP Technical Guide](WEBSOCKET_MCP.md)
+- [Remote Connections & Testing Guide](../REMOTE_CONNECTIONS.md)
+
+### Test Script
+```bash
+python3 tests/test_websocket_mcp.py
+```
+
 ## Environment Variables
 
 Key environment variables:
