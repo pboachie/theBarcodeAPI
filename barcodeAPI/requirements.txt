@@ -29,3 +29,6 @@ python-multipart==0.0.17
 pytz==2024.2
 aiohttp==3.10.10
 fastnanoid==0.4.1
+
+# WebSocket Support for MCP/AGSC
+websockets==12.0
