@@ -20,7 +20,7 @@ services:
       - DB_PASSWORD=password
       - SERVER_URL=http://localhost:8000
     volumes:
-      - ./logs:/app/logs
+      - ./logs:/app/logs:rw
     depends_on:
       - db
       - redis

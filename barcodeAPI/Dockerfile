@@ -27,9 +27,15 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/*
 
-# Create appuser user and group
-RUN groupadd -g 1000 appuser && \
-    useradd -u 1000 -g appuser -m appuser
+# Copy and set up entrypoint
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create logs directory with proper permissions
+RUN mkdir -p /app/logs && chmod 777 /app/logs
+
+# Don't create a user, run as root but with proper file permissions
+# This is less secure but will work for development
 
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
@@ -42,11 +48,7 @@ COPY . .
 # Set correct permissions
 RUN chmod +x /app/start.sh && \
     chmod +x /app/init-db.sh && \
-    chown -R appuser:appuser /app && \
     chmod -R 755 /app
-
-# Switch to appuser user
-USER appuser
 
 # Set up volumes for persistent data
 VOLUME ["/app/data", "/app/logs"]
@@ -58,5 +60,7 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/health && python3 check_websocket_health.py || exit 1
 
-# Default command
-CMD ["./start.sh"]
+# Set entrypoint and command
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
