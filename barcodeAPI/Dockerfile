@@ -34,9 +34,14 @@ RUN chmod +x /entrypoint.sh
 # Create logs directory with proper permissions
 RUN mkdir -p /app/logs && chmod 777 /app/logs
 
-# Don't create a user, run as root but with proper file permissions
-# This is less secure but will work for development
+# Create a non-root user for production
+RUN if [ "$PYTHON_ENV" = "production" ]; then \
+        groupadd -r appuser && useradd -r -g appuser appuser && \
+        chown -R appuser:appuser /app; \
+    fi
 
+# Switch to non-root user in production
+USER ${PYTHON_ENV=production && echo "appuser" || echo "root"}
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
