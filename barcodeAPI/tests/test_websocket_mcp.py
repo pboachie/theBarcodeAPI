@@ -62,7 +62,8 @@ async def test_websocket_mcp():
             
             await websocket.send(json.dumps(barcode_message))
             response = await websocket.recv()
-            print(f"Barcode generation response: {json.loads(response)['result']['content'][0]['type'] if 'result' in json.loads(response) else 'Error'}")
+            parsed_response = json.loads(response)
+            print(f"Barcode generation response: {parsed_response['result']['content'][0]['type'] if 'result' in parsed_response else 'Error'}")
             
             print("WebSocket MCP test completed successfully!")
             
