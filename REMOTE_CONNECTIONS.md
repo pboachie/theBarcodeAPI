@@ -347,6 +347,171 @@ formats.forEach(format => {
 });
 ```
 
+### Method 4: HTTP MCP Endpoints (RESTful Testing)
+
+**New Feature**: FastMCP-compliant HTTP endpoints for clients that prefer REST over WebSocket!
+
+These endpoints don't require client authentication and can be tested immediately:
+
+#### Initialize Session
+```bash
+curl -X POST "http://localhost:8000/api/v1/mcp/initialize" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "jsonrpc": "2.0",
+       "id": 1,
+       "method": "initialize",
+       "params": {
+         "protocolVersion": "1.0.0",
+         "clientInfo": {
+           "name": "test-client",
+           "version": "1.0.0"
+         }
+       }
+     }'
+```
+
+#### List Available Tools
+```bash
+curl -X POST "http://localhost:8000/api/v1/mcp/tools/list" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "jsonrpc": "2.0",
+       "id": 2,
+       "method": "tools/list",
+       "params": {}
+     }'
+```
+
+#### Generate a Barcode
+```bash
+curl -X POST "http://localhost:8000/api/v1/mcp/tools/call" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "jsonrpc": "2.0",
+       "id": 3,
+       "method": "tools/call",
+       "params": {
+         "name": "barcode_generator",
+         "arguments": {
+           "data": "Hello World",
+           "format": "code128",
+           "width": 300,
+           "height": 100
+         }
+       }
+     }'
+```
+
+#### List Available Resources
+```bash
+curl -X POST "http://localhost:8000/api/v1/mcp/resources/list" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "jsonrpc": "2.0",
+       "id": 4,
+       "method": "resources/list",
+       "params": {}
+     }'
+```
+
+#### Read Resource Data
+```bash
+curl -X POST "http://localhost:8000/api/v1/mcp/resources/read" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "jsonrpc": "2.0",
+       "id": 5,
+       "method": "resources/read",
+       "params": {
+         "uri": "health://status"
+       }
+     }'
+```
+
+### Method 5: Server-Sent Events (SSE) Legacy Support
+
+**New Feature**: SSE endpoint for clients that need real-time updates but can't use WebSocket!
+
+**Note**: SSE endpoint requires client authentication (same as WebSocket).
+
+#### Step 1: Get Client ID (same as WebSocket)
+```bash
+curl -X POST "http://localhost:8000/api/v1/mcp/auth" \
+     -H "Content-Type: application/json" \
+     -d "{}"
+```
+
+#### Step 2: Connect to SSE Endpoint
+```bash
+# Replace client_id with your actual client ID
+curl -N -H "Accept: text/event-stream" \
+     "http://localhost:8000/api/v1/mcp/sse/YOUR_CLIENT_ID_HERE"
+```
+
+#### Example SSE Output:
+```
+data: {"type": "connected", "client_id": "550e8400-e29b-41d4-a716-446655440000", "timestamp": 1703174400}
+
+data: {"type": "heartbeat", "timestamp": 1703174430, "active_connections": 1}
+
+data: {"type": "heartbeat", "timestamp": 1703174460, "active_connections": 1}
+```
+
+### Method 6: JavaScript Event Source (Browser SSE)
+
+```javascript
+// First get a client ID (use Method 1 auth approach)
+const clientId = "YOUR_CLIENT_ID_HERE"; // Replace with actual client ID
+
+// Connect to SSE endpoint
+const eventSource = new EventSource(`http://localhost:8000/api/v1/mcp/sse/${clientId}`);
+
+eventSource.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    console.log('📡 SSE Event:', data);
+    
+    switch(data.type) {
+        case 'connected':
+            console.log('✅ Connected to SSE endpoint');
+            break;
+        case 'heartbeat':
+            console.log(`💓 Heartbeat - Active connections: ${data.active_connections}`);
+            break;
+        case 'error':
+            console.log('❌ Error:', data.message);
+            break;
+    }
+};
+
+eventSource.onerror = function(event) {
+    console.log('❌ SSE Error:', event);
+};
+
+// Clean up
+// eventSource.close();
+```
+
+## 📊 Connection Method Comparison
+
+| Method | Auth Required | Real-time | Complexity | Best For |
+|--------|---------------|-----------|------------|----------|
+| **WebSocket** | ✅ Yes | ✅ Yes | Medium | AI agents, real-time apps |
+| **HTTP MCP** | ❌ No | ❌ No | Low | Simple testing, REST clients |
+| **SSE** | ✅ Yes | ✅ Partial | Medium | Legacy browsers, monitoring |
+
+## 🔄 Connection Preferences
+
+**For Testing (Recommended Order):**
+1. **HTTP MCP** - Quick testing without auth
+2. **WebSocket** - Full-featured, authenticated testing
+3. **SSE** - Legacy/monitoring testing
+
+**For Production:**
+- **AI Assistants**: WebSocket (authenticated, real-time)
+- **Web Apps**: WebSocket or SSE (depending on interactivity needs)
+- **Backend Services**: HTTP MCP (simple request-response)
+
 ## 🚨 Common Issues & Solutions
 
 ### Issue: "Connection Refused"
@@ -375,8 +540,17 @@ Before giving the endpoint to your AI agent, verify:
 - [ ] ✅ WebSocket URL is correctly formatted
 - [ ] ✅ Can connect to authenticated WebSocket URL
 - [ ] ✅ Connection rejects invalid/expired client IDs
+- [ ] ✅ SSE endpoint works with valid client ID
+- [ ] ✅ SSE endpoint rejects invalid client IDs
 
-**MCP Protocol:**
+**HTTP MCP Protocol (No Auth Required):**
+- [ ] ✅ `/api/v1/mcp/initialize` returns server info
+- [ ] ✅ `/api/v1/mcp/tools/list` shows barcode generator tool
+- [ ] ✅ `/api/v1/mcp/tools/call` generates barcodes successfully
+- [ ] ✅ `/api/v1/mcp/resources/list` shows available resources
+- [ ] ✅ `/api/v1/mcp/resources/read` returns health status
+
+**WebSocket MCP Protocol (Auth Required):**
 - [ ] ✅ Initialize method works and returns server info
 - [ ] ✅ Tools/list shows available barcode generation tools
 - [ ] ✅ Can generate Code128 barcodes
@@ -385,10 +559,18 @@ Before giving the endpoint to your AI agent, verify:
 - [ ] ✅ Error handling works for invalid requests
 - [ ] ✅ Connection stays stable during multiple requests
 
+**SSE Protocol (Auth Required):**
+- [ ] ✅ SSE connection establishes successfully
+- [ ] ✅ Receives connection confirmation event
+- [ ] ✅ Receives periodic heartbeat events
+- [ ] ✅ Connection metrics are updated correctly
+
 **Rate Limiting & Security:**
 - [ ] ✅ Auth endpoint respects 30-minute rate limit
 - [ ] ✅ Client IDs expire after 30 minutes
 - [ ] ✅ Cannot reuse expired client IDs
+- [ ] ✅ HTTP MCP endpoints work without authentication
+- [ ] ✅ WebSocket/SSE endpoints require valid client IDs
 
 ## 🌟 Pro Tips
 

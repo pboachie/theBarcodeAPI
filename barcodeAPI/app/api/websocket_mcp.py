@@ -4,6 +4,7 @@ import json
 import logging
 import uuid
 import time
+import asyncio
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request, status
 from fastapi.websockets import WebSocketState
@@ -427,3 +428,311 @@ async def get_websocket_status():
             "protocol": "MCP 1.0.0"
         }
     }
+
+# HTTP MCP Endpoints for FastMCP Compliance
+@router.post("/initialize")
+async def http_initialize(request: dict):
+    """
+    HTTP MCP Initialize endpoint.
+    
+    Initializes MCP session over HTTP instead of WebSocket.
+    Compatible with FastMCP protocol.
+    """
+    try:
+        # Validate JSON-RPC format
+        if not request.get("jsonrpc") == "2.0":
+            return {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "error": {
+                    "code": -32600,
+                    "message": "Invalid Request - jsonrpc must be '2.0'"
+                }
+            }
+        
+        # Process initialize request
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {
+                "protocolVersion": "1.0.0",
+                "serverInfo": {
+                    "name": "TheBarcodeAPI-MCP",
+                    "version": settings.API_VERSION
+                },
+                "capabilities": {
+                    "tools": {},
+                    "resources": {}
+                }
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"HTTP Initialize error: {e}", exc_info=True)
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "error": {
+                "code": -32603,
+                "message": f"Internal error: {str(e)}"
+            }
+        }
+
+@router.post("/tools/list")
+async def http_tools_list(request: dict):
+    """
+    HTTP MCP Tools List endpoint.
+    
+    Returns available tools via HTTP MCP protocol.
+    """
+    try:
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {
+                "tools": [
+                    {
+                        "name": "barcode_generator",
+                        "description": "Generate various types of barcodes",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "data": {"type": "string", "description": "Data to encode in barcode"},
+                                "format": {"type": "string", "description": "Barcode format"},
+                                "width": {"type": "integer", "description": "Barcode width"},
+                                "height": {"type": "integer", "description": "Barcode height"}
+                            },
+                            "required": ["data", "format"]
+                        }
+                    }
+                ]
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"HTTP Tools List error: {e}", exc_info=True)
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "error": {
+                "code": -32603,
+                "message": f"Internal error: {str(e)}"
+            }
+        }
+
+@router.post("/tools/call")
+async def http_tools_call(request: dict):
+    """
+    HTTP MCP Tools Call endpoint.
+    
+    Execute tool calls via HTTP MCP protocol.
+    """
+    try:
+        params = request.get("params", {})
+        tool_name = params.get("name")
+        tool_args = params.get("arguments", {})
+        
+        if tool_name == "barcode_generator":
+            # Create barcode request
+            barcode_request = BarcodeRequest(
+                data=tool_args.get("data", ""),
+                format=tool_args.get("format", "code128"),
+                width=tool_args.get("width", 200),
+                height=tool_args.get("height", 100)
+            )
+            
+            # Generate barcode
+            generator = BarcodeGenerator()
+            barcode_data = generator.generate_barcode(barcode_request)
+            
+            return {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "result": {
+                    "content": [
+                        {
+                            "type": "image",
+                            "data": barcode_data["image_data"],
+                            "mimeType": f"image/{barcode_data['format']}"
+                        }
+                    ]
+                }
+            }
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "error": {
+                    "code": -32601,
+                    "message": f"Unknown tool: {tool_name}"
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"HTTP Tools Call error: {e}", exc_info=True)
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "error": {
+                "code": -32603,
+                "message": f"Internal error: {str(e)}"
+            }
+        }
+
+@router.post("/resources/list")
+async def http_resources_list(request: dict):
+    """
+    HTTP MCP Resources List endpoint.
+    
+    Returns available resources via HTTP MCP protocol.
+    """
+    try:
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "result": {
+                "resources": [
+                    {
+                        "uri": "health://status",
+                        "name": "Health Status",
+                        "description": "Current server health status"
+                    },
+                    {
+                        "uri": "metrics://connections",
+                        "name": "Connection Metrics",
+                        "description": "WebSocket connection metrics"
+                    }
+                ]
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"HTTP Resources List error: {e}", exc_info=True)
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "error": {
+                "code": -32603,
+                "message": f"Internal error: {str(e)}"
+            }
+        }
+
+@router.post("/resources/read")
+async def http_resources_read(request: dict):
+    """
+    HTTP MCP Resources Read endpoint.
+    
+    Read specific resources via HTTP MCP protocol.
+    """
+    try:
+        params = request.get("params", {})
+        uri = params.get("uri")
+        
+        if uri == "health://status":
+            return {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "result": {
+                    "contents": [
+                        {
+                            "uri": uri,
+                            "mimeType": "application/json",
+                            "text": json.dumps({
+                                "status": "healthy",
+                                "timestamp": int(time.time()),
+                                "active_connections": ws_manager.connection_count
+                            })
+                        }
+                    ]
+                }
+            }
+        elif uri == "metrics://connections":
+            return {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "result": {
+                    "contents": [
+                        {
+                            "uri": uri,
+                            "mimeType": "application/json",
+                            "text": json.dumps({
+                                "active_connections": ws_manager.connection_count,
+                                "total_connections": ws_manager.connection_count,
+                                "timestamp": int(time.time())
+                            })
+                        }
+                    ]
+                }
+            }
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "error": {
+                    "code": -32601,
+                    "message": f"Unknown resource: {uri}"
+                }
+            }
+            
+    except Exception as e:
+        logger.error(f"HTTP Resources Read error: {e}", exc_info=True)
+        return {
+            "jsonrpc": "2.0",
+            "id": request.get("id"),
+            "error": {
+                "code": -32603,
+                "message": f"Internal error: {str(e)}"
+            }
+        }
+
+# Server-Sent Events (SSE) endpoint for legacy support
+@router.get("/sse/{client_id}")
+async def sse_endpoint(client_id: str, redis_manager: RedisManager = Depends(get_redis_manager)):
+    """
+    Server-Sent Events endpoint for legacy MCP support.
+    
+    Provides SSE-based communication for clients that cannot use WebSocket.
+    **Authentication Required**: client_id must be obtained from `/api/v1/mcp/auth` endpoint first.
+    """
+    # Validate client ID
+    if not await validate_client_id(redis_manager, client_id):
+        logger.warning(f"SSE connection rejected for invalid client ID: {client_id}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or expired client ID. Please obtain a new client ID from /api/v1/mcp/auth"
+        )
+    
+    async def event_generator():
+        """Generate SSE events"""
+        logger.info(f"SSE connection established for client {client_id}")
+        
+        # Send initial connection event
+        yield f"data: {json.dumps({'type': 'connected', 'client_id': client_id, 'timestamp': int(time.time())})}\n\n"
+        
+        try:
+            # Keep connection alive and send periodic heartbeat
+            while True:
+                # Send heartbeat every 30 seconds
+                yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': int(time.time()), 'active_connections': ws_manager.connection_count})}\n\n"
+                await asyncio.sleep(30)
+                
+                # Check if client ID is still valid
+                if not await validate_client_id(redis_manager, client_id):
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Client ID expired'})}\n\n"
+                    break
+                
+        except Exception as e:
+            logger.error(f"SSE error for client {client_id}: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Connection error'})}\n\n"
+    
+    from starlette.responses import StreamingResponse
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Cache-Control"
+        }
+    )

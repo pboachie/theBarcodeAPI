@@ -101,7 +101,37 @@ Once the application is running, you can access the API documentation at:
 
 ## WebSocket/MCP Testing
 
-theBarcodeAPI now includes **authenticated** WebSocket support with Model Context Protocol (MCP) for real-time barcode generation, perfect for AI assistants and other real-time applications.
+theBarcodeAPI now includes **multiple MCP endpoints** for real-time barcode generation, perfect for AI assistants and other applications:
+
+- **WebSocket MCP** (authenticated): Real-time bidirectional communication
+- **HTTP MCP** (no auth): RESTful MCP protocol for simple integrations  
+- **SSE MCP** (authenticated): Server-sent events for legacy support
+
+### 🚀 Quick Start Options
+
+**Option 1: HTTP MCP (No Authentication Required)**
+
+Perfect for testing! Try it immediately:
+
+```bash
+# Test HTTP MCP endpoint - no auth needed
+curl -X POST "http://localhost:8000/api/v1/mcp/tools/call" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "jsonrpc": "2.0",
+       "id": 1,
+       "method": "tools/call",
+       "params": {
+         "name": "barcode_generator",
+         "arguments": {
+           "data": "TEST123",
+           "format": "code128"
+         }
+       }
+     }'
+```
+
+**Option 2: WebSocket MCP (Authentication Required)**
 
 ### 🔐 Authentication Required
 
@@ -200,6 +230,21 @@ ws.send(JSON.stringify({
 For detailed WebSocket/MCP documentation and remote connection guides, see:
 - [WebSocket MCP Documentation](barcodeAPI/WEBSOCKET_MCP.md)
 - [Remote Connections Guide](REMOTE_CONNECTIONS.md)
+
+### 📍 All Available MCP Endpoints
+
+**HTTP MCP Endpoints (No Auth):**
+- `POST /api/v1/mcp/initialize` - Initialize MCP session
+- `POST /api/v1/mcp/tools/list` - List available tools
+- `POST /api/v1/mcp/tools/call` - Execute barcode generation
+- `POST /api/v1/mcp/resources/list` - List available resources
+- `POST /api/v1/mcp/resources/read` - Read resource data
+
+**Authenticated Endpoints:**
+- `POST /api/v1/mcp/auth` - Get client ID (rate limited)
+- `WS /api/v1/mcp/ws/{client_id}` - WebSocket MCP connection
+- `GET /api/v1/mcp/sse/{client_id}` - Server-sent events stream
+- `GET /api/v1/mcp/status` - Connection status and metrics
 
 ## Environment Variables
 
