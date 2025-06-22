@@ -54,17 +54,6 @@ jobs:
           exit 1
         fi
 
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-        ref: ${{ github.ref }}
-
-    # Verify that infrastructure is properly set up before proceeding
-    - name: Verify infrastructure setup
-      run: bash ./scripts/verify-infrastructure-setup.sh
-      env:
-        ENVIRONMENT: ${{ env.ENVIRONMENT }}
-
     # Determines the branch to checkout.
     # For manual 'workflow_dispatch', it uses the 'branch' input or the current ref_name if input is not provided.
     # For other events (like a push, though the trigger is currently commented out), it defaults to github.ref_name.
@@ -81,6 +70,12 @@ jobs:
       with:
         fetch-depth: 0
         ref: ${{ steps.get_branch.outputs.branch }}
+
+    # Verify that infrastructure is properly set up before proceeding
+    - name: Verify infrastructure setup
+      run: bash ./scripts/verify-infrastructure-setup.sh
+      env:
+        ENVIRONMENT: ${{ env.ENVIRONMENT }}
 
     # Executes a script to determine if there are changes in the frontend codebase compared to the last deployed commit.
     # Outputs 'changes=true' or 'changes=false' to GITHUB_OUTPUT, which is used by subsequent steps.
@@ -161,12 +156,6 @@ jobs:
     runs-on: self-hosted
     needs: frontend-deployment # Ensures frontend deployment is attempted first.
     steps:
-    # Verify that infrastructure is properly set up before proceeding
-    - name: Verify infrastructure setup
-      run: bash ./scripts/verify-infrastructure-setup.sh
-      env:
-        ENVIRONMENT: ${{ env.ENVIRONMENT }}
-
     # Determines the branch to checkout for the backend deployment.
     # For manual 'workflow_dispatch', it uses the workflow's own ref (branch or tag).
     # For other events, it defaults to 'main'.
@@ -183,6 +172,12 @@ jobs:
       with:
         fetch-depth: 0  # Fetch all history for all branches and tags, enabling diffs against any prior commit.
         ref: ${{ steps.get_branch.outputs.branch }}
+
+    # Verify that infrastructure is properly set up before proceeding
+    - name: Verify infrastructure setup
+      run: bash ./scripts/verify-infrastructure-setup.sh
+      env:
+        ENVIRONMENT: ${{ env.ENVIRONMENT }}
 
     # Executes a script to determine if there are changes in the backend codebase.
     # Outputs 'changes=true' or 'changes=false' to GITHUB_OUTPUT for use in subsequent steps.
@@ -513,7 +508,13 @@ jobs:
         docker ps -a || true
 
         echo "Recent Docker Logs:"
-        docker-compose -f /opt/thebarcodeapi/barcodeApi/docker-compose.yml logs --tail=50 || true
+        if [ -f "/opt/thebarcodeapi/barcodeApi/docker-compose.yml" ]; then
+          docker-compose -f /opt/thebarcodeapi/barcodeApi/docker-compose.yml logs --tail=50 || true
+        elif [ -f "/opt/thebarcodeapi/docker-compose.yml" ]; then
+          docker-compose -f /opt/thebarcodeapi/docker-compose.yml logs --tail=50 || true
+        else
+          echo "No docker-compose.yml file found for logs"
+        fi
 
         echo "Nginx Status:"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S systemctl status nginx || true
