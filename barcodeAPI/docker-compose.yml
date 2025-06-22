@@ -15,9 +15,13 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    environment:
+      - SERVER_TYPE=${SERVER_TYPE:-gunicorn}  # uvicorn or gunicorn
+      - WORKERS=${WORKERS:-1}
     volumes:
       - ./app:/app/app:ro
       - ./alembic:/app/alembic:ro
+      - ./logs:/app/logs:rw
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -35,6 +39,7 @@ services:
         limits:
           cpus: '4.0'
           memory: 2G
+    # user: "${UID:-1000}:${GID:-1000}"  # Temporarily commented out
 
   redis:
     image: redislabs/rejson:latest

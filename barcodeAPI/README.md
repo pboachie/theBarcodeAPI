@@ -75,6 +75,74 @@ Once the application is running, you can access the API documentation at:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
+## WebSocket/MCP Support
+
+The API now includes **multiple MCP endpoints** with FastMCP compliance for different connection types:
+
+### 🚀 Connection Options
+
+**1. HTTP MCP Endpoints (No Authentication)**
+```bash
+# Quick test - no auth required
+curl -X POST "http://localhost:8000/api/v1/mcp/tools/list" \
+     -H "Content-Type: application/json" \
+     -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}'
+```
+
+**2. WebSocket MCP (Authentication Required)**
+
+**Step 1: Get Client ID**
+```bash
+# Request authentication (rate limited: 1 per 30 minutes)
+curl -X POST "http://localhost:8000/api/v1/mcp/auth" \
+     -H "Content-Type: application/json" \
+     -d "{}"
+```
+
+**Step 2: Connect with WebSocket URL**
+```bash
+# Use the websocket_url from the auth response
+ws://localhost:8000/api/v1/mcp/ws/YOUR-CLIENT-ID
+```
+
+**3. Server-Sent Events (Authentication Required)**
+```bash
+# Connect to SSE endpoint with valid client ID
+curl -N -H "Accept: text/event-stream" \
+     "http://localhost:8000/api/v1/mcp/sse/YOUR-CLIENT-ID"
+```
+
+### 📍 Complete Endpoint List
+
+**HTTP MCP Endpoints (No Auth):**
+- `POST /api/v1/mcp/initialize`
+- `POST /api/v1/mcp/tools/list`
+- `POST /api/v1/mcp/tools/call`
+- `POST /api/v1/mcp/resources/list`
+- `POST /api/v1/mcp/resources/read`
+
+**Authenticated Endpoints:**
+- `POST /api/v1/mcp/auth` (get client ID)
+- `GET /api/v1/mcp/status` (connection stats)
+- `WS /api/v1/mcp/ws/{client_id}` (WebSocket)
+- `GET /api/v1/mcp/sse/{client_id}` (Server-Sent Events)
+
+### Documentation
+- [WebSocket MCP Technical Guide](WEBSOCKET_MCP.md)
+- [Remote Connections & Testing Guide](../REMOTE_CONNECTIONS.md)
+
+### Test Script
+```bash
+python3 tests/test_websocket_mcp.py
+```
+
+**Important Notes:**
+- HTTP MCP endpoints work immediately without authentication
+- WebSocket/SSE require client ID authentication
+- Client IDs expire in 30 minutes
+- Authentication is rate limited (1 request per 30 minutes per IP)
+- Invalid client IDs will be rejected with WebSocket close code 4003
+
 ## Environment Variables
 
 Key environment variables:

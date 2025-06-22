@@ -505,3 +505,13 @@ class SecurityScheme(BaseModel):
     scheme: str = "bearer"
     bearerFormat: str = "JWT"
 
+class MCPClientAuthResponse(BaseModel):
+    """Response model for MCP client authentication."""
+    client_id: str = Field(..., description="Generated client ID for WebSocket connection")
+    expires_in: int = Field(..., description="Expiration time in seconds (1800 = 30 minutes)")
+    websocket_url: str = Field(..., description="WebSocket endpoint URL with client ID")
+
+class MCPClientAuthRequest(BaseModel):
+    """Request model for MCP client authentication (currently no required fields)."""
+    pass
+
