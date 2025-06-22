@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 import logging
 import asyncio
 
-from app.api import barcode, usage, health, token, admin, websocket_mcp
+from app.api import barcode, usage, health, token, admin
 from app.config import settings
 from app.barcode_generator import BarcodeGenerationError
 from app.database import close_db_connection, init_db, get_db
@@ -307,7 +307,6 @@ app.include_router(barcode.router)
 app.include_router(usage.router)
 app.include_router(token.router)
 app.include_router(admin.router)
-app.include_router(websocket_mcp.router)
 
 @app.exception_handler(Exception)
 async def global_exception_handler(exc: Exception):
