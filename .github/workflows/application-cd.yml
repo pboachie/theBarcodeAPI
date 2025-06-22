@@ -54,7 +54,7 @@ jobs:
           exit 1
         fi
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         ref: ${{ github.ref }}
@@ -77,7 +77,7 @@ jobs:
           echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
         fi
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0
         ref: ${{ steps.get_branch.outputs.branch }}
@@ -166,7 +166,7 @@ jobs:
           echo "branch=${{ github.ref }}" >> $GITHUB_OUTPUT # Use the pushed ref (branch or tag)
         fi
 
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 0  # Fetch all history for all branches and tags, enabling diffs against any prior commit.
         ref: ${{ steps.get_branch.outputs.branch }}
