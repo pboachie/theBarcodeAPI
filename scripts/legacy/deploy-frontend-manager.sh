@@ -11,11 +11,11 @@ case $DEPLOYMENT_TYPE in
         echo "Stopping PM2 processes first..."
         pm2 stop thebarcodeapi-frontend-production 2>/dev/null || true
         pm2 delete thebarcodeapi-frontend-production 2>/dev/null || true
-
+        
         echo "Starting Docker Compose with frontend..."
         cd /opt/thebarcodeapi
         docker-compose up -d barcodefrontend
-
+        
         echo "Checking frontend health..."
         sleep 10
         if curl -f http://localhost:3000; then
@@ -25,17 +25,17 @@ case $DEPLOYMENT_TYPE in
             exit 1
         fi
         ;;
-
+        
     "pm2")
         echo "Deploying frontend with PM2..."
         echo "Stopping Docker frontend first..."
         cd /opt/thebarcodeapi
         docker-compose stop barcodefrontend 2>/dev/null || true
-
+        
         echo "Starting PM2 process..."
         cd /opt/thebarcodeapi/production
         pm2 start ecosystem.config.js --env production
-
+        
         echo "Checking frontend health..."
         sleep 10
         if curl -f http://localhost:3000; then
@@ -45,7 +45,7 @@ case $DEPLOYMENT_TYPE in
             exit 1
         fi
         ;;
-
+        
     *)
         echo "Usage: $0 [docker|pm2]"
         echo "  docker: Deploy using Docker Compose (recommended)"

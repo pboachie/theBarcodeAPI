@@ -1,3 +1,5 @@
+# app/main.py
+
 import asyncio
 import gc
 import signal
@@ -20,10 +22,11 @@ from app.api import barcode, usage, health, token, admin, bulk as bulk_api_route
 from app.config import settings
 from app.barcode_generator import BarcodeGenerationError
 from app.mcp_server import generate_barcode_mcp
+from app.api.websocket_mcp import websocket_mcp
 from mcp.server.fastmcp import FastMCP
 from app.database import close_db_connection, init_db, get_db
 from app.redis import redis_manager, close_redis_connection, initialize_redis_manager
-from app.schemas import SecurityScheme
+from barcodeApi.app.schemas import SecurityScheme
 
 log_directory = settings.LOG_DIRECTORY
 if not os.path.isabs(log_directory):
@@ -74,6 +77,7 @@ async def lifespan(app: FastAPI):
     current_process = os.getpid()
     logger.info(f"Lifespan starting in process {current_process}")
 
+    # Create shutdown event
     shutdown_event = asyncio.Event()
 
     def signal_handler():
@@ -81,11 +85,13 @@ async def lifespan(app: FastAPI):
         logger.info("Received shutdown signal...")
         shutdown_event.set()
 
+    # Register signal handlers
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, signal_handler)
 
     try:
+        # Startup
         logger.info(f"Initializing in process {current_process}")
         try:
 
@@ -96,6 +102,7 @@ async def lifespan(app: FastAPI):
             app.state.background_tasks = []
 
             app.state.batch_processor = redis_manager.batch_processor
+            # Verify Redis manager state
             logger.info("Verifying Redis manager state...")
             if not redis_manager.batch_processor:
                 raise RuntimeError("Batch processor not initialized")
@@ -106,6 +113,7 @@ async def lifespan(app: FastAPI):
                     raise RuntimeError(f"{priority} processor failed to start")
                 logger.debug(f"{priority} processor running")
 
+            # Initialize other services
             logger.info("Initializing database...")
             await init_db()
 
@@ -137,6 +145,7 @@ async def lifespan(app: FastAPI):
             logger.info("Initializing rate limiter...")
             await FastAPILimiter.init(redis_manager.redis)
 
+            # Initialize database data
             logger.info("Syncing username mappings...")
             async for db in get_db():
                 await redis_manager.sync_all_username_mappings(db)
@@ -151,6 +160,7 @@ async def lifespan(app: FastAPI):
             logger.info("Startup complete!")
             yield
 
+            # Wait for shutdown signal
             await shutdown_event.wait()
 
         except Exception as e:
@@ -158,8 +168,10 @@ async def lifespan(app: FastAPI):
             raise
 
         finally:
+            # Shutdown
             logger.info("Starting shutdown process...")
             try:
+                # Remove signal handlers
                 for sig in (signal.SIGTERM, signal.SIGINT):
                     loop.remove_signal_handler(sig)
 
@@ -173,16 +185,19 @@ async def lifespan(app: FastAPI):
                         except asyncio.CancelledError:
                             pass
 
+                # Stop batch processors
                 logger.info("Stopping batch processors...")
                 for priority, processor in redis_manager.batch_processor.processors.items():
                     logger.info(f"Stopping {priority} priority batch processor...")
                     await processor.stop()
 
+                # Sync data to database
                 logger.info("Syncing data to database...")
                 async for db in get_db():
                     await redis_manager.sync_redis_to_db(db)
                     break
 
+                # Stop services
                 logger.info("Stopping services...")
                 await redis_manager.stop()
                 await close_redis_connection()
@@ -192,10 +207,12 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Error during shutdown: {e}", exc_info=True)
                 raise
             finally:
+                # Final cleanup
                 gc.collect()
                 logger.info("Shutdown complete")
 
     finally:
+        # Remove signal handlers
         for sig in (signal.SIGTERM, signal.SIGINT):
             loop.remove_signal_handler(sig)
 
@@ -222,14 +239,13 @@ def custom_openapi():
     return app.openapi_schema
 
 app = FastAPI(
-    debug=settings.ENVIRONMENT == "development",
     title="the Barcode API",
     description="""
-    The Barcode API with MCP support allows you to generate various types of barcodes programmatically.
+    The Barcode API allows you to generate various types of barcodes programmatically.
     Rate limits apply based on authentication status and tier level.
     """,
     version=settings.API_VERSION,
-    docs_url="/swagger",
+    docs_url="/redoc" if settings.ENVIRONMENT == "development" else None,
     redoc_url="/",
     openapi_url="/openapi.json",
     lifespan=lifespan,
@@ -248,6 +264,7 @@ app = FastAPI(
 
 app.openapi = custom_openapi
 
+# Initialize CORS origins before adding middleware
 app.state.cors_origins = [
     "http://localhost",
     "http://localhost:3000",
@@ -256,6 +273,7 @@ app.state.cors_origins = [
     "https://api.thebarcodeapi.com"
 ]
 
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=app.state.cors_origins,
@@ -271,6 +289,14 @@ app.add_middleware(
 )
 
 app.add_middleware(CustomServerHeaderMiddleware)
+
+
+if settings.ENVIRONMENT == "development":
+    settings.ALLOWED_HOSTS.extend([
+        "localhost",
+        "127.0.0.1"
+    ])
+
 
 app.add_middleware(
     TrustedHostMiddleware,
@@ -294,15 +320,13 @@ async def log_memory_usage():
         logger.debug(f"Garbage collection: {gc.get_count()}")
         await asyncio.sleep(60)
 
-@app.get("/docs", include_in_schema=False)
-async def redirect_docs_to_root():
-    return RedirectResponse(url="/", status_code=301)
-
+# Include routers
 app.include_router(health.router)
 app.include_router(barcode.router)
 app.include_router(usage.router)
 app.include_router(token.router)
 app.include_router(admin.router)
+app.include_router(websocket_mcp.router)
 app.include_router(bulk_api_router.router)
 
 def mount_mcp_sse_app():
@@ -368,16 +392,23 @@ async def pydantic_validation_exception_handler(exc: ValidationError):
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     logger.info(f"Request: {request.method} {request.url}")
-    try:
-        response = await call_next(request)
-        logger.info(f"Response status: {response.status_code}")
-        redis_stats = await app.state.redis_manager.get_connection_stats()
-        logger.debug(f"Redis Stats - Total Connections: {redis_stats.total_connections}, In Use: {redis_stats.in_use_connections}")
-        return response
-    except Exception as ex:
-        logger.error(f"Error processing request: {ex}", exc_info=True)
-        raise
+    response = await call_next(request)
+    logger.info(f"Response status: {response.status_code}")
+    redis_stats = await app.state.redis_manager.get_connection_stats()
+    logger.debug(f"Redis Stats - Total Connections: {redis_stats.total_connections}, In Use: {redis_stats.in_use_connections}")
+    return response
 
+async def add_rate_limit_headers(request: Request, call_next):
+    response = await call_next(request)
+
+    # Add rate limit headers if they exist
+    if hasattr(request.state, "rate_limit_headers"):
+        for header, value in request.state.rate_limit_headers.items():
+            response.headers[header] = value
+
+    return response
+
+# Add a custom middleware to ensure CORS headers are always present
 @app.middleware("http")
 async def add_cors_headers(request: Request, call_next):
     response = await call_next(request)
@@ -388,15 +419,3 @@ async def add_cors_headers(request: Request, call_next):
         response.headers["Access-Control-Allow-Credentials"] = "true"
 
     return response
-
-async def add_rate_limit_headers(request: Request, call_next):
-    response = await call_next(request)
-
-    if hasattr(request.state, "rate_limit_headers"):
-        for header, value in request.state.rate_limit_headers.items():
-            response.headers[header] = value
-
-    return response
-
-
-

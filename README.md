@@ -78,7 +78,7 @@ To get started with theBarcodeAPI, you can run the project locally or access it 
 3. **Build and run the Docker containers:**
     - BACKEND:
         ```bash
-        cd theBarcodeapi/barcodeAPI/
+        cd theBarcodeapi/barcodeApi/
         docker-compose up --build
         ```
     - FRONTEND:
@@ -227,7 +227,7 @@ ws.send(JSON.stringify({
 **Command Line**: Use `websocat` or similar tools with the full WebSocket URL
 
 For detailed WebSocket/MCP documentation and remote connection guides, see:
-- [WebSocket MCP Documentation](barcodeAPI/WEBSOCKET_MCP.md)
+- [WebSocket MCP Documentation](barcodeApi/WEBSOCKET_MCP.md)
 - [Remote Connections Guide](REMOTE_CONNECTIONS.md)
 
 ### 📍 All Available MCP Endpoints

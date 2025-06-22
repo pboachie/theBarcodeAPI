@@ -2,7 +2,7 @@ from typing import Optional
 import base64
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData
-from .schemas import BarcodeFormatEnum, BarcodeImageFormatEnum, BarcodeRequest
+from app.schemas import BarcodeFormatEnum, BarcodeImageFormatEnum, BarcodeRequest
 from .barcode_generator import generate_barcode_image, BarcodeGenerationError
 import logging
 

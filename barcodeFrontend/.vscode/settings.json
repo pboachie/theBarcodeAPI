@@ -1,6 +1,6 @@
 {
     "python.testing.pytestArgs": [
-        "barcodeAPI/app/tests"
+        "barcodeApi/app/tests"
     ],
     "python.testing.unittestEnabled": true,
     "python.testing.pytestEnabled": false,

@@ -129,18 +129,24 @@ jobs:
         npm run lint
         npm run build
 
-    - name: Setup Frontend Environment Variables
+    - name: Setup Environment Variables for Docker
       run: |
-          # Create frontend environment file if it doesn't exist
+          # Create directories if they don't exist
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi
-          
-          # Set environment variables for Docker Compose
-          echo "PROJECT_VERSION=${{ env.API_VERSION }}" | sudo tee -a /opt/thebarcodeapi/.env.frontend
-          echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" | sudo tee -a /opt/thebarcodeapi/.env.frontend
-          echo "API_PORT=8000" | sudo tee -a /opt/thebarcodeapi/.env.frontend
-          echo "FRONTEND_PORT=3000" | sudo tee -a /opt/thebarcodeapi/.env.frontend
-          
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/.env.frontend
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeApi
+
+          # Create backend environment file for Docker Compose
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S touch /opt/thebarcodeapi/barcodeApi/.env
+
+          # Create Docker Compose environment file in the root
+          echo "PROJECT_VERSION=${{ env.API_VERSION }}" | sudo tee /opt/thebarcodeapi/.env
+          echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" | sudo tee -a /opt/thebarcodeapi/.env
+          echo "API_PORT=8000" | sudo tee -a /opt/thebarcodeapi/.env
+          echo "FRONTEND_PORT=3000" | sudo tee -a /opt/thebarcodeapi/.env
+
+          # Set proper ownership
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/.env
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeApi/.env
 
     - name: Deploy Frontend using Docker
       env:

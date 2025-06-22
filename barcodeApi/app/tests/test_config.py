@@ -11,7 +11,7 @@ from app.database import Base
 
 load_dotenv()
 
-# barcodeAPI/app/tests/test_config.py
+# barcodeApi/app/tests/test_config.py
 
 @pytest.fixture
 def set_env_vars(monkeypatch):

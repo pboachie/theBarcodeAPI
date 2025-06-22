@@ -146,9 +146,6 @@ EOF
         echo "Configuring Nginx..."
         exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/configure-nginx.sh"
 
-        echo "Configuring PM2..."
-        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/configure-pm2.sh"
-
         echo "Configuring backend Docker environment (setup-docker-env.sh)..."
         exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/setup-docker-env.sh"
 

@@ -3,8 +3,8 @@
 #   Checks for and installs essential system dependencies required for the application infrastructure.
 #   This includes:
 #     - Nginx (web server/reverse proxy)
-#     - Node.js (for frontend runtime and PM2)
-#     - PM2 (process manager for Node.js applications)
+#     - Node.js (for frontend runtime)
+#     - Docker and Docker Compose (for containerized services)
 #     - Docker Engine (containerization platform)
 #     - Docker Compose (for defining and running multi-container Docker applications)
 #   It attempts to be idempotent by checking if a dependency already exists before installing.
@@ -89,22 +89,6 @@ else
   node -v # Display current version
 fi
 
-# --- PM2 (Process Manager for Node.js) ---
-echo "Checking PM2..."
-if ! command_exists pm2; then
-  echo "Installing PM2 globally via npm..."
-  # Ensure npm is available (should be with Node.js)
-  if command_exists npm; then
-    npm install -g pm2
-  else
-    echo "Error: npm command not found, cannot install PM2."
-    exit 1
-  fi
-else
-  echo "PM2 already installed."
-  pm2 --version # Display current version
-fi
-
 # --- Docker Engine ---
 echo "Checking Docker Engine..."
 if ! command_exists docker; then
@@ -150,7 +134,6 @@ declare -A commands_to_verify=(
   ["Nginx"]="nginx -v"
   ["Node.js"]="node -v"
   ["npm"]="npm -v"
-  ["PM2"]="pm2 --version"
   ["Docker"]="docker --version"
   ["Docker Compose"]="docker compose version || docker-compose --version" # Try plugin first, then standalone
 )
@@ -187,7 +170,6 @@ echo "--- Final Installed Versions ---"
 nginx -v 2>&1
 node -v
 npm -v
-PM2_HOME="${HOME:-/home/$USER}/.pm2" pm2 --version # Ensure PM2_HOME if checking version as current user
 docker --version
 docker compose version || docker-compose --version || echo "Docker Compose not found for version display."
 echo "--------------------------------"

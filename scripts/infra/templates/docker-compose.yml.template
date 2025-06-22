@@ -17,7 +17,6 @@ services:
     env_file:
       - .env
     volumes:
-<<<<<<< HEAD:barcodeAPI/docker-compose.yml
       - ./app:/app/app:ro
       - ./alembic:/app/alembic:ro
       - ./logs:/app/logs:rw
@@ -33,7 +32,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-<<<<<<< HEAD:barcodeAPI/docker-compose.yml
     deploy:
       resources:
         limits:

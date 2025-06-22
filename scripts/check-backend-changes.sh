@@ -33,8 +33,8 @@ fi
 if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
   # For manual triggers (workflow_dispatch), compare HEAD with the .git-commit file of the currently deployed version.
   echo "Workflow event is 'workflow_dispatch'. Comparing with deployed .git-commit."
-  if [ -f "/opt/thebarcodeapi/barcodeAPI/.git-commit" ]; then
-    DEPLOYED_COMMIT=$(cat "/opt/thebarcodeapi/barcodeAPI/.git-commit")
+  if [ -f "/opt/thebarcodeapi/barcodeApi/.git-commit" ]; then
+    DEPLOYED_COMMIT=$(cat "/opt/thebarcodeapi/barcodeApi/.git-commit")
     echo "Found deployed commit: ${DEPLOYED_COMMIT}"
 
     # Verify the commit exists in git history. If not, it might be an old or invalid commit hash.
@@ -57,7 +57,7 @@ if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
       CHANGES="force_update" # Mark as changed if deployed commit is invalid
     fi
   else
-    echo "No .git-commit file found in current backend deployment at /opt/thebarcodeapi/barcodeAPI/.git-commit. Forcing update."
+    echo "No .git-commit file found in current backend deployment at /opt/thebarcodeapi/barcodeApi/.git-commit. Forcing update."
     CHANGES="force_update" # Mark as changed if .git-commit is missing
   fi
 else
