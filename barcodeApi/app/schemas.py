@@ -957,3 +957,74 @@ class JobStatusResponse(BaseModel):
     results: Optional[List[BarcodeResult]] = None
     error_message: Optional[str] = None
     files: List[BulkFileMetadata]
+
+# MCP (Model Context Protocol) Schemas
+
+class MCPClientAuthRequest(BaseModel):
+    """
+    Request schema for MCP client authentication.
+
+    Used to request a client ID for WebSocket MCP connections.
+    This is typically a minimal request that may include optional client information.
+    """
+    client_name: Optional[str] = Field(
+        None,
+        max_length=255,
+        description="Optional name/identifier for the requesting client"
+    )
+    requested_scopes: Optional[List[str]] = Field(
+        default_factory=list,
+        description="List of requested permission scopes (currently not used but reserved for future)"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "client_name": "Claude AI Assistant",
+                "requested_scopes": []
+            }
+        }
+
+
+class MCPClientAuthResponse(BaseModel):
+    """
+    Response schema for MCP client authentication.
+
+    Contains the generated client ID, expiration information, and WebSocket URL
+    for establishing an MCP connection.
+    """
+    client_id: str = Field(
+        ...,
+        description="Generated client ID (UUID format) for WebSocket authentication"
+    )
+    expires_in: int = Field(
+        ...,
+        description="Time in seconds until the client ID expires"
+    )
+    websocket_url: str = Field(
+        ...,
+        description="WebSocket URL for establishing MCP connection"
+    )
+    expires_at: Optional[datetime] = Field(
+        None,
+        description="Absolute expiration timestamp (ISO format)"
+    )
+    server_info: Optional[Dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Optional server information"
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "client_id": "123e4567-e89b-12d3-a456-426614174000",
+                "expires_in": 1800,
+                "websocket_url": "wss://api.thebarcodeapi.com/api/v1/mcp/ws/123e4567-e89b-12d3-a456-426614174000",
+                "expires_at": "2024-06-22T14:16:31.196Z",
+                "server_info": {
+                    "name": "theBarcodeAPI AGSC Server",
+                    "version": "1.0.0",
+                    "protocol": "MCP 1.0.0"
+                }
+            }
+        }

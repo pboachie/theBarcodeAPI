@@ -17,33 +17,33 @@
 *.env # Catch-all for .env files, recommend being specific if needed
 
 # Node / Frontend (within barcodeFrontend)
-barcodeFrontend/node_modules/
-barcodeFrontend/.next/
-barcodeFrontend/out/
-barcodeFrontend/.env
-barcodeFrontend/.env.local
-barcodeFrontend/.env.development.local
-barcodeFrontend/.env.test.local
-barcodeFrontend/.env.production.local
-barcodeFrontend/npm-debug.log*
-barcodeFrontend/yarn-debug.log*
-barcodeFrontend/yarn-error.log*
-barcodeFrontend/coverage/ # Assuming frontend coverage reports go here
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
 
 # Python / Backend (within barcodeApi)
-barcodeApi/__pycache__/
-barcodeApi/*.pyc
-barcodeApi/.venv/ # Common name for virtual envs
-barcodeApi/venv/  # Another common name
-barcodeApi/.env # Backend specific .env
-barcodeApi/.pytest_cache/
-barcodeApi/.coverage*
-barcodeApi/htmlcov/ # Common for Python coverage
-barcodeApi/instance/ # If ever used by Flask/similar
-barcodeApi/dist/
-barcodeApi/*.egg-info/
-barcodeApi/.eggs/
-barcodeApi/*.egg
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env # Backend specific .env
+.pytest_cache/
+.coverage*
+htmlcov/
+instance/
+dist/
+*.egg-info/
+.eggs/
+*.egg
 
 # VSCode
 .vscode/*

@@ -4,6 +4,7 @@ uvicorn[standard]==0.32.0
 starlette==0.41.3
 pydantic==2.9.2
 pydantic-settings==2.6.1
+psutil==7.0.0
 
 # Database
 SQLAlchemy[asyncio]==2.0.36

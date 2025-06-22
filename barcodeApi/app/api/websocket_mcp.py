@@ -5,14 +5,16 @@ import logging
 import uuid
 import time
 import asyncio
+import base64
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPException, Request, status
 from fastapi.websockets import WebSocketState
+from starlette.responses import StreamingResponse
 from app.config import settings
 from app.redis_manager import RedisManager
 from app.redis import get_redis_manager
-from app.barcode_generator import BarcodeGenerator
-from barcodeApi.app.schemas import BarcodeRequest, MCPClientAuthResponse, MCPClientAuthRequest
+from app.barcode_generator import generate_barcode_image
+from app.schemas import BarcodeRequest, MCPClientAuthResponse, MCPClientAuthRequest
 from app.rate_limiter import rate_limit
 from app.dependencies import get_client_ip
 
@@ -219,25 +221,47 @@ async def handle_mcp_message(message: Dict[str, Any], client_id: str, redis_mana
                     data=tool_args.get("data", ""),
                     format=tool_args.get("format", "code128"),
                     width=tool_args.get("width", 200),
-                    height=tool_args.get("height", 100)
+                    height=tool_args.get("height", 100),
+                    image_format=tool_args.get("image_format", "PNG")
                 )
 
                 # Generate barcode
-                generator = BarcodeGenerator()
-                barcode_data = generator.generate_barcode(barcode_request)
-
-                return {
-                    "id": message_id,
-                    "result": {
-                        "content": [
-                            {
-                                "type": "image",
-                                "data": barcode_data["image_data"],
-                                "mimeType": f"image/{barcode_data['format']}"
-                            }
-                        ]
-                    }
+                writer_options = {
+                    'image_format': tool_args.get("image_format", "PNG"),
+                    'module_width': tool_args.get("module_width", 0.2),
+                    'module_height': tool_args.get("module_height", 15.0),
+                    'quiet_zone': tool_args.get("quiet_zone", 6.5),
+                    'background': tool_args.get("background", "white"),
+                    'foreground': tool_args.get("foreground", "black"),
+                    'center_text': tool_args.get("center_text", True)
                 }
+
+                try:
+                    barcode_image_bytes = await generate_barcode_image(barcode_request, writer_options)
+                    import base64
+                    barcode_data_b64 = base64.b64encode(barcode_image_bytes).decode('utf-8')
+
+                    return {
+                        "id": message_id,
+                        "result": {
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "data": barcode_data_b64,
+                                    "mimeType": f"image/{tool_args.get('image_format', 'PNG').lower()}"
+                                }
+                            ]
+                        }
+                    }
+                except Exception as e:
+                    logger.error(f"Error generating barcode: {e}")
+                    return {
+                        "id": message_id,
+                        "error": {
+                            "code": -32603,
+                            "message": f"Barcode generation failed: {str(e)}"
+                        }
+                    }
             else:
                 return {
                     "id": message_id,
@@ -538,26 +562,49 @@ async def http_tools_call(request: dict):
                 data=tool_args.get("data", ""),
                 format=tool_args.get("format", "code128"),
                 width=tool_args.get("width", 200),
-                height=tool_args.get("height", 100)
+                height=tool_args.get("height", 100),
+                image_format=tool_args.get("image_format", "PNG")
             )
 
             # Generate barcode
-            generator = BarcodeGenerator()
-            barcode_data = generator.generate_barcode(barcode_request)
-
-            return {
-                "jsonrpc": "2.0",
-                "id": request.get("id"),
-                "result": {
-                    "content": [
-                        {
-                            "type": "image",
-                            "data": barcode_data["image_data"],
-                            "mimeType": f"image/{barcode_data['format']}"
-                        }
-                    ]
-                }
+            writer_options = {
+                'image_format': tool_args.get("image_format", "PNG"),
+                'module_width': tool_args.get("module_width", 0.2),
+                'module_height': tool_args.get("module_height", 15.0),
+                'quiet_zone': tool_args.get("quiet_zone", 6.5),
+                'background': tool_args.get("background", "white"),
+                'foreground': tool_args.get("foreground", "black"),
+                'center_text': tool_args.get("center_text", True)
             }
+
+            try:
+                barcode_image_bytes = await generate_barcode_image(barcode_request, writer_options)
+                import base64
+                barcode_data_b64 = base64.b64encode(barcode_image_bytes).decode('utf-8')
+
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request.get("id"),
+                    "result": {
+                        "content": [
+                            {
+                                "type": "image",
+                                "data": barcode_data_b64,
+                                "mimeType": f"image/{tool_args.get('image_format', 'PNG').lower()}"
+                            }
+                        ]
+                    }
+                }
+            except Exception as e:
+                logger.error(f"Error generating barcode: {e}")
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request.get("id"),
+                    "error": {
+                        "code": -32603,
+                        "message": f"Barcode generation failed: {str(e)}"
+                    }
+                }
         else:
             return {
                 "jsonrpc": "2.0",

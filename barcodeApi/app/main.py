@@ -22,11 +22,11 @@ from app.api import barcode, usage, health, token, admin, bulk as bulk_api_route
 from app.config import settings
 from app.barcode_generator import BarcodeGenerationError
 from app.mcp_server import generate_barcode_mcp
-from app.api.websocket_mcp import websocket_mcp
+from app.api.websocket_mcp import router as websocket_mcp_router
 from mcp.server.fastmcp import FastMCP
 from app.database import close_db_connection, init_db, get_db
 from app.redis import redis_manager, close_redis_connection, initialize_redis_manager
-from barcodeApi.app.schemas import SecurityScheme
+from app.schemas import SecurityScheme
 
 log_directory = settings.LOG_DIRECTORY
 if not os.path.isabs(log_directory):
@@ -326,7 +326,7 @@ app.include_router(barcode.router)
 app.include_router(usage.router)
 app.include_router(token.router)
 app.include_router(admin.router)
-app.include_router(websocket_mcp.router)
+app.include_router(websocket_mcp_router)
 app.include_router(bulk_api_router.router)
 
 def mount_mcp_sse_app():

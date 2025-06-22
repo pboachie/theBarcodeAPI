@@ -2,7 +2,7 @@
 Database models for the Barcode API application.
 
 This module contains SQLAlchemy ORM models for the PostgreSQL database,
-including User management, Authentication tokens, and Usage tracking.
+including User management, Authentication tokens, Usage tracking, and MCP client authentication.
 """
 from datetime import datetime
 from typing import Optional, Union
@@ -14,7 +14,6 @@ from sqlalchemy.orm import relationship, validates
 from enum import Enum
 
 from app.database import Base
-from app.utils import IDGenerator
 
 import logging
 
@@ -283,7 +282,7 @@ class Usage(Base):
 
     def needs_reset(self) -> bool:
         """Check if usage needs to be reset for a new day."""
-        if not self.last_reset:
+        if self.last_reset is None:
             return True
 
         current_time_utc = datetime.now(pytz.utc)
@@ -291,12 +290,13 @@ class Usage(Base):
         current_time_pst = current_time_utc.astimezone(pst_tz)
         start_of_day_pst = current_time_pst.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        return self.last_reset < start_of_day_pst
+        return self.last_reset < start_of_day_pst  # type: ignore
 
     def get_rate_limit(self) -> int:
         """Get the rate limit for this usage record's tier."""
         from app.config import settings
-        return settings.RateLimit.get_limit(self.tier or "unauthenticated")
+        tier_value = str(self.tier) if self.tier is not None else "unauthenticated"
+        return settings.RateLimit.get_limit(tier_value)
 
     @classmethod
     async def check_and_reset_usage(cls, db: AsyncSession, usage: 'Usage') -> 'Usage':
@@ -305,7 +305,13 @@ class Usage(Base):
         current_time_pst = current_time_utc.astimezone(pst_tz)
         start_of_day_pst = current_time_pst.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        if usage.last_reset is None or usage.last_reset < start_of_day_pst:
+        if usage.last_reset is None:
+            # No previous reset, so reset is needed
+            should_reset = True
+        else:
+            should_reset = usage.last_reset < start_of_day_pst  # type: ignore
+
+        if should_reset:  # type: ignore
             stmt = (
                 update(cls)
                 .where(cls.id == usage.id)
@@ -367,3 +373,212 @@ class AuditLog(Base):
     details = Column(JSON, nullable=True)
 
     user = relationship("User", back_populates="audit_logs")
+
+class MCPClientAuthRequest(Base):
+    """
+    Model for MCP (Model Context Protocol) client authentication requests.
+
+    Tracks requests for MCP client authentication to enable rate limiting
+    and audit logging of authentication attempts.
+
+    Attributes:
+        id: Primary key for the request record
+        client_name: Optional name/identifier for the requesting client
+        requested_scopes: JSON array of requested permission scopes
+        ip_address: IP address of the requesting client
+        user_agent: User agent string from the request headers
+        timestamp: When the authentication request was made
+        success: Whether the authentication request was successful
+        client_id_generated: The client ID that was generated (if successful)
+        rate_limit_exceeded: Whether the request was denied due to rate limiting
+    """
+    __tablename__ = "mcp_client_auth_requests"
+
+    id = Column(Integer, primary_key=True, index=True,
+               doc="Primary key for the authentication request record")
+    client_name = Column(String(255), nullable=True,
+                        doc="Optional name/identifier for the requesting client")
+    requested_scopes = Column(JSON, nullable=True, default=list,
+                            doc="JSON array of requested permission scopes")
+    ip_address = Column(String(45), nullable=False, index=True,
+                       doc="IP address of the requesting client (supports IPv6)")
+    user_agent = Column(Text, nullable=True,
+                       doc="User agent string from the request headers")
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True,
+                      doc="When the authentication request was made")
+    success = Column(Boolean, default=False, nullable=False, index=True,
+                    doc="Whether the authentication request was successful")
+    client_id_generated = Column(String(36), nullable=True, index=True,
+                               doc="The client ID that was generated (if successful)")
+    rate_limit_exceeded = Column(Boolean, default=False, nullable=False,
+                               doc="Whether the request was denied due to rate limiting")
+
+    __table_args__ = (
+        Index('ix_mcp_auth_requests_ip_timestamp', 'ip_address', 'timestamp'),
+        Index('ix_mcp_auth_requests_success_timestamp', 'success', 'timestamp'),
+        Index('ix_mcp_auth_requests_rate_limit', 'ip_address', 'rate_limit_exceeded', 'timestamp'),
+    )
+
+    @validates('ip_address')
+    def validate_ip_address(self, key, ip_address):
+        """Validate IP address format."""
+        import ipaddress
+        try:
+            ipaddress.ip_address(ip_address)
+            return ip_address
+        except ValueError:
+            raise ValueError(f"Invalid IP address format: {ip_address}")
+
+    @validates('client_name')
+    def validate_client_name(self, key, client_name):
+        """Validate client name length."""
+        if client_name and len(client_name) > 255:
+            raise ValueError("Client name must be at most 255 characters long")
+        return client_name
+
+class MCPClientAuthResponse(Base):
+    """
+    Model for MCP client authentication responses and active sessions.
+
+    Tracks generated client IDs, their expiration, and session information
+    for MCP WebSocket connections. Used for validation and cleanup.
+
+    Attributes:
+        id: Primary key for the response record
+        client_id: The generated client ID (UUID format)
+        ip_address: IP address of the client that requested authentication
+        expires_at: When the client ID expires
+        websocket_url: The WebSocket URL provided to the client
+        created_at: When the client ID was generated
+        first_connection_at: When the client first connected via WebSocket
+        last_activity_at: Last activity timestamp for session tracking
+        connection_count: Number of times this client ID has been used to connect
+        is_active: Whether the client ID is currently active/valid
+        revoked_at: When the client ID was revoked (if applicable)
+        revocation_reason: Reason for revoking the client ID
+    """
+    __tablename__ = "mcp_client_auth_responses"
+
+    id = Column(Integer, primary_key=True, index=True,
+               doc="Primary key for the response record")
+    client_id = Column(String(36), unique=True, nullable=False, index=True,
+                      doc="The generated client ID (UUID format)")
+    ip_address = Column(String(45), nullable=False, index=True,
+                       doc="IP address of the client that requested authentication")
+    expires_at = Column(DateTime(timezone=True), nullable=False, index=True,
+                       doc="When the client ID expires")
+    websocket_url = Column(String(500), nullable=False,
+                          doc="The WebSocket URL provided to the client")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False,
+                       doc="When the client ID was generated")
+    first_connection_at = Column(DateTime(timezone=True), nullable=True,
+                               doc="When the client first connected via WebSocket")
+    last_activity_at = Column(DateTime(timezone=True), nullable=True, index=True,
+                            doc="Last activity timestamp for session tracking")
+    connection_count = Column(Integer, default=0, nullable=False,
+                            doc="Number of times this client ID has been used to connect")
+    is_active = Column(Boolean, default=True, nullable=False, index=True,
+                      doc="Whether the client ID is currently active/valid")
+    revoked_at = Column(DateTime(timezone=True), nullable=True,
+                       doc="When the client ID was revoked (if applicable)")
+    revocation_reason = Column(String(255), nullable=True,
+                             doc="Reason for revoking the client ID")
+
+    __table_args__ = (
+        Index('ix_mcp_auth_responses_client_active', 'client_id', 'is_active'),
+        Index('ix_mcp_auth_responses_ip_active', 'ip_address', 'is_active'),
+        Index('ix_mcp_auth_responses_expires_active', 'expires_at', 'is_active'),
+        Index('ix_mcp_auth_responses_activity', 'last_activity_at', 'is_active'),
+    )
+
+    @validates('client_id')
+    def validate_client_id(self, key, client_id):
+        """Validate client ID format (should be UUID)."""
+        import uuid
+        try:
+            uuid.UUID(client_id)
+            return client_id
+        except ValueError:
+            raise ValueError(f"Invalid client ID format: {client_id}")
+
+    @validates('websocket_url')
+    def validate_websocket_url(self, key, websocket_url):
+        """Validate WebSocket URL format."""
+        if not websocket_url.startswith(('ws://', 'wss://')):
+            raise ValueError("WebSocket URL must start with ws:// or wss://")
+        if len(websocket_url) > 500:
+            raise ValueError("WebSocket URL must be at most 500 characters long")
+        return websocket_url
+
+    @validates('connection_count')
+    def validate_connection_count(self, key, connection_count):
+        """Validate connection count is non-negative."""
+        if connection_count < 0:
+            raise ValueError("Connection count must be non-negative")
+        return connection_count
+
+    def is_expired(self) -> bool:
+        """Check if the client ID has expired."""
+        if self.expires_at is None:
+            return True
+        return datetime.now(pytz.utc) > self.expires_at  # type: ignore
+
+    def is_valid(self) -> bool:
+        """Check if the client ID is valid (active and not expired)."""
+        return bool(self.is_active) and not self.is_expired()
+
+    def revoke(self, reason: Optional[str] = None):
+        """Revoke the client ID."""
+        self.is_active = False
+        self.revoked_at = datetime.now(pytz.utc)
+        if reason:
+            self.revocation_reason = reason
+
+    def update_activity(self):
+        """Update the last activity timestamp."""
+        self.last_activity_at = datetime.now(pytz.utc)
+
+    def increment_connection_count(self):
+        """Increment the connection count and update activity."""
+        self.connection_count += 1
+        self.update_activity()
+        if self.first_connection_at is None:
+            self.first_connection_at = datetime.now(pytz.utc)
+
+    @classmethod
+    async def get_by_client_id(cls, db: AsyncSession, client_id: str) -> Optional['MCPClientAuthResponse']:
+        """Get an MCP client auth response by client ID."""
+        result = await db.execute(select(cls).filter(cls.client_id == client_id))
+        return result.scalar_one_or_none()
+
+    @classmethod
+    async def get_active_by_client_id(cls, db: AsyncSession, client_id: str) -> Optional['MCPClientAuthResponse']:
+        """Get an active MCP client auth response by client ID."""
+        result = await db.execute(
+            select(cls).filter(
+                cls.client_id == client_id,
+                cls.is_active.is_(True),  # type: ignore
+                cls.expires_at > func.now()
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @classmethod
+    async def cleanup_expired(cls, db: AsyncSession) -> int:
+        """Clean up expired client IDs and return the count of cleaned up records."""
+        current_time = datetime.now(pytz.utc)
+        stmt = (
+            update(cls)
+            .where(
+                cls.expires_at <= current_time,
+                cls.is_active.is_(True)  # type: ignore
+            )
+            .values(
+                is_active=False,
+                revoked_at=current_time,
+                revocation_reason="Expired"
+            )
+        )
+        result = await db.execute(stmt)
+        await db.commit()
+        return result.rowcount
