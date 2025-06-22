@@ -15,6 +15,9 @@ services:
         condition: service_healthy
     env_file:
       - .env
+    environment:
+      - SERVER_TYPE=${SERVER_TYPE:-gunicorn}  # uvicorn or gunicorn
+      - WORKERS=${WORKERS:-1}
     volumes:
       - ./app:/app/app:ro
       - ./alembic:/app/alembic:ro
