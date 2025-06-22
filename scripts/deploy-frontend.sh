@@ -184,8 +184,19 @@ if ! PM2_HOME="${PM2_HOME_DIR}" pm2 list | grep -q "${PM2_APP_NAME}"; then
   fi
   PM2_HOME="${PM2_HOME_DIR}" pm2 start "${PM2_ECOSYSTEM_CONFIG}"
 else
-  echo "PM2 process ${PM2_APP_NAME} found. Reloading..."
-  PM2_HOME="${PM2_HOME_DIR}" pm2 reload "${PM2_APP_NAME}" --update-env # Reloads with 0 downtime
+  echo "PM2 process ${PM2_APP_NAME} found. Attempting graceful reload..."
+  
+  # First try pm2 reload, if it fails, try pm2 restart
+  if ! PM2_HOME="${PM2_HOME_DIR}" pm2 reload "${PM2_APP_NAME}" --update-env 2>/dev/null; then
+    echo "PM2 reload failed, trying restart instead..."
+    if ! PM2_HOME="${PM2_HOME_DIR}" pm2 restart "${PM2_APP_NAME}" --update-env; then
+      echo "PM2 restart also failed, trying to delete and start fresh..."
+      PM2_HOME="${PM2_HOME_DIR}" pm2 delete "${PM2_APP_NAME}" 2>/dev/null || true
+      PM2_HOME="${PM2_HOME_DIR}" pm2 start "${PM2_ECOSYSTEM_CONFIG}"
+    fi
+  else
+    echo "PM2 reload successful"
+  fi
 fi
 # Save current PM2 process list to be resurrected on reboot
 PM2_HOME="${PM2_HOME_DIR}" pm2 save --force
@@ -202,7 +213,17 @@ if ! check_health; then
     echo "${SUDO_PASSWORD}" | sudo -S ln -sfn "${PREVIOUS_ACTUAL_RELEASE}" "${CURRENT_LINK_PATH}"
 
     echo "Restarting PM2 process for rollback..."
-    PM2_HOME="${PM2_HOME_DIR}" pm2 reload "${PM2_APP_NAME}" --update-env
+    
+    # Try reload first, if it fails, try restart
+    if ! PM2_HOME="${PM2_HOME_DIR}" pm2 reload "${PM2_APP_NAME}" --update-env 2>/dev/null; then
+      echo "PM2 reload failed during rollback, trying restart..."
+      if ! PM2_HOME="${PM2_HOME_DIR}" pm2 restart "${PM2_APP_NAME}" --update-env; then
+        echo "PM2 restart also failed during rollback, trying to delete and start fresh..."
+        PM2_HOME="${PM2_HOME_DIR}" pm2 delete "${PM2_APP_NAME}" 2>/dev/null || true
+        PM2_HOME="${PM2_HOME_DIR}" pm2 start "${PM2_ECOSYSTEM_CONFIG}"
+      fi
+    fi
+    
     PM2_HOME="${PM2_HOME_DIR}" pm2 save --force
 
     echo "Performing health check after rollback..."
