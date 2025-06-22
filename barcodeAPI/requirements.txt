@@ -1,14 +1,9 @@
 # Core Dependencies
 fastapi==0.115.4
-uvicorn[standard]==0.32.0
+uvicorn==0.32.0
 starlette==0.41.2
 pydantic==2.9.2
 pydantic-settings==2.6.1
-
-uvloop==0.21.0
-httptools==0.6.4
-
-gunicorn==21.2.0
 
 # Database
 SQLAlchemy[asyncio]==2.0.36
@@ -34,6 +29,3 @@ python-multipart==0.0.17
 pytz==2024.2
 aiohttp==3.10.10
 fastnanoid==0.4.1
-
-# WebSocket Support for MCP/AGSC
-websockets==12.0

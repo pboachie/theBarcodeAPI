@@ -27,21 +27,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /var/cache/apt/*
 
-# Copy and set up entrypoint
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Create appuser user and group
+RUN groupadd -g 1000 appuser && \
+    useradd -u 1000 -g appuser -m appuser
 
-# Create logs directory with proper permissions
-RUN mkdir -p /app/logs && chmod 777 /app/logs
-
-# Create a non-root user for production
-RUN if [ "$PYTHON_ENV" = "production" ]; then \
-        groupadd -r appuser && useradd -r -g appuser appuser && \
-        chown -R appuser:appuser /app; \
-    fi
-
-# Switch to non-root user in production
-USER ${PYTHON_ENV=production && echo "appuser" || echo "root"}
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
@@ -53,7 +42,11 @@ COPY . .
 # Set correct permissions
 RUN chmod +x /app/start.sh && \
     chmod +x /app/init-db.sh && \
+    chown -R appuser:appuser /app && \
     chmod -R 755 /app
+
+# Switch to appuser user
+USER appuser
 
 # Set up volumes for persistent data
 VOLUME ["/app/data", "/app/logs"]
@@ -61,11 +54,9 @@ VOLUME ["/app/data", "/app/logs"]
 # Expose port
 EXPOSE 8000
 
-# Health check - check both HTTP and WebSocket endpoints
+# Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/health && python3 check_websocket_health.py || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# Set entrypoint and command
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "uvloop", "--http", "httptools"]
-
+# Default command
+CMD ["./start.sh"]
