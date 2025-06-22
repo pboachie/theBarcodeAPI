@@ -134,16 +134,28 @@ jobs:
         npm run lint
         npm run build
 
-    # Executes the main frontend deployment script.
-    # This script handles tasks like creating a new release directory, updating symlinks,
-    # managing the PM2 process for the frontend application, and performing health checks with rollback capabilities.
-    - name: Deploy frontend application and perform health check
-      run: bash ./scripts/deploy-frontend.sh
+    - name: Setup PM2 Ecosystem Configuration
+      run: |
+          # Copy PM2 ecosystem configuration to deployment directory
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./scripts/ecosystem.config.js /opt/thebarcodeapi/${ENVIRONMENT}/
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}
+          
+          # Create logs directory for PM2
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/logs
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}/logs
+
+    - name: Deploy Frontend using Script
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
         SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
-        STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES: ${{ steps.check_frontend_changes.outputs.changes }}
-
+      run: |
+          # Make deployment script executable
+          chmod +x ./scripts/deploy-frontend.sh
+          
+          # Run deployment script with changes flag
+          ./scripts/deploy-frontend.sh "${{ steps.check_frontend_changes.outputs.changes }}"
+          
   backend-deployment:
     runs-on: self-hosted
     needs: frontend-deployment # Ensures frontend deployment is attempted first.
