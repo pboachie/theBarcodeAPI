@@ -1,297 +1,253 @@
-# 🔢 theBarcodeAPI
+# theBarcodeAPI
 
-> **A modern, full-stack barcode generation platform showcasing enterprise-grade web development practices**
+Welcome to theBarcodeAPI - Your go-to solution for barcode generation and processing!
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-thebarcodeapi.com-blue?style=for-the-badge)](https://thebarcodeapi.com/)
-[![API Status](https://img.shields.io/badge/API%20Status-Online-green?style=for-the-badge)](https://api.thebarcodeapi.com/health)
+## Overview
 
-## 🚀 Portfolio Showcase
+theBarcodeAPI is a powerful and flexible showcase website designed to demonstrate various barcode-related operations. Whether you need to generate barcodes, decode existing ones, or integrate barcode functionality into your applications, theBarcodeAPI has got you covered.
 
-**theBarcodeAPI** is a comprehensive barcode generation platform that demonstrates modern full-stack development practices, scalable architecture, and professional-grade API design. This project serves as a showcase of advanced web development skills including real-time processing, API rate limiting, database optimization, and containerized deployment.
+## Features
 
-### 🌟 **Live Platform**: [https://thebarcodeapi.com/](https://thebarcodeapi.com/)
+- Generate multiple barcode formats (e.g., QR, Code128, EAN-13)
+- Decode barcodes from images
+- Customize barcode appearance and size
+- High-performance and scalable architecture
+- Easy-to-use RESTful API
+- **WebSocket/MCP Support**: Real-time barcode generation via Model Context Protocol
+- **AI Assistant Ready**: AGSC (AI/Assistant Generation Service Compatible) server
+- **Docker Optimized**: Enhanced health checks and container compatibility
 
----
+## Project Structure
 
-## ✅ **Status: Fully Operational**
+The project is organized into several key components:
 
-🎉 **The complete Docker Compose setup is working perfectly!**
+- **app/**: Contains the main application code, including API endpoints, database models, and utility functions.
+  - **api/**: Houses the FastAPI routes for barcode generation, health checks, token management, and usage statistics.
+  - **barcode_generator.py**: Module responsible for generating barcodes in various formats.
+  - **config.py**: Configuration settings for the application.
+  - **database.py**: Database connection and session management.
+  - **models.py**: SQLAlchemy models representing database tables.
+- **tests/**: Contains unit and integration tests for the application.
+- **alembic/**: Manages database migrations using Alembic.
+- **Dockerfile**: Defines the Docker image for the application.
+- **docker-compose.yml**: Configures Docker services for local development.
+- **requirements.txt**: Lists Python dependencies.
+- **start.sh**: Startup script to initialize and run the application.
 
-All services are successfully running:
-- ✅ **Frontend**: Next.js application serving on port 3000
-- ✅ **Backend**: FastAPI server running on port 8000
-- ✅ **Database**: PostgreSQL with automated migrations
-- ✅ **Cache**: Redis for session management and rate limiting
-- ✅ **Health Checks**: All services reporting healthy status
-- ✅ **API Documentation**: Interactive Swagger UI available
-- ✅ **MCP Integration**: Model Context Protocol server operational
+## How It Works
 
-**Recent Fixes Completed:**
-- Fixed Next.js build process and dependency issues
-- Resolved Docker container startup problems
-- Cleaned up Dockerfile for production readiness
-- Verified end-to-end functionality
+theBarcodeAPI is built with FastAPI for high-performance asynchronous API capabilities. It uses PostgreSQL as the primary database and Redis for rate limiting and caching.
 
----
+- **Barcode Generation**: The application uses the `barcode_generator.py` module to generate barcodes in various formats based on user input.
+- **API Endpoints**: Defined in the `app/api/` directory, the endpoints handle requests for generating barcodes, checking application health, managing tokens, and retrieving usage statistics.
+- **Database Operations**: SQLAlchemy models in `models.py` interact with PostgreSQL to store and retrieve data.
+- **Rate Limiting**: Implemented using Redis in `rate_limiter.py` to control API usage and prevent abuse.
+- **Security**: JWT authentication is managed using tokens, with security configurations defined in `security.py`.
 
-## 📋 Project Overview
+## Getting Started
 
-A production-ready barcode generation service featuring a sleek Next.js frontend and a high-performance FastAPI backend. The platform supports multiple barcode formats, real-time generation, bulk processing, and includes comprehensive API management with authentication and rate limiting.
+To get started with theBarcodeAPI, you can run the project locally or access it via our hosted platform.
 
-### 🎯 **Key Achievements**
-- **Performance**: Sub-second barcode generation with Redis caching
-- **Scalability**: Containerized architecture supporting concurrent users
-- **Integration**: Model Context Protocol (MCP) server for AI assistant integration
-- **Security**: JWT authentication with role-based access control
-- **Monitoring**: Comprehensive usage analytics and health monitoring
+### Prerequisites
 
-## ✨ Features & Capabilities
+- Docker
+- Docker Compose (docker-compose)
 
-### 🔧 **Core Features**
-- **Multi-format Support**: QR Code, Code128, Code39, EAN-13, UPC-A, and more
-- **Real-time Generation**: Instant barcode creation with live preview
-- **Bulk Processing**: Generate hundreds of barcodes simultaneously
-- **Custom Styling**: Adjustable dimensions, colors, and text options
-- **High-Resolution Output**: Vector and raster formats with customizable DPI
+### Running Locally
 
-### 🏗️ **Technical Features**
-- **RESTful API**: Comprehensive API with OpenAPI/Swagger documentation
-- **Rate Limiting**: Redis-based intelligent throttling
-- **Caching Layer**: Optimized performance with strategic caching
-- **Database Persistence**: PostgreSQL with Alembic migrations
-- **Health Monitoring**: Real-time system status and metrics
-- **MCP Integration**: AI assistant compatibility via Model Context Protocol
+1. **Clone the repository:**
 
-## 🛠️ Technology Stack
+    ```bash
+    git clone git@github.com:pboachie/boachiefamily.net.git
+    cd barcode-api
+    ```
 
-### **Frontend**
-- **Framework**: Next.js 14 with App Router
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS + Radix UI Components
-- **State Management**: React Hooks with optimistic updates
-- **Animations**: Framer Motion
+2. **Create a `.env` file:**
 
-### **Backend**
-- **Framework**: FastAPI (Python)
-- **Database**: PostgreSQL with SQLAlchemy ORM
-- **Cache**: Redis for session management and rate limiting
-- **Authentication**: JWT with bcrypt password hashing
-- **API Documentation**: Auto-generated OpenAPI/Swagger
+    ```bash
+    cp .env.example .env
+    ```
 
-### **Infrastructure**
-- **Containerization**: Docker & Docker Compose
-- **Database Migrations**: Alembic
-- **Testing**: pytest with comprehensive test coverage
-- **Deployment**: Production-ready with environment configuration
+    Fill in the necessary values in the `.env` file.
 
-### **Integrations**
-- **MCP Server**: Model Context Protocol for AI assistant integration. Endpoints available at `/api/v1/mcp` (HTTP streaming) and `/api/v1/mcp/sse` (legacy Server-Sent Events).
-- **Server-Sent Events**: Used for legacy MCP communication.
-- **Bulk Processing**: Asynchronous batch operations
+    Source the environment variables:
 
-## 🏗️ Architecture & Design
+    ```bash
+    source .env
+    ```
 
-### **System Architecture**
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│   Next.js       │────│   FastAPI        │────│   PostgreSQL    │
-│   Frontend      │    │   Backend        │    │   Database      │
-│   Port: 3000    │    │   Port: 8000     │    │   Port: 5432    │
-│                 │    │                  │    │                 │
-│ • React/TS      │    │ • Python 3.11+   │    │ • Data Models   │
-│ • Tailwind CSS  │    │ • SQLAlchemy     │    │ • Migrations    │
-│ • Radix UI      │    │ • Pydantic       │    │ • Indexing      │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-         │                       │                       │
-         │              ┌──────────────────┐             │
-         └──────────────│      Redis       │─────────────┘
-                        │   Cache Layer    │
-                        │   Port: 6379     │
-                        │                  │
-                        │ • Rate Limiting  │
-                        │ • Session Store  │
-                        │ • Caching        │
-                        └──────────────────┘
-```
+3. **Build and run the Docker containers:**
+    - BACKEND:
+        ```bash
+        cd theBarcodeapi/barcodeAPI/
+        docker-compose up --build
+        ```
+    - FRONTEND:
+        ```bash
+        cd theBarcodeAPI/
+        npm install
+        npm run dev
 
-### **Docker Services**
-The application runs as a multi-container setup:
-- **Frontend Container**: Next.js application (production build)
-- **Backend Container**: FastAPI application with Uvicorn
-- **Database Container**: PostgreSQL with persistent volumes
-- **Cache Container**: Redis for session management and rate limiting
+4. **Access the API:**
 
-All services are orchestrated via Docker Compose with proper networking and health checks.
+    The API will be available at `http://localhost:8000`.
 
-### **Project Structure**
-```
-thebarcodeapi/
-├── 🐳 docker-compose.yml  # Main Docker Compose file for all services
-│
-├── 🎨 barcodeFrontend/    # Next.js Frontend Application
-│   ├── app/
-│   ├── components/
-│   ├── public/
-│   ├── Dockerfile          # Frontend Docker configuration
-│   └── README.md           # Frontend specific documentation
-│
-├── 🔧 barcodeApi/        # FastAPI Backend Application
-│   ├── app/
-│   ├── alembic/
-│   ├── Dockerfile          # Backend Docker configuration
-│   └── README.md           # Backend specific documentation
-│
-├── .gitignore
-├── LICENSE
-└── README.md             # This file
-```
+## API Documentation
 
-## ⚙️ CI/CD & Deployment Process
+Once the application is running, you can access the API documentation at:
 
-This project uses GitHub Actions for automated CI/CD. For a detailed explanation of the deployment workflows, scripts, and infrastructure setup, please refer to the [Deployment Process Documentation (DEPLOYMENT.md)](DEPLOYMENT.md).
+- **Swagger UI:** `http://localhost:8000/docs`
+- **ReDoc:** `http://localhost:8000/redoc`
 
-## 🚀 Quick Start
+## WebSocket/MCP Testing
 
-### **Prerequisites**
-- Docker & Docker Compose
-- Git
+theBarcodeAPI now includes **multiple MCP endpoints** for real-time barcode generation, perfect for AI assistants and other applications:
 
-### **1. Clone & Setup Environment**
+- **WebSocket MCP** (authenticated): Real-time bidirectional communication
+- **HTTP MCP** (no auth): RESTful MCP protocol for simple integrations
+- **SSE MCP** (authenticated): Server-sent events for legacy support
+
+### 🚀 Quick Start Options
+
+**Option 1: HTTP MCP (No Authentication Required)**
+
+Perfect for testing! Try it immediately:
+
 ```bash
-# Clone the repository
-git clone https://github.com/pboachie/theBarcodeAPI.git
-cd theBarcodeAPI
-
-# Create a root .env file (if it doesn't exist) for global settings
-echo "PROJECT_VERSION=0.1.8" >> .env
-
-# Setup backend environment
-cd barcodeApi
-cp .env.example .env
-# Edit barcodeApi/.env with your specific backend configuration
-cd ..
+# Test HTTP MCP endpoint - no auth needed
+curl -X POST "http://localhost:8000/api/v1/mcp/tools/call" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "jsonrpc": "2.0",
+       "id": 1,
+       "method": "tools/call",
+       "params": {
+         "name": "barcode_generator",
+         "arguments": {
+           "data": "TEST123",
+           "format": "code128"
+         }
+       }
+     }'
 ```
 
-### **2. Run with Docker Compose (Recommended)**
+**Option 2: WebSocket MCP (Authentication Required)**
+
+### 🔐 Authentication Required
+
+**Important**: All WebSocket connections now require a valid client ID. You must obtain a client ID from the auth endpoint before connecting.
+
+### Step 1: Get a Client ID
+
+**Rate Limited**: 1 request per 30 minutes per IP address.
+
 ```bash
-# From the project root directory
-docker-compose up --build
-
-# Platform will be available at:
-# - Frontend: http://localhost:3000
-# - Backend API: http://localhost:8000
-# - API Documentation: http://localhost:8000/docs
+# Request a client ID (replace localhost:8000 with your server)
+curl -X POST "http://localhost:8000/api/v1/mcp/auth" \
+     -H "Content-Type: application/json" \
+     -d "{}"
 ```
 
-### **3. Development Setup**
-For detailed local development instructions:
-- **Frontend Development**: See `barcodeFrontend/README.md`
-- **Backend Development**: See `barcodeApi/README.md`
-
-### **4. Verify Installation**
-```bash
-# Check API health
-curl http://localhost:8000/health
-
-# Check frontend
-open http://localhost:3000  # or visit in browser
-```
-
-## 📚 API Documentation
-
-### **Interactive Documentation**
-- **Swagger UI**: `https://api.thebarcodeapi.com/docs`
-- **ReDoc**: `https://api.thebarcodeapi.com/redoc`
-
-### **Key Endpoints**
-```http
-POST   /api/v1/generate      # Generate single barcode
-POST   /api/v1/bulk          # Bulk barcode generation
-GET    /api/v1/health        # System health status
-POST   /api/v1/token         # Authentication
-GET    /api/v1/usage         # Usage statistics
-```
-
-### **Example API Call**
-```bash
-curl -X POST "https://api.thebarcodeapi.com/api/v1/generate" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "data": "HELLO123",
-    "format": "code128",
-    "width": 400,
-    "height": 200,
-    "show_text": true
-  }'
-```
-
-## 🤖 MCP Server Integration
-
-This project includes a **Model Context Protocol (MCP) server** for seamless AI assistant integration, offering both modern HTTP streaming and legacy Server-Sent Events (SSE) options.
-
-### **Connection Details**
-- **HTTP Streaming Endpoint (Recommended)**:
-  - **Production**: `https://api.thebarcodeapi.com/api/v1/mcp`
-  - **Local (Docker Compose)**: `http://localhost:8000/api/v1/mcp`
-  - *Use this endpoint for new integrations requiring efficient, bidirectional communication.*
-- **Legacy SSE Endpoint**:
-  - **Production**: `https://api.thebarcodeapi.com/api/v1/mcp/sse`
-  - **Local (Docker Compose)**: `http://localhost:8000/api/v1/mcp/sse`
-  - *This endpoint is maintained for compatibility with older clients.*
-- *Refer to `barcodeApi/README.md` for details on MCP if running the backend standalone.*
-
-**API Key Usage for MCP Endpoints:**
-While the MCP endpoints might be accessible for basic calls during development or for certain public tools, utilizing an API key is important for production use and accessing your specific usage tier. API keys are used for:
-- **Usage Tracking**: To monitor your API consumption against your plan.
-- **Rate Limiting**: To ensure fair use and protect the service, different rate limits may apply based on the API key's tier.
-Include your API key in the request headers, typically as `Authorization: Bearer YOUR_API_KEY` or `X-API-Key: YOUR_API_KEY`.
-
-### **Available MCP Tools**
-- `generate_barcode`: Provides comprehensive barcode generation capabilities. It supports numerous formats and customization options (e.g., data content, barcode type, dimensions, colors, image format, text display, DPI, checksums, etc.). Refer to the tool's schema for a full list of parameters.
-
-### **Usage Example (Illustrative - HTTP Stream)**
-The following shows an illustrative example of how an MCP client might request a barcode generation via the HTTP streaming endpoint (`/mcp`). Remember to include your API key in the request headers for authenticated access, usage tracking, and appropriate rate limiting (e.g., `-H "Authorization: Bearer YOUR_API_KEY"` if using cURL).
-
-**Request Body:**
+Response:
 ```json
 {
-  "method": "tools/call",
-  "params": {
-    "name": "generate_barcode",
-    "arguments": {
-      "data": "SAMPLE123",
-      "format": "CODE128",  // Example: Use a valid format from BarcodeFormatEnum (e.g., QRCODE, CODE128, EAN13)
-      "width": 300,
-      "height": 300,
-      "image_format": "PNG", // Example: PNG, JPEG, SVG, etc.
-      "show_text": true
-    }
-  }
+  "client_id": "550e8400-e29b-41d4-a716-446655440000",
+  "expires_in": 1800,
+  "websocket_url": "ws://localhost:8000/api/v1/mcp/ws/550e8400-e29b-41d4-a716-446655440000"
 }
 ```
-**Note**: The exact structure of the `params` (request body) and the specific values for enums like `format` and `image_format` should align with the MCP server's registration and the tool's schema definition. The tool name `generate_barcode` corresponds to the function available to the MCP system. Interaction with the `/mcp/sse` endpoint might differ slightly based on SSE client implementation specifics.
 
-## 🧪 Development & Testing
+### Step 2: Connect to WebSocket
 
-### **Running Tests**
-```bash
-# Backend tests
-docker-compose run barcodeapi pytest
+Use the `websocket_url` from the auth response:
 
-# Frontend tests
-docker-compose run barcodefrontend npm test
+```javascript
+// Connect using the authenticated WebSocket URL
+const ws = new WebSocket('ws://localhost:8000/api/v1/mcp/ws/550e8400-e29b-41d4-a716-446655440000');
 
-# Run all services for development
-docker-compose up --build
+// Initialize MCP session
+ws.onopen = function() {
+    console.log('Connected to MCP WebSocket');
+    ws.send(JSON.stringify({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "1.0.0",
+            "clientInfo": {
+                "name": "browser-test",
+                "version": "1.0.0"
+            }
+        }
+    }));
+};
+
+// Listen for responses
+ws.onmessage = function(event) {
+    console.log('Response:', JSON.parse(event.data));
+};
+
+ws.onerror = function(error) {
+    console.error('WebSocket error:', error);
+};
 ```
 
-### **Development Workflow**
-1. **Hot Reload Development**: Both frontend and backend support hot reload
-2. **Database Migrations**: Automatic via Alembic during container startup
-3. **Health Monitoring**: Built-in health checks for all services
-4. **Log Aggregation**: Centralized logging via Docker Compose
+### Step 3: Generate Barcodes
 
-### **Environment Configuration**
+Once connected and initialized, generate barcodes in real-time:
+
+```javascript
+// Generate a Code128 barcode
+ws.send(JSON.stringify({
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+        "name": "barcode_generator",
+        "arguments": {
+            "data": "HELLO-WORLD-2024",
+            "format": "code128",
+            "width": 300,
+            "height": 150
+        }
+    }
+}));
+```
+
+### ⚠️ Important Notes
+
+- **Client IDs expire in 30 minutes** - you'll need to get a new one if it expires
+- **Rate limiting**: Only 1 client ID per 30 minutes per IP address
+- **Invalid client IDs**: WebSocket will close with code 4003 if client ID is invalid/expired
+- **Authentication first**: Always get a client ID before attempting WebSocket connection
+
+### Testing with Different Tools
+
+**Browser Console**: Copy the JavaScript code above
+**Python**: Use `websockets` library with the authenticated URL
+**Command Line**: Use `websocat` or similar tools with the full WebSocket URL
+
+For detailed WebSocket/MCP documentation and remote connection guides, see:
+- [WebSocket MCP Documentation](barcodeAPI/WEBSOCKET_MCP.md)
+- [Remote Connections Guide](REMOTE_CONNECTIONS.md)
+
+### 📍 All Available MCP Endpoints
+
+**HTTP MCP Endpoints (No Auth):**
+- `POST /api/v1/mcp/initialize` - Initialize MCP session
+- `POST /api/v1/mcp/tools/list` - List available tools
+- `POST /api/v1/mcp/tools/call` - Execute barcode generation
+- `POST /api/v1/mcp/resources/list` - List available resources
+- `POST /api/v1/mcp/resources/read` - Read resource data
+
+**Authenticated Endpoints:**
+- `POST /api/v1/mcp/auth` - Get client ID (rate limited)
+- `WS /api/v1/mcp/ws/{client_id}` - WebSocket MCP connection
+- `GET /api/v1/mcp/sse/{client_id}` - Server-sent events stream
+- `GET /api/v1/mcp/status` - Connection status and metrics
+
+## Environment Variables
+
 Key environment variables:
 - `SECRET_KEY`: JWT signing key (backend)
 - `DATABASE_URL`: PostgreSQL connection string

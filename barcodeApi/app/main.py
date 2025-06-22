@@ -14,7 +14,13 @@ from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 
 import logging
+<<<<<<< HEAD:barcodeAPI/app/main.py
+import asyncio
+
+from app.api import barcode, usage, health, token, admin, websocket_mcp
+=======
 from app.api import barcode, usage, health, token, admin, bulk as bulk_api_router
+>>>>>>> v.0.1.8:barcodeApi/app/main.py
 from app.config import settings
 from app.barcode_generator import BarcodeGenerationError
 from app.mcp_server import generate_barcode_mcp
@@ -301,6 +307,9 @@ app.include_router(barcode.router)
 app.include_router(usage.router)
 app.include_router(token.router)
 app.include_router(admin.router)
+<<<<<<< HEAD:barcodeAPI/app/main.py
+app.include_router(websocket_mcp.router)
+=======
 app.include_router(bulk_api_router.router)
 
 def mount_mcp_sse_app():
@@ -325,6 +334,7 @@ def mount_mcp_sse_app():
 
     except Exception as e:
         logger.error(f"Failed to mount FastMCP apps: {e}", exc_info=True)
+>>>>>>> v.0.1.8:barcodeApi/app/main.py
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):

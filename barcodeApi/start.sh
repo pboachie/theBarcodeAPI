@@ -122,9 +122,41 @@ print_colored "36" "Supported RPS:    $SUPPORTED_WORKERS Requests/Second"
 print_header "Starting Application"
 print_colored "32" "Starting application with $WORKERS workers..."
 
-# Use exec to replace the shell with the application
-if [ "$PYTHON_ENV" = "development" ]; then
-    exec uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 --no-server-header --workers 1
-else
-    exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-server-header --workers 1
+
+if [ "$SERVER_TYPE" = "uvicorn" ] || [ -z "$SERVER_TYPE" ]; then
+    echo "Using uvicorn server..."
+    exec uvicorn app.main:app \
+        --host 0.0.0.0 \
+        --port 8000 \
+        --workers 1 \
+        --loop uvloop \
+        --http httptools \
+        --access-log \
+        --no-server-header
+        if [ "$PYTHON_ENV" = "development" ]; then
+            --reload
+        fi
+fi
+
+# Option 2: Gunicorn with uvicorn workers (for high traffic)
+if [ "$SERVER_TYPE" = "gunicorn" ]; then
+    echo "Using gunicorn with uvicorn workers..."
+    # Calculate workers: (2 x CPU cores) + 1, but cap at 4 for WebSocket stability
+    WORKERS=${WORKERS:-$(python3 -c "import os; print(min(4, (2 * os.cpu_count()) + 1))")}
+
+    exec gunicorn app.main:app \
+        -w $WORKERS \
+        -k uvicorn.workers.UvicornWorker \
+        --bind 0.0.0.0:8000 \
+        --access-logfile - \
+        --error-logfile - \
+        --log-level info \
+        --timeout 300 \
+        --keep-alive 5 \
+        --max-requests 1000 \
+        --max-requests-jitter 100 \
+        --preload
+    if [ "$PYTHON_ENV" = "development" ]; then
+        --reload
+    fi
 fi
