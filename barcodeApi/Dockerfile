@@ -16,19 +16,24 @@ ENV APP_VERSION=${VERSION_ARG}
 # Set work directory
 WORKDIR /app
 
-# Install system dependencies - grouped to reduce layers
-RUN apt-get update && apt-get install -y \
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql-client \
-    netcat-openbsd \
+    netcat-traditional \
     curl \
     gcc \
+    g++ \
+    make \
     zlib1g-dev \
-    libjpeg-dev \
+    libjpeg62-turbo-dev \
     libfreetype6-dev \
+    libpng-dev \
     dos2unix \
+    build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
-    && rm -rf /var/cache/apt/*
+    && rm -rf /var/cache/apt/* \
+    && rm -rf /tmp/*
 
 # Create appuser user and group
 RUN groupadd -g 1000 appuser && \
@@ -36,9 +41,11 @@ RUN groupadd -g 1000 appuser && \
 
 # Copy requirements first to leverage Docker cache
 COPY --chown=appuser:appuser requirements.txt .
-RUN python -m pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir --upgrade bcrypt psutil
+
+# Upgrade pip and install Python dependencies with retry logic
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir --timeout 300 --retries 3 -r requirements.txt && \
+    pip install --no-cache-dir --timeout 300 --retries 3 --upgrade bcrypt psutil
 
 # Copy application files
 COPY --chown=appuser:appuser . .

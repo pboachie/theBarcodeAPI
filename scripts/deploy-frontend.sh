@@ -185,7 +185,7 @@ if ! PM2_HOME="${PM2_HOME_DIR}" pm2 list | grep -q "${PM2_APP_NAME}"; then
   PM2_HOME="${PM2_HOME_DIR}" pm2 start "${PM2_ECOSYSTEM_CONFIG}"
 else
   echo "PM2 process ${PM2_APP_NAME} found. Attempting graceful reload..."
-  
+
   # First try pm2 reload, if it fails, try pm2 restart
   if ! PM2_HOME="${PM2_HOME_DIR}" pm2 reload "${PM2_APP_NAME}" --update-env 2>/dev/null; then
     echo "PM2 reload failed, trying restart instead..."
@@ -213,7 +213,7 @@ if ! check_health; then
     echo "${SUDO_PASSWORD}" | sudo -S ln -sfn "${PREVIOUS_ACTUAL_RELEASE}" "${CURRENT_LINK_PATH}"
 
     echo "Restarting PM2 process for rollback..."
-    
+
     # Try reload first, if it fails, try restart
     if ! PM2_HOME="${PM2_HOME_DIR}" pm2 reload "${PM2_APP_NAME}" --update-env 2>/dev/null; then
       echo "PM2 reload failed during rollback, trying restart..."
@@ -223,7 +223,7 @@ if ! check_health; then
         PM2_HOME="${PM2_HOME_DIR}" pm2 start "${PM2_ECOSYSTEM_CONFIG}"
       fi
     fi
-    
+
     PM2_HOME="${PM2_HOME_DIR}" pm2 save --force
 
     echo "Performing health check after rollback..."
