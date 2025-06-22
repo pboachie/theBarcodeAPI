@@ -30,5 +30,6 @@ setup(
         'sse-starlette==2.3.5',
         'psutil==6.1.0',
         'pytest-asyncio==0.23.7',
+        'pandas==2.2.3',
     ],
 )

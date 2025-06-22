@@ -140,7 +140,7 @@ backup_redis() {
                 echo "Warning: Failed to execute Redis SAVE command."
                 # Continue to attempt copy if SAVE fails but dump file might exist
             }
-            
+
             # For named volumes, we need to copy the RDB file directly from the container
             # Get the container name for Redis
             REDIS_CONTAINER=$($DOCKER_COMPOSE ps -q redis)
@@ -232,16 +232,16 @@ else
   echo "Image 'barcodeapi:latest' not found. Attempting to build 'barcodeapi' service and then start all services."
   # This implies the workflow's build step might have failed or tags are different.
   # Building here can be slow; prefer ensuring image is built by workflow's docker/build-push-action.
-  
+
   echo "Building barcodeapi service..."
   if ! $DOCKER_COMPOSE build --no-cache barcodeapi; then
     echo "Error: Failed to build barcodeapi service. Build failed."
     echo "Attempting to clean up and retry build..."
-    
+
     # Clean up build cache and try again
     docker builder prune -f || true
     docker system prune -f --filter "until=24h" || true
-    
+
     echo "Retrying build with fresh cache..."
     if ! $DOCKER_COMPOSE build --no-cache barcodeapi; then
       echo "Critical Error: Build failed twice. Deployment cannot continue."
@@ -249,7 +249,7 @@ else
       exit 1
     fi
   fi
-  
+
   echo "Build successful. Starting services..."
   if ! $DOCKER_COMPOSE up -d --remove-orphans; then
     echo "Error: Failed to start services after successful build."

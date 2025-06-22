@@ -25,6 +25,9 @@ python-barcode==0.15.1
 Pillow==10.4.0 # Uncomment this if you are having issues locally and comment out Pillow-SIMD
 mcp[cli]==1.9.1
 
+# Data Processing
+pandas==2.3.0
+
 # Utilities
 python-multipart==0.0.17
 pytz==2024.2
