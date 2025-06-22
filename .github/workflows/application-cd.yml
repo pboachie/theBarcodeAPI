@@ -108,134 +108,27 @@ jobs:
         npm run lint
         npm run build
 
-    - name: Deploy and Health Check
+    - name: Setup PM2 Ecosystem Configuration
       run: |
-          # Store current commit hash
-          git rev-parse HEAD > .git-commit
+          # Copy PM2 ecosystem configuration to deployment directory
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./scripts/ecosystem.config.js /opt/thebarcodeapi/${ENVIRONMENT}/
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}
+          
+          # Create logs directory for PM2
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/logs
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}/logs
 
-          # Function for health check
-          check_health() {
-            local url="http://localhost:3000"
-            local max_workers=2
-            local seconds_per_worker=30
-            local max_attempts=$((seconds_per_worker * max_workers / 5))
-
-            echo "Starting health check... Will try $max_attempts times (${seconds_per_worker}s per worker)"
-
-            for i in $(seq 1 $max_attempts); do
-              if curl -s -f -m 5 "$url" > /dev/null; then
-                echo "Health check passed on attempt $i"
-                return 0
-              fi
-              echo "Health check attempt $i/$max_attempts..."
-
-              if [ $((i % 5)) -eq 0 ]; then
-                echo "Current PM2 status:"
-                PM2_HOME="/home/github-runner/.pm2" pm2 list
-                echo "Recent logs:"
-                PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 10 --nostream
-              fi
-
-              sleep 5
-            done
-
-            echo "Health check failed after $max_attempts attempts. Final PM2 status:"
-            PM2_HOME="/home/github-runner/.pm2" pm2 list
-            echo "Recent logs:"
-            PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 50 --nostream
-            return 1
-          }
-
-          # Ensure base directories exist with proper permissions
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/{releases,current}
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
-
-          if [ "${{ steps.check_frontend_changes.outputs.changes }}" == "true" ]; then
-            TIMESTAMP=$(date +%Y%m%d%H%M%S)
-            NEW_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/release-${TIMESTAMP}"
-            CURRENT_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/current"
-            PREVIOUS_RELEASE_LINK="/opt/thebarcodeapi/${ENVIRONMENT}/previous"
-
-            # Create and setup new release directory
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "$NEW_RELEASE"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./.next "$NEW_RELEASE/"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -R ./public "$NEW_RELEASE/"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./package*.json ./.git-commit "$NEW_RELEASE/"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "$NEW_RELEASE"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
-
-            # Install dependencies
-            cd "$NEW_RELEASE"
-            npm ci --omit=dev
-            if [ $? -ne 0 ]; then
-              echo "npm install failed"
-              exit 1
-            fi
-
-            # Handle the current directory symlink
-            if [ -d "$CURRENT_DIR" ] && [ ! -L "$CURRENT_DIR" ]; then
-              echo "Converting existing current directory to symlink..."
-              # Move the content to a new release directory if it exists
-              if [ -d "$CURRENT_DIR/.next" ] || [ -d "$CURRENT_DIR/public" ]; then
-                INITIAL_RELEASE="/opt/thebarcodeapi/${ENVIRONMENT}/releases/initial-release"
-                echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv "$CURRENT_DIR" "$INITIAL_RELEASE"
-                echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$INITIAL_RELEASE" "$PREVIOUS_RELEASE_LINK"
-              else
-                # If it's empty or not a proper release, just remove it
-                echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf "$CURRENT_DIR"
-              fi
-            elif [ -L "$CURRENT_DIR" ] && [ -e "$CURRENT_DIR" ]; then
-              # Store current as previous before switching
-              CURRENT_RELEASE=$(readlink -f "$CURRENT_DIR")
-              echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$CURRENT_RELEASE" "$PREVIOUS_RELEASE_LINK"
-            fi
-
-            # Update symlinks and set final permissions
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R www-data:www-data "$NEW_RELEASE"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 "$NEW_RELEASE"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$NEW_RELEASE" "$CURRENT_DIR"
-
-            # Cleanup old releases (keep last 3)
-            cd "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c 'ls -1dt */ | tail -n +4 | xargs -r rm -rf'
-          fi
-
-          # PM2 process management
-          if ! PM2_HOME="/home/github-runner/.pm2" pm2 list | grep -q "thebarcodeapi-frontend-${ENVIRONMENT}"; then
-            echo "PM2 process not found, starting new instance..."
-            cd "/opt/thebarcodeapi/${ENVIRONMENT}/current"
-            PM2_HOME="/home/github-runner/.pm2" pm2 start "/opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js"
-          fi
-
-          echo "Restarting PM2 process..."
-          PM2_HOME="/home/github-runner/.pm2" pm2 reload "thebarcodeapi-frontend-${ENVIRONMENT}" --update-env
-          PM2_HOME="/home/github-runner/.pm2" pm2 save --force
-
-          # Health check and rollback if needed
-          echo "Starting health checks..."
-          if ! check_health; then
-            echo "Health check failed, attempting rollback..."
-            if [ -L "$PREVIOUS_RELEASE_LINK" ] && [ -e "$PREVIOUS_RELEASE_LINK" ]; then
-              echo "${{ env.SUDO_PASSWORD }}" | sudo -S ln -sfn "$(readlink -f "$PREVIOUS_RELEASE_LINK")" "$CURRENT_DIR"
-
-              echo "Restarting PM2 for rollback..."
-              PM2_HOME="/home/github-runner/.pm2" pm2 reload "thebarcodeapi-frontend-${ENVIRONMENT}" --update-env
-              PM2_HOME="/home/github-runner/.pm2" pm2 save --force
-
-              if ! check_health; then
-                echo "CRITICAL: Rollback failed! Site is down!"
-                PM2_HOME="/home/github-runner/.pm2" pm2 list
-                PM2_HOME="/home/github-runner/.pm2" pm2 logs "thebarcodeapi-frontend-${ENVIRONMENT}" --lines 100 --nostream
-                exit 1
-              fi
-              echo "Rollback successful, but original deployment failed"
-              exit 1
-            fi
-            echo "No previous release available for rollback"
-            exit 1
-          fi
-
-          echo "Deployment successful!"
+    - name: Deploy Frontend using Script
+      env:
+        ENVIRONMENT: ${{ env.ENVIRONMENT }}
+        SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
+      run: |
+          # Make deployment script executable
+          chmod +x ./scripts/deploy-frontend.sh
+          
+          # Run deployment script with changes flag
+          ./scripts/deploy-frontend.sh "${{ steps.check_frontend_changes.outputs.changes }}"
 
   backend-deployment:
     runs-on: self-hosted
