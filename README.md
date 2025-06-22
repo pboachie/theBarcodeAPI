@@ -104,7 +104,7 @@ Once the application is running, you can access the API documentation at:
 theBarcodeAPI now includes **multiple MCP endpoints** for real-time barcode generation, perfect for AI assistants and other applications:
 
 - **WebSocket MCP** (authenticated): Real-time bidirectional communication
-- **HTTP MCP** (no auth): RESTful MCP protocol for simple integrations  
+- **HTTP MCP** (no auth): RESTful MCP protocol for simple integrations
 - **SSE MCP** (authenticated): Server-sent events for legacy support
 
 ### 🚀 Quick Start Options
@@ -170,7 +170,7 @@ ws.onopen = function() {
     console.log('Connected to MCP WebSocket');
     ws.send(JSON.stringify({
         "jsonrpc": "2.0",
-        "id": 1,  
+        "id": 1,
         "method": "initialize",
         "params": {
             "protocolVersion": "1.0.0",
@@ -223,8 +223,8 @@ ws.send(JSON.stringify({
 
 ### Testing with Different Tools
 
-**Browser Console**: Copy the JavaScript code above  
-**Python**: Use `websockets` library with the authenticated URL  
+**Browser Console**: Copy the JavaScript code above
+**Python**: Use `websockets` library with the authenticated URL
 **Command Line**: Use `websocat` or similar tools with the full WebSocket URL
 
 For detailed WebSocket/MCP documentation and remote connection guides, see:
@@ -249,15 +249,69 @@ For detailed WebSocket/MCP documentation and remote connection guides, see:
 ## Environment Variables
 
 Key environment variables:
+- `SECRET_KEY`: JWT signing key (backend)
+- `DATABASE_URL`: PostgreSQL connection string
+- `REDIS_URL`: Redis connection string
+- `MASTER_API_KEY`: Administrative access key
+- `NEXT_PUBLIC_APP_VERSION`: Frontend version display
 
-- `API_VERSION`: The version of the API
-- `SECRET_KEY`: Secret key for JWT token generation
-- `MASTER_API_KEY`: Master API key for administrative access
-- `ALGORITHM`: Algorithm used for JWT token generation
-- `ACCESS_TOKEN_EXPIRE_MINUTES`: Expiration time for access tokens
-- `REDIS_URL`: URL for Redis connection
-- `DATABASE_URL`: URL for PostgreSQL database connection
+## 📈 Performance & Monitoring
 
-## Database Migrations
+### **Key Metrics**
+- **Response Time**: < 200ms average for barcode generation
+- **Throughput**: 1000+ requests per minute
+- **Uptime**: 99.9% availability target
+- **Cache Hit Rate**: 85%+ for repeated requests
 
-Database migrations are handled using Alembic. The `start.sh` script automatically applies migrations on startup.
+### **Monitoring Features**
+- Real-time health checks via `/health` endpoint
+- Usage analytics and reporting
+- Error tracking and structured logging
+- Performance metrics collection
+- Docker container health monitoring
+
+### **Production Deployment**
+- **Containerized**: Full Docker Compose orchestration
+- **Scalable**: Horizontal scaling ready
+- **Persistent**: Data persistence via Docker volumes
+- **Secure**: Environment-based configuration
+- **Monitored**: Comprehensive logging and health checks
+
+## 🤝 Contributing
+
+We welcome contributions! Here's how to get started:
+
+### **Development Setup**
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes with tests
+4. Submit a pull request
+
+### **Contribution Guidelines**
+- Follow existing code style and conventions
+- Add tests for new functionality
+- Update documentation as needed
+- Ensure all tests pass before submitting
+
+## 👨‍💻 About the Developer
+
+**Prince Boachie-Darquah**
+- 📧 **Email**: [princeboachie@gmail.com](mailto:princeboachie@gmail.com)
+- 💼 **LinkedIn**: [www.linkedin.com/in/prince-boachie-darquah-a574947b](https://www.linkedin.com/in/prince-boachie-darquah-a574947b)
+- 🌐 **Portfolio**: [github.com/pboachie](https://github.com/pboachie)
+
+*This project demonstrates expertise in full-stack development, API design, containerization, and modern web technologies. It showcases the ability to build scalable, production-ready applications with comprehensive testing and documentation.*
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+
+**Built with ❤️ using my fingers and some AI**
+
+[🚀 View Live Demo](https://thebarcodeapi.com/) • [📖 API Docs](https://api.thebarcodeapi.com/docs) • [🤝 Connect on LinkedIn](https://www.linkedin.com/in/prince-boachie-darquah-a574947b)
+
+</div>

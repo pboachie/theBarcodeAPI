@@ -1,0 +1,94 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - PYTHON_ENV=production
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - SERVER_TYPE=${SERVER_TYPE:-gunicorn}  # uvicorn or gunicorn
+      - WORKERS=${WORKERS:-1}
+    volumes:
+<<<<<<< HEAD:barcodeAPI/docker-compose.yml
+      - ./app:/app/app:ro
+      - ./alembic:/app/alembic:ro
+      - ./logs:/app/logs:rw
+=======
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      # Don't mount .env as it's copied during build
+>>>>>>> v.0.1.8:scripts/infra/templates/docker-compose.yml.template
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+<<<<<<< HEAD:barcodeAPI/docker-compose.yml
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 2G
+    # user: "${UID:-1000}:${GID:-1000}"  # Temporarily commented out
+=======
+>>>>>>> v.0.1.8:scripts/infra/templates/docker-compose.yml.template
+
+  redis:
+    image: redislabs/rejson:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - /opt/thebarcodeapi/__ENVIRONMENT__/releases/data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    restart: unless-stopped
+
+  db:
+    image: postgres:13
+    ports:
+      - "5432:5432"
+    volumes:
+      - /opt/thebarcodeapi/__ENVIRONMENT__/releases/data/postgres:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=__POSTGRES_PASSWORD__
+      - BARCODE_DB_USER=barcodeboachiefamily
+      - BARCODE_DB_PASSWORD=__DB_PASSWORD__
+      - BARCODE_DB_NAME=barcode_api
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U barcodeboachiefamily -d barcode_api"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  default:
+    name: barcodeapi_network
