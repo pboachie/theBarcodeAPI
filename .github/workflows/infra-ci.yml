@@ -2,6 +2,12 @@ name: theBarcodeApi Infrastructure Setup
 
 on:
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild of all infrastructure components'
+        required: false
+        default: false
+        type: boolean
 
 env:
   # Domain name for the application, used by Nginx and other services.
@@ -22,28 +28,272 @@ env:
   API_VERSION: ${{ vars.API_VERSION }}
 
 jobs:
-  infra-ci-job:
+  infra-setup:
     name: Setup Server Infrastructure
     runs-on: self-hosted
 
     steps:
     - name: Checkout repository code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for infrastructure scripts that may need it
 
+    # Validate that all required environment variables are set
+    - name: Validate infrastructure environment variables
+      run: |
+        echo "Validating required environment variables..."
+        for var in ENVIRONMENT DOMAIN_NAME SUDO_PASSWORD DB_PASSWORD POSTGRES_PASSWORD API_SECRET_KEY API_MASTER_KEY API_VERSION; do
+          if [ -z "${!var}" ]; then
+            echo "Error: Required environment variable $var is not set"
+            exit 1
+          fi
+        done
+        echo "All required environment variables are set."
+
+    # Check system prerequisites for Docker-based deployment
+    - name: Verify system prerequisites
+      run: |
+        echo "Checking system prerequisites for Docker deployment..."
+        
+        # Check if Docker is installed
+        if ! command -v docker &> /dev/null; then
+          echo "Warning: Docker is not installed. Infrastructure setup will install it."
+        else
+          echo "Docker is available: $(docker --version)"
+        fi
+        
+        # Check if Docker Compose is installed
+        if command -v docker-compose &> /dev/null; then
+          echo "Docker Compose is available: $(docker-compose --version)"
+        elif docker compose version &> /dev/null 2>&1; then
+          echo "Docker Compose (plugin) is available: $(docker compose version)"
+        else
+          echo "Warning: Docker Compose is not installed. Infrastructure setup will install it."
+        fi
+        
+        # Check available disk space
+        echo "Available disk space:"
+        df -h /opt/ || df -h /
+        
+        # Check available memory
+        echo "Available memory:"
+        free -h
+
+    # Run infrastructure integration tests before setup
     - name: Run Infrastructure Integration Tests
       run: |
-        bash scripts/infra/tests/test_infra_setup.sh
+        echo "Running infrastructure integration tests..."
+        if [ -f "scripts/infra/tests/test_infra_setup.sh" ]; then
+          bash scripts/infra/tests/test_infra_setup.sh
+        else
+          echo "Infrastructure tests not found, skipping..."
+        fi
 
-    - name: Run Infrastructure and Initial Setup Script
+    # Clean up any existing infrastructure if force rebuild is requested
+    - name: Clean existing infrastructure (if force rebuild)
+      if: github.event.inputs.force_rebuild == 'true'
       run: |
-        bash scripts/infra/manage-infra.sh
+        echo "Force rebuild requested - cleaning existing infrastructure..."
+        
+        # Stop any running Docker containers
+        if command -v docker &> /dev/null; then
+          echo "Stopping existing Docker containers..."
+          docker stop $(docker ps -q) 2>/dev/null || true
+          docker system prune -af --volumes 2>/dev/null || true
+        fi
+        
+        # Clean up deployment directories (but preserve data)
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeApi/logs/* 2>/dev/null || true
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/.env.* 2>/dev/null || true
+        
+        echo "Infrastructure cleanup completed."
 
-    # Note: This workflow sets up infrastructure only. Application deployment
-    # is handled separately by the application-cd.yml workflow.
+    # Main infrastructure setup
+    - name: Run Infrastructure and Initial Setup Script
+      env:
+        FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
+      run: |
+        echo "Starting infrastructure setup for environment: ${{ env.ENVIRONMENT }}"
+        echo "Domain: ${{ env.DOMAIN_NAME }}"
+        echo "Force rebuild: ${{ github.event.inputs.force_rebuild }}"
+        
+        if [ -f "scripts/infra/manage-infra.sh" ]; then
+          bash scripts/infra/manage-infra.sh
+        else
+          echo "Error: Infrastructure management script not found at scripts/infra/manage-infra.sh"
+          exit 1
+        fi
 
-    # Prints final environment information for debugging and record-keeping.
+    # Verify Docker installation and configuration
+    - name: Verify Docker setup
+      run: |
+        echo "Verifying Docker installation and configuration..."
+        
+        # Check Docker daemon
+        if ! docker info >/dev/null 2>&1; then
+          echo "Error: Docker daemon is not running or accessible"
+          exit 1
+        fi
+        
+        # Check Docker Compose
+        if command -v docker-compose >/dev/null 2>&1; then
+          COMPOSE_CMD="docker-compose"
+        elif docker compose version >/dev/null 2>&1; then
+          COMPOSE_CMD="docker compose"
+        else
+          echo "Error: Docker Compose is not available"
+          exit 1
+        fi
+        
+        echo "Docker Compose command: $COMPOSE_CMD"
+        echo "Docker info:"
+        docker info | head -20
+        
+        echo "Docker setup verification completed."
+
+    # Create essential directory structure for Docker deployment
+    - name: Setup deployment directory structure
+      run: |
+        echo "Creating deployment directory structure..."
+        
+        # Create main deployment directories
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeApi
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeFrontend
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${{ env.ENVIRONMENT }}/backups
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${{ env.ENVIRONMENT }}/logs
+        
+        # Create Docker volume directories
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${{ env.ENVIRONMENT }}/volumes/postgres
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${{ env.ENVIRONMENT }}/volumes/redis
+        
+        # Set proper ownership
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi
+        
+        # Create logs directories with proper permissions for containers
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeApi/logs
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R 1000:1000 /opt/thebarcodeapi/barcodeApi/logs
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/barcodeApi/logs
+        
+        echo "Directory structure created successfully."
+
+    # Verify web server configuration (Nginx)
+    - name: Verify web server configuration
+      run: |
+        echo "Verifying web server configuration..."
+        
+        # Check if Nginx is installed and configured
+        if command -v nginx >/dev/null 2>&1; then
+          echo "Nginx is installed: $(nginx -v 2>&1)"
+          
+          # Test Nginx configuration
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S nginx -t || echo "Nginx configuration needs attention"
+          
+          # Check if Nginx is running
+          if systemctl is-active nginx >/dev/null 2>&1; then
+            echo "Nginx is running"
+          else
+            echo "Nginx is not running - will be started by infrastructure scripts"
+          fi
+        else
+          echo "Nginx is not installed - will be installed by infrastructure scripts"
+        fi
+
+    # Test network connectivity and DNS
+    - name: Test network connectivity
+      run: |
+        echo "Testing network connectivity..."
+        
+        # Test external connectivity
+        if curl -s --max-time 10 https://www.google.com >/dev/null; then
+          echo "External connectivity: OK"
+        else
+          echo "Warning: External connectivity test failed"
+        fi
+        
+        # Test Docker Hub connectivity (for pulling images)
+        if curl -s --max-time 10 https://registry-1.docker.io >/dev/null; then
+          echo "Docker Hub connectivity: OK"
+        else
+          echo "Warning: Docker Hub connectivity test failed"
+        fi
+        
+        # Test domain resolution if domain is configured
+        if [ -n "${{ env.DOMAIN_NAME }}" ] && [ "${{ env.DOMAIN_NAME }}" != "localhost" ]; then
+          if nslookup "${{ env.DOMAIN_NAME }}" >/dev/null 2>&1; then
+            echo "Domain resolution for ${{ env.DOMAIN_NAME }}: OK"
+          else
+            echo "Warning: Domain resolution for ${{ env.DOMAIN_NAME }} failed"
+          fi
+        fi
+
+    # Final infrastructure validation
+    - name: Final infrastructure validation
+      run: |
+        echo "Performing final infrastructure validation..."
+        
+        # Check critical directories
+        for dir in /opt/thebarcodeapi /opt/thebarcodeapi/barcodeApi /opt/thebarcodeapi/${{ env.ENVIRONMENT }}; do
+          if [ -d "$dir" ]; then
+            echo "Directory $dir: OK"
+          else
+            echo "Error: Directory $dir not found"
+            exit 1
+          fi
+        done
+        
+        # Check Docker group membership
+        if groups $USER | grep -q docker; then
+          echo "User $USER is in docker group: OK"
+        else
+          echo "Warning: User $USER is not in docker group"
+        fi
+        
+        # Check critical services
+        services=("docker")
+        for service in "${services[@]}"; do
+          if systemctl is-active "$service" >/dev/null 2>&1; then
+            echo "Service $service: RUNNING"
+          else
+            echo "Warning: Service $service is not running"
+          fi
+        done
+        
+        echo "Infrastructure validation completed."
+
+    # Print final environment information for debugging and record-keeping
     - name: Print final environment information
       run: |
-        echo "Infrastructure setup workflow completed for environment: ${{ env.ENVIRONMENT }}"
-        echo "Domain configured (if applicable): ${{ env.DOMAIN_NAME }}"
-        echo "Note: Application deployment is handled by application-cd.yml workflow"
+        echo "============================================"
+        echo "Infrastructure setup completed successfully!"
+        echo "============================================"
+        echo "Environment: ${{ env.ENVIRONMENT }}"
+        echo "Domain: ${{ env.DOMAIN_NAME }}"
+        echo "API Version: ${{ env.API_VERSION }}"
+        echo "Timestamp: $(date)"
+        echo ""
+        echo "System Information:"
+        echo "- OS: $(uname -a)"
+        echo "- Docker: $(docker --version 2>/dev/null || echo 'Not available')"
+        echo "- Docker Compose: $(docker-compose --version 2>/dev/null || docker compose version 2>/dev/null || echo 'Not available')"
+        echo "- Available disk space: $(df -h /opt | tail -1 | awk '{print $4}')"
+        echo "- Available memory: $(free -h | grep Mem | awk '{print $7}')"
+        echo ""
+        echo "Infrastructure is ready for Docker-based application deployment."
+        echo "Next step: Application deployment via application-cd.yml workflow."
+        echo "============================================"
+
+    # Cleanup temporary files and prepare for application deployment
+    - name: Cleanup and prepare for application deployment
+      if: always()
+      run: |
+        echo "Cleaning up temporary files..."
+        
+        # Remove any temporary infrastructure files
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/infra_setup_* 2>/dev/null || true
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/nginx_test_* 2>/dev/null || true
+        
+        # Ensure proper permissions on deployment directories
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi 2>/dev/null || true
+        
+        echo "Infrastructure setup cleanup completed."

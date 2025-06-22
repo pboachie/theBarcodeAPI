@@ -129,28 +129,39 @@ jobs:
         npm run lint
         npm run build
 
-    - name: Setup PM2 Ecosystem Configuration
+    - name: Setup Frontend Environment Variables
       run: |
-          # Copy PM2 ecosystem configuration to deployment directory
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./scripts/ecosystem.config.js /opt/thebarcodeapi/${ENVIRONMENT}/
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/${ENVIRONMENT}
+          # Create frontend environment file if it doesn't exist
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi
+          
+          # Set environment variables for Docker Compose
+          echo "PROJECT_VERSION=${{ env.API_VERSION }}" | sudo tee -a /opt/thebarcodeapi/.env.frontend
+          echo "ENVIRONMENT=${{ env.ENVIRONMENT }}" | sudo tee -a /opt/thebarcodeapi/.env.frontend
+          echo "API_PORT=8000" | sudo tee -a /opt/thebarcodeapi/.env.frontend
+          echo "FRONTEND_PORT=3000" | sudo tee -a /opt/thebarcodeapi/.env.frontend
+          
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/.env.frontend
 
-          # Create logs directory for PM2
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/logs
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/${ENVIRONMENT}/logs
-
-    - name: Deploy Frontend using Script
+    - name: Deploy Frontend using Docker
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
         SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
+        PROJECT_VERSION: ${{ env.API_VERSION }}
         STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES: ${{ steps.check_frontend_changes.outputs.changes }}
       run: |
-          # Make deployment script executable
-          chmod +x ./scripts/deploy-frontend.sh
+          # Copy frontend files to deployment directory if changes detected
+          if [ "${{ steps.check_frontend_changes.outputs.changes }}" = "true" ]; then
+            echo "Frontend changes detected, copying files..."
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeFrontend
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeFrontend /opt/thebarcodeapi/
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeFrontend
+          fi
 
-          # Run deployment script
-          ./scripts/deploy-frontend.sh
+          # Make deployment script executable
+          chmod +x ./scripts/deploy-frontend-docker.sh
+
+          # Run Docker deployment script
+          ./scripts/deploy-frontend-docker.sh
 
   backend-deployment:
     runs-on: self-hosted
@@ -493,16 +504,13 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
 
     # If any of the preceding jobs (frontend-deployment, backend-deployment) or steps in this job failed,
-    # this step collects diagnostic information from PM2, Docker, and Nginx, and cleans up temporary files.
+    # this step collects diagnostic information from Docker and Nginx, and cleans up temporary files.
     - name: Notify and collect diagnostics on deployment failure
       if: failure() # Run this step only if a failure occurred in this job or its dependencies.
       run: |
         echo "============================================"
         echo "Deployment failed! Collecting diagnostic information..."
         echo "============================================"
-
-        echo "PM2 Status:"
-        pm2 list || true
 
         echo "Docker Container Status:"
         docker ps -a || true
