@@ -13,9 +13,6 @@ theBarcodeAPI is a powerful and flexible showcase website designed to demonstrat
 - Customize barcode appearance and size
 - High-performance and scalable architecture
 - Easy-to-use RESTful API
-- **WebSocket/MCP Support**: Real-time barcode generation via Model Context Protocol
-- **AI Assistant Ready**: AGSC (AI/Assistant Generation Service Compatible) server
-- **Docker Optimized**: Enhanced health checks and container compatibility
 
 ## Project Structure
 

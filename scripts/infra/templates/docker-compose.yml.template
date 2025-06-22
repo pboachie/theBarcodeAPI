@@ -16,19 +16,11 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    environment:
-      - SERVER_TYPE=${SERVER_TYPE:-gunicorn}  # uvicorn or gunicorn
-      - WORKERS=${WORKERS:-1}
     volumes:
 <<<<<<< HEAD:barcodeAPI/docker-compose.yml
       - ./app:/app/app:ro
       - ./alembic:/app/alembic:ro
       - ./logs:/app/logs:rw
-=======
-      - ./app:/app/app
-      - ./alembic:/app/alembic
-      # Don't mount .env as it's copied during build
->>>>>>> v.0.1.8:scripts/infra/templates/docker-compose.yml.template
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 15s
@@ -48,8 +40,6 @@ services:
           cpus: '4.0'
           memory: 2G
     # user: "${UID:-1000}:${GID:-1000}"  # Temporarily commented out
-=======
->>>>>>> v.0.1.8:scripts/infra/templates/docker-compose.yml.template
 
   redis:
     image: redislabs/rejson:latest
