@@ -149,12 +149,13 @@ jobs:
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
         SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
+        STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES: ${{ steps.check_frontend_changes.outputs.changes }}
       run: |
           # Make deployment script executable
           chmod +x ./scripts/deploy-frontend.sh
 
-          # Run deployment script with changes flag
-          ./scripts/deploy-frontend.sh "${{ steps.check_frontend_changes.outputs.changes }}"
+          # Run deployment script
+          ./scripts/deploy-frontend.sh
 
   backend-deployment:
     runs-on: self-hosted
