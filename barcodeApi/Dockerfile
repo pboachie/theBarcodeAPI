@@ -1,5 +1,5 @@
 # Use slim Python base image
-FROM --platform=linux/amd64 python:3.10-slim-buster AS builder-base
+FROM python:3.10-slim-buster AS builder-base
 
 # Set build arguments with defaults
 ARG DEBIAN_FRONTEND=noninteractive
