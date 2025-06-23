@@ -40,20 +40,20 @@ To integrate the Barcode API's MCP server with VS Code for AI assistant capabili
     "mcp": {
         "servers": {
             "theBarcodeAPI": {
-                "type": "sse",
-                "url": "http://localhost:8000/api/v1/mcp/sse"
+                "type": "http",
+                "url": "http://localhost:8000/api/v1/mcp-server/mcp/"
             }
         }
     }
     ```
 
 3.  **Using a Remote or Local IP for the MCP Endpoint**:
-    *   The definitive MCP server endpoint for the Barcode API is `/api/v1/mcp/sse`. This is the sole path to be used by any MCP client.
-    *   **Local Backend**: If the Barcode API backend is running on the same machine as your MCP client (e.g., VS Code), the correct URL is `http://localhost:8000/api/v1/mcp/sse`.
-    *   **Remote/Network Backend**: If the backend is running on a different machine (on your local network or a remote server), replace `localhost` with that machine's IP address or resolvable hostname. For example: `http://192.168.1.10:8000/api/v1/mcp/sse` or `http://your-remote-server.com/api/v1/mcp/sse`.
+    *   The MCP server endpoint for the Barcode API is `/api/v1/mcp-server/mcp/`. This is the path to be used by any MCP client.
+    *   **Local Backend**: If the Barcode API backend is running on the same machine as your MCP client (e.g., VS Code), the correct URL is `http://localhost:8000/api/v1/mcp-server/mcp/`.
+    *   **Remote/Network Backend**: If the backend is running on a different machine (on your local network or a remote server), replace `localhost` with that machine's IP address or resolvable hostname. For example: `http://192.168.1.10:8000/api/v1/mcp-server/mcp/` or `http://your-remote-server.com/api/v1/mcp-server/mcp/`.
     *   **Port Accessibility**: Ensure that the API port (default `8000`, or as configured) is accessible from the client machine over the network. Firewalls or network configurations might need adjustment.
 
-After correctly configuring this in your `settings.json`, your MCP client (like VS Code) will be able to communicate with the Barcode API's MCP server. It is important to note that only the `/api/v1/mcp/sse` endpoint is supported for MCP. Any older endpoints (e.g., those involving `/mcp/cmd`) are deprecated and will not work.
+After correctly configuring this in your `settings.json`, your MCP client (like VS Code) will be able to communicate with the Barcode API's MCP server.
 
 ## 🏗️ Architecture
 
@@ -217,7 +217,7 @@ GET    /api/v1/usage/user/{id} # User-specific usage
 
 ### **MCP Server**
 ```http
-GET    /api/v1/mcp/sse                    # Server-Sent Events endpoint for real-time communication and MCP commands
+POST   /api/v1/mcp-server/mcp/            # HTTP streaming endpoint for MCP communication
 ```
 
 ### **Example API Calls**
@@ -257,11 +257,11 @@ curl -X POST "http://localhost:8000/api/v1/bulk" \
 
 ## 🤖 MCP Server Integration
 
-The backend includes a comprehensive MCP server for AI assistant integration. The primary endpoint for MCP communication is `/api/v1/mcp/sse`.
+The backend includes a comprehensive MCP server for AI assistant integration. The primary endpoint for MCP communication is `/api/v1/mcp-server/mcp/`.
 
 ### **Connection Setup for MCP Clients (e.g., VS Code)**
 
-To connect an MCP-compatible client, configure it to use the server's `/api/v1/mcp/sse` endpoint. The server uses FastMCP, which handles tool calls over this Server-Sent Events (SSE) connection.
+To connect an MCP-compatible client, configure it to use the server's `/api/v1/mcp-server/mcp/` endpoint. The server uses FastMCP, which handles tool calls over this HTTP streaming connection.
 
 **Example `settings.json` for VS Code:**
 
@@ -272,8 +272,8 @@ To connect an MCP-compatible client, configure it to use the server's `/api/v1/m
       "mcp": {
         "servers": {
           "theBarcodeAPI_local": {
-            "type": "sse",
-            "url": "http://localhost:8000/api/v1/mcp/sse",
+            "type": "http",
+            "url": "http://localhost:8000/api/v1/mcp-server/mcp/",
             "description": "Local Barcode API MCP Server"
           }
         }
@@ -288,8 +288,8 @@ To connect an MCP-compatible client, configure it to use the server's `/api/v1/m
       "mcp": {
         "servers": {
           "theBarcodeAPI_remote": {
-            "type": "sse",
-            "url": "https://api.thebarcodeapi.com/api/v1/mcp/sse",
+            "type": "http",
+            "url": "https://api.thebarcodeapi.com/api/v1/mcp-server/mcp/",
             "description": "Remote Barcode API MCP Server"
           }
         }
@@ -298,9 +298,8 @@ To connect an MCP-compatible client, configure it to use the server's `/api/v1/m
     ```
 
 **Important Notes:**
-- The URL for the MCP server should always point to the `/api/v1/mcp/sse` path.
-- Any older or different MCP endpoints (like `/mcp/cmd` or paths ending in `/messages/`) are deprecated and should not be used.
-- The MCP client will send JSON-RPC `tools/call` requests over the established SSE connection to this endpoint.
+- The URL for the MCP server should always point to the `/api/v1/mcp-server/mcp/` path.
+- The MCP client will send JSON-RPC requests over HTTP streaming to this endpoint.
 
 ### **Available MCP Tools**
 - **`generate_barcode`**: Full-featured barcode generation
@@ -310,14 +309,14 @@ To connect an MCP-compatible client, configure it to use the server's `/api/v1/m
 
 ## 🔌 MCP Client Configuration
 
-To connect an MCP-compatible client (like a VS Code extension or an AI agent) to this server, you need to configure the client with the server's SSE endpoint: `/api/v1/mcp/sse`. The server uses FastMCP, which handles commands over this single SSE connection.
+To connect an MCP-compatible client (like a VS Code extension or an AI agent) to this server, you need to configure the client with the server's HTTP streaming endpoint: `/api/v1/mcp-server/mcp/`. The server uses FastMCP, which handles commands over this HTTP connection.
 
 ### **Local Development Example**
 
-If you are running the Barcode API server locally (e.g., via `docker-compose up` or `uvicorn app.main:app --reload`), the MCP SSE endpoint is:
+If you are running the Barcode API server locally (e.g., via `docker-compose up` or `uvicorn app.main:app --reload`), the MCP HTTP endpoint is:
 
 ```
-http://localhost:8000/api/v1/mcp/sse
+http://localhost:8000/api/v1/mcp-server/mcp/
 ```
 
 Here's an example of how you might configure this in a client's `settings.json` (e.g., for a VS Code extension):
@@ -327,8 +326,8 @@ Here's an example of how you might configure this in a client's `settings.json` 
   "mcp": {
     "servers": {
       "theBarcodeAPI_local": {
-        "type": "sse",
-        "url": "http://localhost:8000/api/v1/mcp/sse",
+        "type": "http",
+        "url": "http://localhost:8000/api/v1/mcp-server/mcp/",
         "description": "Local Barcode API MCP Server"
       }
     }
@@ -338,10 +337,10 @@ Here's an example of how you might configure this in a client's `settings.json` 
 
 ### **Remote/Production Example**
 
-When the Barcode API is deployed to a production environment (e.g., `https://api.thebarcodeapi.com`), the MCP SSE endpoint will be:
+When the Barcode API is deployed to a production environment (e.g., `https://api.thebarcodeapi.com`), the MCP HTTP endpoint will be:
 
 ```
-https://api.thebarcodeapi.com/api/v1/mcp/sse
+https://api.thebarcodeapi.com/api/v1/mcp-server/mcp/
 ```
 
 The client configuration would look like this:
@@ -351,15 +350,14 @@ The client configuration would look like this:
   "mcp": {
     "servers": {
       "theBarcodeAPI_remote": {
-        "type": "sse",
-        "url": "https://api.thebarcodeapi.com/api/v1/mcp/sse",
+        "type": "http",
+        "url": "https://api.thebarcodeapi.com/api/v1/mcp-server/mcp/",
         "description": "Remote Barcode API MCP Server"
       }
     }
   }
 }
 ```
-**Note**: Ensure your client sends MCP JSON-RPC requests (typically via HTTP POST if not using a library that abstracts this over SSE) to the `/api/v1/mcp/sse` endpoint. FastMCP routes commands sent to this SSE mount path. The `/messages/` suffix is not used.
 
 ## 🧪 Testing
 

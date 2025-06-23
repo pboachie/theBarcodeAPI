@@ -98,152 +98,57 @@ Once the application is running, you can access the API documentation at:
 - **Swagger UI:** `http://localhost:8000/docs`
 - **ReDoc:** `http://localhost:8000/redoc`
 
-## WebSocket/MCP Testing
+## MCP Integration
 
-theBarcodeAPI now includes **multiple MCP endpoints** for real-time barcode generation, perfect for AI assistants and other applications:
+theBarcodeAPI includes **Model Context Protocol (MCP)** support for AI assistants and other applications, providing seamless barcode generation capabilities through HTTP streaming.
 
-- **WebSocket MCP** (authenticated): Real-time bidirectional communication
-- **HTTP MCP** (no auth): RESTful MCP protocol for simple integrations
-- **SSE MCP** (authenticated): Server-sent events for legacy support
+### 🚀 Quick Start
 
-### 🚀 Quick Start Options
-
-**Option 1: HTTP MCP (No Authentication Required)**
-
-Perfect for testing! Try it immediately:
+The MCP server uses an HTTP streaming endpoint for communication:
 
 ```bash
-# Test HTTP MCP endpoint - no auth needed
-curl -X POST "http://localhost:8000/api/v1/mcp/tools/call" \
+# Test MCP endpoint
+curl -X POST "http://localhost:8000/api/v1/mcp-server/mcp/" \
      -H "Content-Type: application/json" \
      -d '{
        "jsonrpc": "2.0",
        "id": 1,
        "method": "tools/call",
        "params": {
-         "name": "barcode_generator",
+         "name": "generate_barcode",
          "arguments": {
            "data": "TEST123",
-           "format": "code128"
+           "format": "code128",
+           "width": 300,
+           "height": 150
          }
        }
      }'
 ```
 
-**Option 2: WebSocket MCP (Authentication Required)**
+### 📍 MCP Endpoint
 
-### 🔐 Authentication Required
+**HTTP Streaming MCP:**
+- `POST /api/v1/mcp-server/mcp/` - HTTP streaming endpoint for MCP communication
 
-**Important**: All WebSocket connections now require a valid client ID. You must obtain a client ID from the auth endpoint before connecting.
+### 🔧 VS Code Integration
 
-### Step 1: Get a Client ID
+To use with VS Code, add this to your `settings.json`:
 
-**Rate Limited**: 1 request per 30 minutes per IP address.
-
-```bash
-# Request a client ID (replace localhost:8000 with your server)
-curl -X POST "http://localhost:8000/api/v1/mcp/auth" \
-     -H "Content-Type: application/json" \
-     -d "{}"
-```
-
-Response:
 ```json
 {
-  "client_id": "550e8400-e29b-41d4-a716-446655440000",
-  "expires_in": 1800,
-  "websocket_url": "ws://localhost:8000/api/v1/mcp/ws/550e8400-e29b-41d4-a716-446655440000"
+  "mcp": {
+    "servers": {
+      "theBarcodeAPI": {
+        "type": "http",
+        "url": "http://localhost:8000/api/v1/mcp-server/mcp/"
+      }
+    }
+  }
 }
 ```
 
-### Step 2: Connect to WebSocket
-
-Use the `websocket_url` from the auth response:
-
-```javascript
-// Connect using the authenticated WebSocket URL
-const ws = new WebSocket('ws://localhost:8000/api/v1/mcp/ws/550e8400-e29b-41d4-a716-446655440000');
-
-// Initialize MCP session
-ws.onopen = function() {
-    console.log('Connected to MCP WebSocket');
-    ws.send(JSON.stringify({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "initialize",
-        "params": {
-            "protocolVersion": "1.0.0",
-            "clientInfo": {
-                "name": "browser-test",
-                "version": "1.0.0"
-            }
-        }
-    }));
-};
-
-// Listen for responses
-ws.onmessage = function(event) {
-    console.log('Response:', JSON.parse(event.data));
-};
-
-ws.onerror = function(error) {
-    console.error('WebSocket error:', error);
-};
-```
-
-### Step 3: Generate Barcodes
-
-Once connected and initialized, generate barcodes in real-time:
-
-```javascript
-// Generate a Code128 barcode
-ws.send(JSON.stringify({
-    "jsonrpc": "2.0",
-    "id": 2,
-    "method": "tools/call",
-    "params": {
-        "name": "barcode_generator",
-        "arguments": {
-            "data": "HELLO-WORLD-2024",
-            "format": "code128",
-            "width": 300,
-            "height": 150
-        }
-    }
-}));
-```
-
-### ⚠️ Important Notes
-
-- **Client IDs expire in 30 minutes** - you'll need to get a new one if it expires
-- **Rate limiting**: Only 1 client ID per 30 minutes per IP address
-- **Invalid client IDs**: WebSocket will close with code 4003 if client ID is invalid/expired
-- **Authentication first**: Always get a client ID before attempting WebSocket connection
-
-### Testing with Different Tools
-
-**Browser Console**: Copy the JavaScript code above
-**Python**: Use `websockets` library with the authenticated URL
-**Command Line**: Use `websocat` or similar tools with the full WebSocket URL
-
-For detailed WebSocket/MCP documentation and remote connection guides, see:
-- [WebSocket MCP Documentation](barcodeApi/WEBSOCKET_MCP.md)
-- [Remote Connections Guide](REMOTE_CONNECTIONS.md)
-
-### 📍 All Available MCP Endpoints
-
-**HTTP MCP Endpoints (No Auth):**
-- `POST /api/v1/mcp/initialize` - Initialize MCP session
-- `POST /api/v1/mcp/tools/list` - List available tools
-- `POST /api/v1/mcp/tools/call` - Execute barcode generation
-- `POST /api/v1/mcp/resources/list` - List available resources
-- `POST /api/v1/mcp/resources/read` - Read resource data
-
-**Authenticated Endpoints:**
-- `POST /api/v1/mcp/auth` - Get client ID (rate limited)
-- `WS /api/v1/mcp/ws/{client_id}` - WebSocket MCP connection
-- `GET /api/v1/mcp/sse/{client_id}` - Server-sent events stream
-- `GET /api/v1/mcp/status` - Connection status and metrics
+For remote connections, replace `localhost:8000` with your server URL.
 
 ## Environment Variables
 

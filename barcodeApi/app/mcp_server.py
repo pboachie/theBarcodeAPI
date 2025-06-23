@@ -1,10 +1,10 @@
 from typing import Optional
 import base64
+import logging
+from fastmcp import FastMCP
 from mcp.shared.exceptions import McpError
 from mcp.types import ErrorData
-from app.schemas import BarcodeFormatEnum, BarcodeImageFormatEnum, BarcodeRequest
-from .barcode_generator import generate_barcode_image, BarcodeGenerationError
-import logging
+from fastmcp.prompts.prompt import Message, PromptMessage, TextContent
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -14,84 +14,110 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-async def generate_barcode_mcp(
-    data: str,
-    format: BarcodeFormatEnum,
-    width: int = 200,
-    height: int = 100,
-    show_text: bool = True,
-    text_content: Optional[str] = None,
-    module_width: Optional[float] = None,
-    module_height: Optional[float] = None,
-    quiet_zone: Optional[float] = None,
-    font_size: Optional[int] = None,
-    text_distance: Optional[float] = None,
-    background: Optional[str] = None,
-    foreground: Optional[str] = None,
-    center_text: bool = True,
-    image_format: BarcodeImageFormatEnum = BarcodeImageFormatEnum.PNG,
-    dpi: int = 200,
-    add_checksum: Optional[bool] = None,
-    no_checksum: Optional[bool] = None,
-    guardbar: Optional[bool] = None
-) -> str:
-    """
-    Generates a barcode image based on the provided parameters and returns a status message
-    or a base64 encoded image string.
-    This function is intended to be registered as an MCP tool.
-    """
-    logger.info(f"MCP Tool: generate_barcode_mcp called with data='{data}', format='{format.value}'")
-    try:
-        barcode_request = BarcodeRequest(
-            data=data,
-            format=format,
-            width=width,
-            height=height,
-            show_text=show_text,
-            text_content=text_content if show_text else "",
-            module_width=module_width,
-            module_height=module_height,
-            quiet_zone=quiet_zone,
-            font_size=font_size if show_text else 0,
-            text_distance=text_distance if show_text else 0,
-            background=background,
-            foreground=foreground,
-            center_text=center_text,
-            image_format=image_format,
-            dpi=dpi,
-            add_checksum=add_checksum,
-            no_checksum=no_checksum,
-            guardbar=guardbar
+global_mcp_instance = FastMCP(
+    name="theBarcodeGeneratorMCP",
+    instructions="This server provides barcode generation capabilities. Use the generate_barcode tool to create barcodes in various formats.",
+    include_tags={"barcode", "mcp", "barcode generator", "barcode api", "barcode mcp", "barcode generation"}
+)
+
+@global_mcp_instance.prompt(
+    name="generate_barcode_basic",
+    description="Generate a basic barcode for the given data and format.",
+    tags={"barcode", "basic", "generation"},
+    enabled=True
+)
+def generate_barcode_basic_prompt(data: str, format: str) -> PromptMessage:
+    """Prompt: Generate a barcode for the given data and format. Required parameters: data, format."""
+    return PromptMessage(
+        role="user",
+        content=TextContent(
+            type="text",
+            text=(
+                f"Using the `generate_barcode` tool, generate a barcode for the data '{data}' in the '{format}' format. "
+                "Use the standard default options for all other parameters (such as default size, colors, and output format)."
+            )
         )
-
-        writer_options = {
-            'module_width': module_width,
-            'module_height': module_height,
-            'quiet_zone': quiet_zone,
-            'font_size': font_size if show_text else 0,
-            'text_distance': text_distance if show_text else 0,
-            'background': background,
-            'foreground': foreground,
-            'center_text': center_text,
-            'image_format': image_format.value,
-            'dpi': dpi
-        }
-        if show_text and text_content:
-            writer_options['text_content'] = text_content
-
-        writer_options = {k: v for k, v in writer_options.items() if v is not None}
+    )
 
 
-        image_bytes = await generate_barcode_image(barcode_request, writer_options)
-        base64_image = base64.b64encode(image_bytes).decode('utf-8')
-        logger.info(f"Barcode generated successfully for data: {data}")
-        return f"data:image/{image_format.value.lower()};base64,{base64_image}"
+@global_mcp_instance.prompt(
+    name="generate_barcode_custom_size",
+    description="Generate a barcode for the given data, format, width, and height.",
+    tags={"barcode", "custom", "size"},
+    enabled=True
+)
+def generate_barcode_custom_size_prompt(data: str, format: str, width: int, height: int) -> PromptMessage:
+    """Prompt: Generate a barcode for the given data, format, width, and height."""
+    return PromptMessage(
+        role="user",
+        content=TextContent(
+            type="text",
+            text=(
+                f"Using the `generate_barcode` tool, generate a barcode for the data '{data}' in the '{format}' format. "
+                f"Set the width to {width} and the height to {height} pixels. "
+                "Use the standard default options for all other parameters (such as default colors and output format)."
+            )
+        )
+    )
 
-    except BarcodeGenerationError as e:
-        logger.error(f"MCP Tool: Barcode generation error for data='{data}': {str(e)}")
-        error_payload = ErrorData(code=-32000, message=e.message, data={"type": e.error_type})
-        raise McpError(error_payload)
-    except Exception as e:
-        logger.error(f"MCP Tool: Unexpected error for data='{data}': {str(e)}", exc_info=True)
-        error_payload = ErrorData(code=-32001, message=f"An unexpected error occurred: {str(e)}", data={"type": "UnexpectedError"})
-        raise McpError(error_payload)
+
+@global_mcp_instance.prompt(
+    name="generate_barcode_text_color",
+    description="Generate a barcode with custom text and colors.",
+    tags={"barcode", "text", "color"},
+    enabled=True
+)
+def generate_barcode_text_color_prompt(data: str, format: str, text_content: str, background: str, foreground: str) -> PromptMessage:
+    """Prompt: Generate a barcode with custom text and colors."""
+    return PromptMessage(
+        role="user",
+        content=TextContent(
+            type="text",
+            text=(
+                f"Using the `generate_barcode` tool, generate a barcode for the data '{data}' in the '{format}' format. "
+                f"Show the text '{text_content}', set the background to {background} and the foreground to {foreground}. "
+                "Use the standard default options for all other parameters (such as default size and output format)."
+            )
+        )
+    )
+
+
+@global_mcp_instance.prompt(
+    name="generate_barcode_advanced",
+    description="Generate a barcode with advanced options.",
+    tags={"barcode", "advanced", "options"},
+    enabled=True
+)
+def generate_barcode_advanced_prompt(data: str, format: str, width: int, height: int, font_size: int, text_distance: float, image_format: str) -> PromptMessage:
+    """Prompt: Generate a barcode with advanced options."""
+    return PromptMessage(
+        role="user",
+        content=TextContent(
+            type="text",
+            text=(
+                f"Using the `generate_barcode` tool, generate a barcode for the data '{data}' in the '{format}' format. "
+                f"Set the width to {width}, height to {height}, font size to {font_size}, text distance to {text_distance}, and output as a {image_format}. "
+                "Use the standard default options for all other parameters."
+            )
+        )
+    )
+
+
+@global_mcp_instance.prompt(
+    name="generate_barcode_minimal",
+    description="Generate a minimal barcode.",
+    tags={"barcode", "minimal"},
+    enabled=True
+)
+def generate_barcode_minimal_prompt(data: str, format: str) -> PromptMessage:
+    """Prompt: Generate a minimal barcode."""
+    return PromptMessage(
+        role="user",
+        content=TextContent(
+            type="text",
+            text=(
+                f"Using the `generate_barcode` tool, generate a barcode for the data '{data}' in the '{format}' format. "
+                "Use the standard default options for all other parameters (such as default size, colors, and output format)."
+            )
+        )
+    )

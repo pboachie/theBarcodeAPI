@@ -72,7 +72,7 @@ class User(Base):
     requests_today = Column(Integer, default=0, nullable=False,
                           doc="Number of requests made today for analytics")
 
-    last_request = Column(DateTime(timezone=True), nullable=True, index=True,
+    last_request = Column(DateTime(timezone=True), nullable=True,
                          doc="Timestamp of most recent API request")
     last_reset = Column(DateTime(timezone=True), nullable=True,
                        doc="Timestamp of last daily limit reset")

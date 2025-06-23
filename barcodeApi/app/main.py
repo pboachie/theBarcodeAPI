@@ -2,8 +2,9 @@
 
 import asyncio
 import gc
-import signal
 import os
+import logging
+import asyncio
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -15,15 +16,11 @@ from pydantic import ValidationError
 from fastapi.openapi.utils import get_openapi
 from contextlib import asynccontextmanager
 
-import logging
-import asyncio
 
 from app.api import barcode, usage, health, token, admin, bulk as bulk_api_router
 from app.config import settings
 from app.barcode_generator import BarcodeGenerationError
-from app.mcp_server import generate_barcode_mcp
-from app.api.websocket_mcp import router as websocket_mcp_router
-from mcp.server.fastmcp import FastMCP
+from app.mcp_server import global_mcp_instance
 from app.database import close_db_connection, init_db, get_db
 from app.redis import redis_manager, close_redis_connection, initialize_redis_manager
 from app.schemas import SecurityScheme
@@ -70,151 +67,49 @@ class CustomServerHeaderMiddleware(BaseHTTPMiddleware):
         response.headers["server"] = f"BarcodeAPI/{settings.API_VERSION}"
         return response
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Lifespan context manager for handling startup/shutdown and signals"""
 
-    current_process = os.getpid()
-    logger.info(f"Lifespan starting in process {current_process}")
+# Debug: Check if tool is in the MCP instance
+try:
+    # Try to access internal tool registry
+    if hasattr(global_mcp_instance, '_mcp_server'):
+        server = global_mcp_instance._mcp_server
+        logger.info(f"MCP server: {server}")
 
-    # Create shutdown event
-    shutdown_event = asyncio.Event()
+        # Check various attributes that might contain tools
+        server_attrs = [attr for attr in dir(server) if 'tool' in attr.lower()]
+        logger.info(f"Server tool-related attributes: {server_attrs}")
 
-    def signal_handler():
-        """Handle shutdown signals"""
-        logger.info("Received shutdown signal...")
-        shutdown_event.set()
+    else:
+        logger.warning("_mcp_server attribute not found")
 
-    # Register signal handlers
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, signal_handler)
+    # Try to access the tool manager
+    if hasattr(global_mcp_instance, '_tool_manager'):
+        tool_manager = global_mcp_instance._tool_manager
+        logger.info(f"Tool manager: {tool_manager}")
 
+        # Check tool manager attributes
+        tm_attrs = [attr for attr in dir(tool_manager) if not attr.startswith('_')]
+        logger.info(f"Tool manager public methods: {tm_attrs}")
+
+        if hasattr(tool_manager, '_tools'):
+            logger.info(f"Tool manager tools: {list(tool_manager._tools.keys()) if tool_manager._tools else 'Empty'}")
+
+    # Check get_tools method
     try:
-        # Startup
-        logger.info(f"Initializing in process {current_process}")
-        try:
+        tools = global_mcp_instance.get_tools()
+        logger.info(f"global_mcp_instance.get_tools() result: {tools}")
+        # get_tools() might be a coroutine, so let's just check the type
+        logger.info(f"Tools type: {type(tools)}")
+    except Exception as e:
+        logger.error(f"Error calling get_tools: {e}")
 
-            await initialize_redis_manager()
-            app.state.redis_manager = redis_manager
+    # List all FastMCP instance attributes
+    logger.info(f"FastMCP instance attributes: {[attr for attr in dir(global_mcp_instance) if not attr.startswith('__')]}")
 
-            # Initialize background_tasks early to avoid AttributeError during shutdown
-            app.state.background_tasks = []
+except Exception as e:
+    logger.error(f"Error checking tool registry: {e}", exc_info=True)
 
-            app.state.batch_processor = redis_manager.batch_processor
-            # Verify Redis manager state
-            logger.info("Verifying Redis manager state...")
-            if not redis_manager.batch_processor:
-                raise RuntimeError("Batch processor not initialized")
-
-            for priority, processor in redis_manager.batch_processor.processors.items():
-                if not processor.running:
-                    logger.error(f"{priority} processor not running")
-                    raise RuntimeError(f"{priority} processor failed to start")
-                logger.debug(f"{priority} processor running")
-
-            # Initialize other services
-            logger.info("Initializing database...")
-            await init_db()
-
-            logger.info("Initializing FastMCP server...")
-            try:
-                logger.debug("Creating FastMCP instance...")
-                mcp_instance = FastMCP(
-                    name="theBarcodeGeneratorMCP",
-                    instructions="This server provides barcode generation capabilities. Use the generate_barcode tool to create barcodes in various formats.",
-                    lifespan=app.lifespan,
-                    tags=["barcode", "mcp", "barcode generator", "barcode api", "barcode mcp", "barcode generation"]
-                )
-                logger.debug("FastMCP instance created successfully")
-
-                logger.debug("Adding tool to MCP instance...")
-                mcp_instance.add_tool(generate_barcode_mcp, name="generate_barcode")
-                logger.debug("Tool added successfully")
-
-                logger.debug("Storing MCP instance in app.state...")
-                app.state.mcp_instance = mcp_instance
-                logger.info("FastMCP server initialized and stored in app.state.")
-
-                mount_mcp_sse_app()
-
-            except Exception as mcp_error:
-                logger.error(f"Failed to initialize MCP components: {mcp_error}", exc_info=True)
-                app.state.mcp_instance = None
-
-            logger.info("Initializing rate limiter...")
-            await FastAPILimiter.init(redis_manager.redis)
-
-            # Initialize database data
-            logger.info("Syncing username mappings...")
-            async for db in get_db():
-                await redis_manager.sync_all_username_mappings(db)
-                break
-
-            logger.info("Starting background tasks...")
-            app.state.background_tasks = [
-                asyncio.create_task(log_memory_usage()),
-                asyncio.create_task(log_pool_status())
-            ]
-
-            logger.info("Startup complete!")
-            yield
-
-            # Wait for shutdown signal
-            await shutdown_event.wait()
-
-        except Exception as e:
-            logger.error(f"Error during startup: {e}", exc_info=True)
-            raise
-
-        finally:
-            # Shutdown
-            logger.info("Starting shutdown process...")
-            try:
-                # Remove signal handlers
-                for sig in (signal.SIGTERM, signal.SIGINT):
-                    loop.remove_signal_handler(sig)
-
-                logger.info("Canceling background tasks...")
-                background_tasks = getattr(app.state, 'background_tasks', [])
-                for task in background_tasks:
-                    if not task.done():
-                        task.cancel()
-                        try:
-                            await task
-                        except asyncio.CancelledError:
-                            pass
-
-                # Stop batch processors
-                logger.info("Stopping batch processors...")
-                for priority, processor in redis_manager.batch_processor.processors.items():
-                    logger.info(f"Stopping {priority} priority batch processor...")
-                    await processor.stop()
-
-                # Sync data to database
-                logger.info("Syncing data to database...")
-                async for db in get_db():
-                    await redis_manager.sync_redis_to_db(db)
-                    break
-
-                # Stop services
-                logger.info("Stopping services...")
-                await redis_manager.stop()
-                await close_redis_connection()
-                await close_db_connection()
-
-            except Exception as e:
-                logger.error(f"Error during shutdown: {e}", exc_info=True)
-                raise
-            finally:
-                # Final cleanup
-                gc.collect()
-                logger.info("Shutdown complete")
-
-    finally:
-        # Remove signal handlers
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.remove_signal_handler(sig)
+# Global MCP instance created at module level for proper ASGI integration
 
 def custom_openapi():
     if app.openapi_schema:
@@ -238,6 +133,122 @@ def custom_openapi():
     app.openapi_schema = openapi_schema
     return app.openapi_schema
 
+# Create proper combined lifespan for FastAPI + FastMCP integration
+@asynccontextmanager
+async def integrated_lifespan(app: FastAPI):
+    """Integrated lifespan that properly combines FastAPI and FastMCP"""
+    # Store the MCP instance in app state
+    app.state.mcp_instance = global_mcp_instance
+
+    # Create MCP apps
+    mcp_http_app = global_mcp_instance.http_app(path='/mcp')
+    mcp_sse_app = global_mcp_instance.http_app(transport="sse", path='/sse')
+
+    # Start the MCP app lifespan first
+    async with mcp_http_app.lifespan(app):
+        # Then run our FastAPI startup logic
+        try:
+            logger.info("Starting FastAPI initialization...")
+
+            # Initialize Redis and other services
+            await initialize_redis_manager()
+            app.state.redis_manager = redis_manager
+            app.state.background_tasks = []
+            app.state.batch_processor = redis_manager.batch_processor
+
+            # Verify Redis manager state
+            logger.info("Verifying Redis manager state...")
+            if not redis_manager.batch_processor:
+                raise RuntimeError("Batch processor not initialized")
+
+            for priority, processor in redis_manager.batch_processor.processors.items():
+                if not processor.running:
+                    logger.error(f"{priority} processor not running")
+                    raise RuntimeError(f"{priority} processor failed to start")
+                logger.debug(f"{priority} processor running")
+
+            # Initialize database
+            logger.info("Initializing database...")
+            await init_db()
+
+            # Initialize rate limiter
+            logger.info("Initializing rate limiter...")
+            await FastAPILimiter.init(redis_manager.redis)
+
+            # Initialize database data
+            logger.info("Syncing username mappings...")
+            async for db in get_db():
+                await redis_manager.sync_all_username_mappings(db)
+                break
+
+            logger.info("Starting background tasks...")
+            app.state.background_tasks = [
+                asyncio.create_task(log_memory_usage()),
+                asyncio.create_task(log_pool_status())
+            ]
+
+            # Mount MCP apps after both lifecycles are started
+            logger.info("Creating MCP HTTP and SSE apps...")
+            logger.info(f"Global MCP instance before mounting: {global_mcp_instance}")
+
+            app.mount("/mcp-server", mcp_http_app, name="mcp_http_endpoint")
+            app.mount("/mcp-sse", mcp_sse_app, name="mcp_sse_endpoint")
+
+            logger.info(f"FastMCP HTTP app mounted at /mcp-server/mcp (full path: /api/v1/mcp-server/mcp)")
+            logger.info(f"FastMCP SSE app mounted at /mcp-sse/sse (full path: /api/v1/mcp-sse/sse)")
+
+            # Final check on the mounted app
+            logger.info(f"MCP HTTP app: {mcp_http_app}")
+            logger.info(f"MCP SSE app: {mcp_sse_app}")
+
+            logger.info("Startup complete!")
+
+            # Yield control back to the application
+            yield
+
+        except Exception as e:
+            logger.error(f"Error during startup: {e}", exc_info=True)
+            raise
+        finally:
+            # Shutdown logic
+            logger.info("Starting shutdown process...")
+            try:
+                logger.info("Canceling background tasks...")
+                background_tasks = getattr(app.state, 'background_tasks', [])
+                for task in background_tasks:
+                    if not task.done():
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
+
+                # Stop batch processors
+                logger.info("Stopping batch processors...")
+                if hasattr(app.state, 'redis_manager') and app.state.redis_manager:
+                    for priority, processor in app.state.redis_manager.batch_processor.processors.items():
+                        logger.info(f"Stopping {priority} priority batch processor...")
+                        await processor.stop()
+
+                    # Sync data to database
+                    logger.info("Syncing data to database...")
+                    async for db in get_db():
+                        await app.state.redis_manager.sync_redis_to_db(db)
+                        break
+
+                    # Stop services
+                    logger.info("Stopping services...")
+                    await app.state.redis_manager.stop()
+
+                await close_redis_connection()
+                await close_db_connection()
+
+                logger.info("Shutdown complete")
+
+            except Exception as e:
+                logger.error(f"Error during shutdown: {e}", exc_info=True)
+                raise
+
 app = FastAPI(
     title="the Barcode API",
     description="""
@@ -248,7 +259,7 @@ app = FastAPI(
     docs_url="/redoc" if settings.ENVIRONMENT == "development" else None,
     redoc_url="/",
     openapi_url="/openapi.json",
-    lifespan=lifespan,
+    lifespan=integrated_lifespan,
     root_path=settings.ROOT_PATH,
     servers=[{"url": settings.SERVER_URL}],
     contact={
@@ -326,31 +337,9 @@ app.include_router(barcode.router)
 app.include_router(usage.router)
 app.include_router(token.router)
 app.include_router(admin.router)
-app.include_router(websocket_mcp_router)
 app.include_router(bulk_api_router.router)
 
-def mount_mcp_sse_app():
-    """Mount the FastMCP SSE app after startup to ensure mcp_instance is available."""
-    try:
-        logger.info("Attempting to mount FastMCP SSE app.")
-        if not hasattr(app.state, 'mcp_instance') or app.state.mcp_instance is None:
-            logger.error("MCP instance (app.state.mcp_instance) not found. Cannot mount SSE app.")
-            return
-
-        # Mount the HTTP endpoint
-        app.mount("/mcp", app.state.mcp_instance.http_app(), name="mcp_http_endpoint")
-        logger.info(f"FastMCP HTTP app mounted at /mcp (full path: {settings.ROOT_PATH}/mcp)")
-
-        # Mount the SSE endpoint
-        app.mount("/mcp/sse", app.state.mcp_instance.http_app(transport="sse"), name="mcp_sse_endpoint")
-        logger.info(f"FastMCP SSE app mounted at /mcp/sse (full path: {settings.ROOT_PATH}/mcp/sse)")
-
-        # Log the available routes for debugging
-        for route in app.routes:
-            logger.debug(f"Available route: {route}")
-
-    except Exception as e:
-        logger.error(f"Failed to mount FastMCP apps: {e}", exc_info=True)
+# MCP mounting is now handled directly in the integrated_lifespan function
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -419,3 +408,6 @@ async def add_cors_headers(request: Request, call_next):
         response.headers["Access-Control-Allow-Credentials"] = "true"
 
     return response
+
+# The MCP instance is already stored in app state via integrated_lifespan
+# All startup/shutdown logic is handled by the integrated_lifespan function

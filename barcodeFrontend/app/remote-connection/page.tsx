@@ -62,21 +62,20 @@ export default function RemoteConnectionPage() {
             Connecting via MCP (Model Context Protocol)
           </h2>
           <p className="text-md md:text-lg leading-relaxed mb-4">
-            For integrating with AI assistants or more complex workflows, the Model Context Protocol (MCP) is the recommended method. The primary and recommended MCP communication method is via an <strong>HTTP streaming endpoint</strong>, which provides efficient, bidirectional communication. A legacy Server-Sent Events (SSE) endpoint is also available for compatibility.
+            For integrating with AI assistants or more complex workflows, the Model Context Protocol (MCP) is the recommended method. The MCP communication method is via an <strong>HTTP streaming endpoint</strong>, which provides efficient, bidirectional communication.
           </p>
           <p className="text-md md:text-lg leading-relaxed mb-4">
-            The MCP endpoints are:
+            The MCP endpoint is:
           </p>
           <ul className="list-disc list-inside mb-4 space-y-1 text-md md:text-lg">
-            <li><strong>Recommended HTTP Stream:</strong> <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp</code></li>
-            <li><strong>Legacy SSE:</strong> <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp/sse</code></li>
+            <li><strong>HTTP Stream:</strong> <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp-server/mcp</code></li>
           </ul>
           <p className="text-md md:text-lg leading-relaxed mb-4">
             These paths are distinct from the standard HTTP REST API endpoints (like <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/barcode/generate</code>) which are used for direct barcode generation requests.
             While some basic interactions with the MCP server might be possible without an API key during development, providing one in your request headers (e.g., <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">Authorization: Bearer YOUR_API_KEY</code> or <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">X-API-Key: YOUR_API_KEY</code>) is crucial for production use to identify your application and manage your usage quotas and rate limits.
           </p>
           <p className="text-md md:text-lg leading-relaxed mb-6">
-            MCP allows for a richer interaction model, where an AI assistant can call various tools provided by the server. Below is a conceptual example of a JSON payload for an MCP `tools/call` request (typically used with the HTTP streaming endpoint), specifically for the `generate_barcode` tool:
+            MCP allows for a richer interaction model, where an AI assistant can call various tools provided by the server. Below is a conceptual example of a JSON payload for an MCP `tools/call` request used with the HTTP streaming endpoint, specifically for the `generate_barcode` tool:
           </p>
 
           <div className="mt-6 bg-slate-200 dark:bg-slate-800 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
@@ -112,7 +111,7 @@ export default function RemoteConnectionPage() {
               </code>
             </pre>
             <p className="mt-4 text-xs md:text-sm text-slate-400 dark:text-slate-500">
-              This example illustrates how parameters for barcode generation are passed. The structure follows JSON-RPC 2.0 for HTTP streaming. The legacy SSE endpoint might have a slightly different top-level structure for messages.
+              This example illustrates how parameters for barcode generation are passed. The structure follows JSON-RPC 2.0 for HTTP streaming.
             </p>
           </div>
         </section>
@@ -122,7 +121,7 @@ export default function RemoteConnectionPage() {
             Client Configuration Examples
           </h2>
           <p className="text-md md:text-lg leading-relaxed mb-4">
-            Below are examples of how to configure various clients or tools to connect to the MCP server. We primarily show connection to the recommended HTTP streaming endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp</code>).
+            Below are examples of how to configure various clients or tools to connect to the MCP server. We primarily show connection to the recommended HTTP streaming endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">/api/v1/mcp-server/mcp</code>).
             When an API key (often referred to as a token in contexts like &ldquo;Bearer Token&rdquo;) is used via the <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs text-[var(--accent-color)]">Authorization</code> header, it&rsquo;s for identifying you to the MCP server, primarily for usage tracking and applying appropriate rate limits based on your plan.
             While this public demonstration API might not strictly enforce a key for all interactions, it&rsquo;s good practice to include it as shown in the examples if you have one.
           </p>
@@ -144,32 +143,28 @@ export default function RemoteConnectionPage() {
           {selectedPlatform === 'vscode' && (
             <div className="space-y-6">
               <div>
-                <h4 className="text-lg font-semibold mb-2 text-[var(--foreground)]/90">VSCode `settings.json` (HTTP and SSE)</h4>
+                <h4 className="text-lg font-semibold mb-2 text-[var(--foreground)]/90">VSCode `settings.json` (HTTP MCP)</h4>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">
-                  This configuration defines two MCP servers: one for the recommended HTTP streaming and one for the legacy SSE endpoint.
+                  This configuration defines the MCP server using the HTTP streaming endpoint.
                 </p>
                 <div className="bg-slate-200 dark:bg-slate-800 p-4 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-medium text-[var(--accent-color)]">JSON</span>
                     <button
-                      onClick={() => handleCopy('vscodeHttpSseCode', 'vscodeHttpSseCopyBtn')}
-                      disabled={copiedStates['vscodeHttpSseCopyBtn']}
+                      onClick={() => handleCopy('vscodeHttpCode', 'vscodeHttpCopyBtn')}
+                      disabled={copiedStates['vscodeHttpCopyBtn']}
                       className="py-1 px-2 bg-blue-500 text-white rounded text-xs hover:bg-blue-600 disabled:opacity-50 transition-all"
                     >
-                      {copiedStates['vscodeHttpSseCopyBtn'] ? 'Copied!' : 'Copy Code'}
+                      {copiedStates['vscodeHttpCopyBtn'] ? 'Copied!' : 'Copy Code'}
                     </button>
                   </div>
                   <pre className="bg-slate-100 dark:bg-slate-700 p-3 rounded-md overflow-x-auto text-xs">
-                    <code id="vscodeHttpSseCode" className="language-json text-black dark:text-slate-200">
+                    <code id="vscodeHttpCode" className="language-json text-black dark:text-slate-200">
 {`"mcp": {
   "servers": {
-    "theBarcodeAPI_HTTP": {
+    "theBarcodeAPI": {
       "type": "http",
-      "url": "https://api.thebarcodeapi.com/api/v1/mcp"
-    },
-    "theBarcodeAPI_SSE_Legacy": {
-      "type": "sse",
-      "url": "https://api.thebarcodeapi.com/api/v1/mcp/sse"
+      "url": "https://api.thebarcodeapi.com/api/v1/mcp-server/mcp"
     }
   }
 }`}
@@ -200,7 +195,7 @@ export default function RemoteConnectionPage() {
   "servers": {
     "theBarcodeAPI_HTTP_Token": {
       "type": "http",
-      "url": "https://api.thebarcodeapi.com/api/v1/mcp",
+      "url": "https://api.thebarcodeapi.com/api/v1/mcp-server/mcp",
       "headers": {
         "Authorization": "Bearer YOUR_TOKEN_HERE"
       }
@@ -246,7 +241,7 @@ export default function RemoteConnectionPage() {
          "params": {"data": "Test via cURL", "format": "QRCODE", "image_format": "PNG"},
          "id": "curl-test-1"
      }' \\
-     https://api.thebarcodeapi.com/api/v1/mcp`}
+     https://api.thebarcodeapi.com/api/v1/mcp-server/mcp`}
                     </code>
                   </pre>
                 </div>
@@ -279,7 +274,7 @@ export default function RemoteConnectionPage() {
          "params": {"data": "Test via cURL with Token", "format": "QRCODE", "image_format": "PNG"},
          "id": "curl-test-token-1"
      }' \\
-     https://api.thebarcodeapi.com/api/v1/mcp`}
+     https://api.thebarcodeapi.com/api/v1/mcp-server/mcp`}
                     </code>
                   </pre>
                   <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
@@ -287,9 +282,6 @@ export default function RemoteConnectionPage() {
                   </p>
                 </div>
               </div>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-4">
-                <strong>Note on SSE with cURL:</strong> To connect to the legacy SSE endpoint (<code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">/api/v1/mcp/sse</code>), you would typically use <code className="bg-black/20 dark:bg-black/30 p-1 rounded text-xs">-H &ldquo;Accept: text/event-stream&rdquo;</code>. If an API key is needed, it would also be sent as a header in the initial GET request establishing the SSE connection. However, the HTTP streaming endpoint is generally preferred.
-              </p>
             </div>
           )}
 
@@ -452,7 +444,7 @@ public class BarcodeGenerator
             <li><strong>Replace API Key:</strong> Update the `api_key` variable with your actual API key.</li>
             <li><strong>Run the Script:</strong> Execute the script from your terminal: `python barcode_request.py`. It will send the request and print the server&apos;s response.</li>
           </ol>
-          
+
           <div className="mt-6 bg-slate-200 dark:bg-slate-800 p-4 md:p-6 rounded-lg shadow-inner border border-white/10 dark:border-white/5">
             <div className="flex justify-between items-center mb-3">
               <h3 className="text-lg md:text-xl font-semibold text-[var(--accent-color)] font-bold">Python Code Example</h3>

@@ -1,3 +1,5 @@
+import base64
+import json
 from app.barcode_generator import BarcodeGenerationError, generate_barcode_image
 from fastapi import APIRouter, Depends, HTTPException, Request, Query, Response
 from fastapi.param_functions import Form
@@ -6,16 +8,115 @@ from app.redis_manager import RedisManager
 from app.rate_limiter import rate_limit
 from app.dependencies import get_current_user, get_client_ip, get_redis_manager
 from app.schemas import BarcodeRequest, UserData, BarcodeFormatEnum, BarcodeImageFormatEnum
+from app.mcp_server import McpError, ErrorData, global_mcp_instance
 from app.config import settings
 from datetime import datetime, timedelta
 import pytz
 import logging
 from typing import Optional
-
 logger = logging.getLogger(__name__)
 rate_limit_val = 10000 if settings.ENVIRONMENT == 'development' else 50
 
 router = APIRouter(prefix="/api", tags=["Barcodes"])
+
+@global_mcp_instance.tool(
+    name="generate_barcode",
+    description="Generates a barcode image based on the provided parameters and returns a base64 encoded",
+    tags={"barcode", "mcp", "barcode generator", "barcode api", "barcode mcp", "barcode generation"},
+    enabled=True
+)
+async def generate_barcode_mcp(
+    data: str,
+    format: BarcodeFormatEnum,
+    width: int = 200,
+    height: int = 100,
+    show_text: bool = True,
+    text_content: Optional[str] = None,
+    module_width: Optional[float] = None,
+    module_height: Optional[float] = None,
+    quiet_zone: Optional[float] = None,
+    font_size: Optional[int] = None,
+    text_distance: Optional[float] = None,
+    background: Optional[str] = None,
+    foreground: Optional[str] = None,
+    center_text: bool = True,
+    image_format: BarcodeImageFormatEnum = BarcodeImageFormatEnum.PNG,
+    dpi: int = 200,
+    add_checksum: Optional[bool] = None,
+    no_checksum: Optional[bool] = None,
+    guardbar: Optional[bool] = None
+):
+    """Generate a barcode image using the MCP."""
+
+    logger.info(f"MCP Tool: generate_barcode_mcp called with data='{data}', format='{format.value}'")
+    try:
+        barcode_request = BarcodeRequest(
+            data=data,
+            format=format,
+            width=width,
+            height=height,
+            show_text=show_text,
+            text_content=text_content if show_text else "",
+            module_width=module_width,
+            module_height=module_height,
+            quiet_zone=quiet_zone,
+            font_size=font_size if show_text else 0,
+            text_distance=text_distance if show_text else 0,
+            background=background,
+            foreground=foreground,
+            center_text=center_text,
+            image_format=image_format,
+            dpi=dpi,
+            add_checksum=add_checksum,
+            no_checksum=no_checksum,
+            guardbar=guardbar
+        )
+
+        writer_options = {
+            'module_width': module_width,
+            'module_height': module_height,
+            'quiet_zone': quiet_zone,
+            'font_size': font_size if show_text else 0,
+            'text_distance': text_distance if show_text else 0,
+            'background': background,
+            'foreground': foreground,
+            'center_text': center_text,
+            'image_format': image_format.value if image_format else 'PNG',
+            'dpi': dpi
+        }
+
+        if show_text and text_content:
+            writer_options['text_content'] = text_content
+
+        writer_options = {k: v for k, v in writer_options.items() if v is not None}
+
+        barcode_image = await generate_barcode_image(barcode_request, writer_options)
+        base64_image = base64.b64encode(barcode_image).decode('utf-8')
+        base64_image = f"data:image/{image_format.value.lower()};base64,{base64_image}"
+        media_type = f"image/{image_format.value.lower()}"
+
+        add_headers = {"Server": f"TheBarcodeAPI/{settings.API_VERSION}", "Content-Type": media_type}
+        return json.dumps({'headers': add_headers, 'content': base64_image}, separators=(',', ':'))
+
+    except ValidationError as e:
+        logger.error(f"Validation error: {e.errors()}")
+        raise McpError(ErrorData(
+            code=-32602,
+            message="Validation error",
+            data={"errors": e.errors()}
+        ))
+    except BarcodeGenerationError as e:
+        logger.error(f"Barcode generation error: {e.message}")
+        raise McpError(ErrorData(
+            code=-32603,
+            message=e.message
+        ))
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        raise McpError(ErrorData(
+            code=-32603,
+            message="An unexpected error occurred"
+        ))
 
 @router.get("/generate")
 @rate_limit(times=rate_limit_val, interval=1, period="second")
