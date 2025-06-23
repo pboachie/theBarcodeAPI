@@ -176,8 +176,21 @@ jobs:
           # Make deployment script executable
           chmod +x ./scripts/deploy-frontend-docker.sh
 
-          # Run Docker deployment script
-          ./scripts/deploy-frontend-docker.sh
+          # Retry logic for Docker Compose build/start
+          MAX_RETRIES=5
+          RETRY_DELAY=5
+          ATTEMPT=1
+          while [ $ATTEMPT -le $MAX_RETRIES ]; do
+            echo "Docker Compose build attempt $ATTEMPT/$MAX_RETRIES..."
+            (cd /opt/thebarcodeapi && docker-compose up -d --no-deps --build barcodefrontend) && break
+            echo "Build failed. Retrying in $RETRY_DELAY seconds..."
+            sleep $RETRY_DELAY
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+          if [ $ATTEMPT -gt $MAX_RETRIES ]; then
+            echo "❌ Docker Compose build failed after $MAX_RETRIES attempts."
+            exit 1
+          fi
 
   backend-deployment:
     runs-on: self-hosted
