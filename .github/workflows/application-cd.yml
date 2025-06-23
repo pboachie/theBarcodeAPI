@@ -167,6 +167,8 @@ jobs:
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeFrontend
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeFrontend /opt/thebarcodeapi/
             echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeFrontend
+            # Ensure Dockerfile is present in deployment directory
+            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeFrontend/Dockerfile /opt/thebarcodeapi/barcodeFrontend/
           fi
 
           # Make deployment script executable
