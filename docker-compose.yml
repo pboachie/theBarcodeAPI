@@ -42,7 +42,7 @@ services:
 
   barcodefrontend:
     build:
-      context: ./barcodeFrontend
+      context: /opt/thebarcodeapi/barcodeFrontend
       dockerfile: Dockerfile
       args:
         - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
