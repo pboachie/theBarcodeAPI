@@ -412,18 +412,19 @@ async def mcp_url_autocorrect_middleware(request: Request, call_next):
     path = request.url.path
     query_params = dict(request.query_params)
 
-    # If /api/v1/mcp-server/mcp is requested with transportType=sse, redirect to /api/v1/mcp-sse/sse (no params)
-    if path == "/api/v1/mcp-server/mcp" and query_params.get("transportType", "").lower() == "sse":
-        logger.info(f"Auto-correcting MCP URL from {path} with transportType=sse to /api/v1/mcp-sse/sse (no params)")
-        return RedirectResponse(url="/api/v1/mcp-sse/sse", status_code=307)
+    # Always handle /api/v1/mcp-server/mcp (with or without trailing slash)
+    if path.startswith("/api/v1/mcp-server/mcp"):
+        # If transportType=sse, redirect to /api/v1/mcp-sse/sse (no params)
+        if query_params.get("transportType", "").lower() == "sse":
+            logger.info(f"Auto-correcting MCP URL from {path} with transportType=sse to /api/v1/mcp-sse/sse (no params)")
+            return RedirectResponse(url="/api/v1/mcp-sse/sse", status_code=307)
+        # If any other query params, strip them
+        elif request.url.query:
+            logger.info(f"Auto-correcting MCP URL from {path} with params {query_params} to {path} (no params)")
+            return RedirectResponse(url=path, status_code=307)
 
-    # Clean up /api/v1/mcp-server/mcp: if any other query params, redirect to /api/v1/mcp-server/mcp (no params)
-    if path == "/api/v1/mcp-server/mcp" and query_params:
-        logger.info(f"Auto-correcting MCP URL from {path} with params {query_params} to {path} (no params)")
-        return RedirectResponse(url=path, status_code=307)
-
-    # Clean up /api/v1/mcp-sse/sse: if any query params, redirect to /api/v1/mcp-sse/sse (no params)
-    if path == "/api/v1/mcp-sse/sse" and query_params:
+    # Always handle /api/v1/mcp-sse/sse (with or without trailing slash)
+    if path.startswith("/api/v1/mcp-sse/sse") and request.url.query:
         logger.info(f"Auto-correcting MCP SSE URL from {path} with params {query_params} to {path} (no params)")
         return RedirectResponse(url=path, status_code=307)
 
