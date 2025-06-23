@@ -17,6 +17,7 @@ services:
       - ./barcodeApi/.env
     environment:
       - APP_VERSION=${PROJECT_VERSION:-0.0.0-default}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
     volumes:
       - ./barcodeApi/app:/app/app:rw
       - ./barcodeApi/alembic:/app/alembic:rw

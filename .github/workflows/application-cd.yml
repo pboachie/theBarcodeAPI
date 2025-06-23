@@ -249,16 +249,20 @@ jobs:
     # Executes a script to create the .env file required by the backend application.
     # This file contains sensitive information and configuration details.
     - name: Create .env file for backend services
-      run: bash ./scripts/create-backend-env-file.sh
+      run: |
+        # Substitute all variables in the backend.env.template and output to .env
+        envsubst < ./scripts/infra/templates/backend.env.template > ./barcodeApi/.env
+        # Show the generated .env for debugging (remove or mask sensitive values in production)
+        echo "Generated backend .env file:"
+        cat ./barcodeApi/.env
       env:
-        SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
+        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
+        API_MASTER_KEY: ${{ secrets.API_MASTER_KEY }}
         API_VERSION: ${{ vars.API_VERSION }}
-        DB_PASSWORD: ${{ env.DB_PASSWORD }}
-        POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-        API_SECRET_KEY: ${{ env.API_SECRET_KEY }}
-        API_MASTER_KEY: ${{ env.API_MASTER_KEY }}
-        ENVIRONMENT: ${{ env.ENVIRONMENT }}
-        DOMAIN_NAME: ${{ env.DOMAIN_NAME }}
+        ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+        SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
 
     # Fix Docker permissions before Docker operations
     - name: Fix Docker Permissions
