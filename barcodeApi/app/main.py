@@ -339,8 +339,6 @@ app.include_router(token.router)
 app.include_router(admin.router)
 app.include_router(bulk_api_router.router)
 
-# MCP mounting is now handled directly in the integrated_lifespan function
-
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
