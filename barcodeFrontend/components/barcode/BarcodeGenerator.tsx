@@ -163,7 +163,7 @@ const BarcodeGenerator: React.FC = () => {
                             )}
                         </CardTitle>
                         <p className="text-center text-muted-foreground text-sm mt-1">
-                            The world's first public barcode API with MCP support.
+                            The world&apos;s first public barcode API with MCP support.
                         </p>
                     </CardHeader>
                     <CardContent className="flex flex-col gap-6">
