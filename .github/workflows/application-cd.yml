@@ -129,6 +129,12 @@ jobs:
         npm run lint
         npm run build
 
+    # Clean up Docker containers, images, and volumes before frontend build
+    - name: Clean up Docker containers, images, and volumes before frontend build
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker-compose down -v || true
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -af --volumes || true
+
     - name: Setup Environment Variables for Docker
       run: |
           # Create directories if they don't exist
@@ -208,6 +214,12 @@ jobs:
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
         GITHUB_EVENT_NAME: ${{ github.event_name }}
+
+    # Clean up Docker containers, images, and volumes before build
+    # - name: Clean up Docker containers, images, and volumes before build
+    #   run: |
+    #     echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker-compose down -v || true
+    #     echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -af --volumes || true
 
     # If backend changes are detected, this step cleans the target deployment directory
     # and copies the new backend files into it. A backup of the existing deployment is made first.
