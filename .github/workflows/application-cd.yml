@@ -148,6 +148,12 @@ jobs:
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/.env
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeApi/.env
 
+    - name: Copy docker-compose.yml to deployment directory
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./docker-compose.yml /opt/thebarcodeapi/
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/docker-compose.yml
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/docker-compose.yml
+
     - name: Deploy Frontend using Docker
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
