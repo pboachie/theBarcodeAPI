@@ -161,15 +161,11 @@ jobs:
         PROJECT_VERSION: ${{ env.API_VERSION }}
         STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES: ${{ steps.check_frontend_changes.outputs.changes }}
       run: |
-          # Copy frontend files to deployment directory if changes detected
-          if [ "${{ steps.check_frontend_changes.outputs.changes }}" = "true" ]; then
-            echo "Frontend changes detected, copying files..."
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeFrontend
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeFrontend /opt/thebarcodeapi/
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeFrontend
-            # Ensure Dockerfile is present in deployment directory
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeFrontend/Dockerfile /opt/thebarcodeapi/barcodeFrontend/
-          fi
+          # Always copy frontend files and Dockerfile to deployment directory
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeFrontend
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeFrontend /opt/thebarcodeapi/
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeFrontend
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeFrontend/Dockerfile /opt/thebarcodeapi/barcodeFrontend/
 
           # Make deployment script executable
           chmod +x ./scripts/deploy-frontend-docker.sh
