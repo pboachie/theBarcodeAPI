@@ -573,6 +573,14 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeFrontend/.env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 /opt/thebarcodeapi/barcodeFrontend/.env
 
+    # Debug: Show contents of .env file in frontend deployment directory (mask secrets in production)
+    - name: Show deployed frontend .env file contents
+      run: |
+        echo "Contents of /opt/thebarcodeapi/barcodeFrontend/.env (mask secrets in production):"
+        echo "---"
+        cat /opt/thebarcodeapi/barcodeFrontend/.env
+        echo "---"
+
     - name: Deploy Frontend using Docker
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
@@ -589,8 +597,22 @@ jobs:
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeFrontend/Dockerfile /opt/thebarcodeapi/barcodeFrontend/Dockerfile
           # Set proper ownership for the copied frontend files
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeFrontend
+          # Copy .env file after copying frontend files (to avoid deletion)
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeFrontend/.env /opt/thebarcodeapi/barcodeFrontend/.env
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeFrontend/.env
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 /opt/thebarcodeapi/barcodeFrontend/.env
         else
           echo "No frontend changes and frontend is running. Skipping file copy."
+        fi
+
+        # Debug: Show contents of .env file in deployment directory (mask secrets in production)
+        if [ -f /opt/thebarcodeapi/barcodeFrontend/.env ]; then
+          echo "Contents of /opt/thebarcodeapi/barcodeFrontend/.env (mask secrets in production):"
+          echo "---"
+          cat /opt/thebarcodeapi/barcodeFrontend/.env
+          echo "---"
+        else
+          echo "WARNING: .env file not found in /opt/thebarcodeapi/barcodeFrontend/.env"
         fi
 
         cd /opt/thebarcodeapi # Ensure we are in the directory where docker-compose.yml is
