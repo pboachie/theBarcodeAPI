@@ -49,6 +49,8 @@ services:
         - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
+    env_file:
+      - ./barcodeFrontend/.env
     environment:
       # Next.js environment variables
       - NODE_ENV=production
