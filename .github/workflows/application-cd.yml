@@ -131,6 +131,13 @@ jobs:
         ENVIRONMENT: ${{ vars.ENVIRONMENT }}
         SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
 
+    # Ensure .env file is present in deployment directory before Docker Compose
+    - name: Copy .env file to deployment directory
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeApi/.env /opt/thebarcodeapi/barcodeApi/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeApi/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 /opt/thebarcodeapi/barcodeApi/.env
+
     # Fix Docker permissions before Docker operations
     - name: Fix Docker Permissions
       run: |
