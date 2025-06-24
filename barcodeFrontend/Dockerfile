@@ -17,6 +17,9 @@ RUN apt-get update && apt-get install -y jq --no-install-recommends && rm -rf /v
 # Install project dependencies
 RUN npm install
 
+# Update npm to the latest version
+RUN npm install -g npm@latest
+
 # Copy the rest of the application code
 COPY . .
 

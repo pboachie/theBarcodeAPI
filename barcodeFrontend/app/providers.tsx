@@ -2,14 +2,14 @@
 
 'use client';
 
-import { NextUIProvider } from '@nextui-org/react';
+import { HeroUIProvider } from '@heroui/react';
 import { ReactNode } from 'react';
 import { Toaster } from '@/components/ui/toaster';
 import { Footer } from '@/components/layout/Footer';
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
-    <NextUIProvider>
+    <HeroUIProvider>
       <div className="flex min-h-screen flex-col">
         <div className="flex-1">
           {children}
@@ -17,6 +17,6 @@ export function Providers({ children }: { children: ReactNode }) {
         <Footer />
         <Toaster />
       </div>
-    </NextUIProvider>
+    </HeroUIProvider>
   );
 }
