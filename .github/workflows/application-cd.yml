@@ -138,6 +138,14 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeApi/.env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 /opt/thebarcodeapi/barcodeApi/.env
 
+    # Debug: Show contents of .env file in deployment directory (mask secrets in production)
+    - name: Show deployed .env file contents
+      run: |
+        echo "Contents of /opt/thebarcodeapi/barcodeApi/.env (mask secrets in production):"
+        echo "---"
+        cat /opt/thebarcodeapi/barcodeApi/.env
+        echo "---"
+
     # Fix Docker permissions before Docker operations
     - name: Fix Docker Permissions
       run: |
@@ -291,9 +299,17 @@ jobs:
         if [ $ATTEMPT -gt $MAX_RETRIES ]; then
           echo "❌ Backend API health check failed after $MAX_RETRIES attempts."
           echo "Displaying logs for barcodeapi, db, redis:"
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail 50 barcodeapi || echo "Could not get barcodeapi logs"
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail 50 db || echo "Could not get db logs"
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail 50 redis || echo "Could not get redis logs"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail 100 barcodeapi || echo "Could not get barcodeapi logs"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail 100 db || echo "Could not get db logs"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail 100 redis || echo "Could not get redis logs"
+          echo "All containers (docker ps -a):"
+          docker ps -a
+          echo "Individual container logs (if any):"
+          for cname in $(docker ps -a --format '{{.Names}}'); do
+            echo "--- Logs for $cname ---"
+            docker logs $cname || echo "No logs for $cname"
+            echo "----------------------"
+          done
           exit 1
         fi
 
