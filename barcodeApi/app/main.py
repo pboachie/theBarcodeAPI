@@ -411,10 +411,11 @@ async def add_cors_headers(request: Request, call_next):
 async def mcp_url_autocorrect_middleware(request: Request, call_next):
     path = request.url.path
     query_params = dict(request.query_params)
+    has_query_params = bool(request.url.query)
 
-    # Only redirect for GET requests
+    # Only redirect for GET requests and only if there are query parameters
     if request.method == "GET":
-        if path.startswith("/api/v1/mcp-server/mcp") and request.url.query:
+        if path.startswith("/api/v1/mcp-server/mcp") and has_query_params:
             # If transportType=sse, redirect to /api/v1/mcp-sse/sse (no params)
             if query_params.get("transportType", "").lower() == "sse":
                 logger.info(f"Auto-correcting MCP URL from {path} with transportType=sse to /api/v1/mcp-sse/sse (no params)")
@@ -424,9 +425,9 @@ async def mcp_url_autocorrect_middleware(request: Request, call_next):
                 # Remove query params by redirecting to the same path without them
                 return RedirectResponse(url=path, status_code=307)
 
-        if path.startswith("/api/v1/mcp-sse/sse") and request.url.query:
+        if path.startswith("/api/v1/mcp-sse/sse") and has_query_params:
             logger.info(f"Auto-correcting MCP SSE URL from {path} with params {query_params} to {path} (no params)")
             return RedirectResponse(url=path, status_code=307)
 
-    # For all other cases, proceed as normal
+    # If there are no query parameters, do not redirect, just proceed
     return await call_next(request)
