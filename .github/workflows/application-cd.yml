@@ -138,14 +138,6 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeApi/.env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 /opt/thebarcodeapi/barcodeApi/.env
 
-    # Debug: Show contents of .env file in deployment directory (mask secrets in production)
-    - name: Show deployed .env file contents
-      run: |
-        echo "Contents of /opt/thebarcodeapi/barcodeApi/.env (mask secrets in production):"
-        echo "---"
-        cat /opt/thebarcodeapi/barcodeApi/.env
-        echo "---"
-
     # Fix Docker permissions before Docker operations
     - name: Fix Docker Permissions
       run: |
@@ -562,7 +554,7 @@ jobs:
         echo "Generated frontend .env file:"
         cat ./barcodeFrontend/.env
       env:
-        NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
+        NEXT_PUBLIC_API_URL: "http://localhost:8000" # Set to backend API URL, adjust as needed
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
         PROJECT_VERSION: ${{ env.API_VERSION }}
 
