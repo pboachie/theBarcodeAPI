@@ -149,6 +149,16 @@ alembic upgrade head
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+**Important:** Always run `docker-compose` commands from the project root directory (where `docker-compose.yml` is located). This ensures all relative paths (like `env_file` and `volumes`) resolve correctly. Example:
+
+```bash
+cd /opt/thebarcodeapi
+# or if running locally
+cd /path/to/thebarcodeapi
+
+docker-compose up -d
+```
+
 ## Versioning
 
 The application version is available within the backend via the `APP_VERSION` environment variable (which populates `settings.API_VERSION` in `app/config.py`). This variable is set during the Docker build process, originating from the `PROJECT_VERSION` defined in the root `.env` file and passed via Docker Compose.

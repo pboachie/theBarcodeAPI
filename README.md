@@ -91,6 +91,16 @@ To get started with theBarcodeAPI, you can run the project locally or access it 
 
     The API will be available at `http://localhost:8000`.
 
+**Important:** Always run `docker-compose` commands from the project root directory (where `docker-compose.yml` is located). This ensures all relative paths (like `env_file` and `volumes`) resolve correctly. Example:
+
+```bash
+cd /opt/thebarcodeapi
+# or if running locally
+cd /path/to/thebarcodeapi
+
+docker-compose up -d
+```
+
 ## API Documentation
 
 Once the application is running, you can access the API documentation at:

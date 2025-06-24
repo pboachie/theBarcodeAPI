@@ -29,6 +29,12 @@ APP_DIR="/opt/thebarcodeapi/barcodeApi"
 echo "Changing directory to ${APP_DIR}..."
 cd "${APP_DIR}" || { echo "Error: Failed to change directory to ${APP_DIR}"; exit 1; }
 
+# Always run docker-compose from the directory containing docker-compose.yml
+if [ "$PWD" != "/opt/thebarcodeapi" ]; then
+    echo "Switching to /opt/thebarcodeapi for docker-compose commands."
+    cd /opt/thebarcodeapi || { echo "❌ Failed to cd to /opt/thebarcodeapi"; exit 1; }
+fi
+
 # Determine the correct docker compose command available on the system
 if command -v docker-compose >/dev/null 2>&1; then
   COMPOSE_CMD="docker-compose"

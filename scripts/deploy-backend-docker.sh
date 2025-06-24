@@ -65,6 +65,12 @@ echo "Starting backend deployment..."
 echo "Using DOCKER_COMPOSE command: ${DOCKER_COMPOSE}"
 echo "Changes detected: ${CHANGES}"
 
+# Always run docker-compose from the directory containing docker-compose.yml
+if [ "$PWD" != "/opt/thebarcodeapi" ]; then
+    echo "Switching to /opt/thebarcodeapi for docker-compose commands."
+    cd /opt/thebarcodeapi || { echo "❌ Failed to cd to /opt/thebarcodeapi"; exit 1; }
+fi
+
 # If no changes detected, just check health of existing services and exit
 if [ "$CHANGES" == "false" ]; then
   echo "No changes detected in backend files. Verifying health of existing services only..."
