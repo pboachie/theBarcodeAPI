@@ -152,10 +152,6 @@ jobs:
         # Verify Docker access
         docker version
 
-    # Note: Removed Docker Buildx steps to avoid conflicts with docker-compose build process.
-    # The deploy-backend-docker.sh script will handle Docker image building using docker-compose,
-    # which is more compatible with the older docker-compose v1.29.2 on this runner.
-
     # Stores the current Git commit hash into a .git-commit file within the backend deployment directory.
     # This helps in tracking which version of the code is currently deployed.
     - name: Store Git commit hash in backend deployment directory
