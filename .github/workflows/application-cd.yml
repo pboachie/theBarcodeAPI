@@ -246,7 +246,7 @@ jobs:
         if [ "${{ steps.check_backend_changes.outputs.changes }}" == "true" ]; then
           echo "Backend changes detected. Building and deploying barcodeapi, db, redis..."
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD down # Bring down existing services before build
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --build barcodeapi db redis --force-recreate --remove-orphans
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --build --force-recreate --remove-orphans barcodeapi db redis
         elif [ "${{ steps.backend_status.outputs.ALL_BACKEND_SERVICES_RUNNING }}" == "false" ]; then
           echo "No backend changes, but some services are not running. Pruning images and rebuilding barcodeapi, db, redis with no-cache..."
           # Prune images - careful with this, ensure it targets correctly or rely on docker-compose build --no-cache
@@ -261,11 +261,11 @@ jobs:
           # echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -af --volumes # This is aggressive, reconsider if needed here
 
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD down
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --build --no-cache barcodeapi db redis --force-recreate --remove-orphans
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --build --no-cache --force-recreate --remove-orphans barcodeapi db redis
         else
           echo "No backend changes and all backend services are running. Ensuring services are up..."
           # Just ensure they are up, no build needed.
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --no-deps barcodeapi db redis --remove-orphans
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --no-deps --remove-orphans barcodeapi db redis
         fi
         # Health check after deployment attempt
         # This part can be extracted from deploy-backend-docker.sh or kept there if the script is still used.
