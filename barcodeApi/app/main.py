@@ -412,24 +412,19 @@ async def mcp_url_autocorrect_middleware(request: Request, call_next):
     path = request.url.path
     query_params = dict(request.query_params)
 
-    # Always handle /api/v1/mcp-server/mcp (with or without trailing slash)
-    if path.startswith("/api/v1/mcp-server/mcp"):
+    # Only redirect if there are query params to strip
+    if path.startswith("/api/v1/mcp-server/mcp") and request.url.query:
         # If transportType=sse, redirect to /api/v1/mcp-sse/sse (no params)
         if query_params.get("transportType", "").lower() == "sse":
             logger.info(f"Auto-correcting MCP URL from {path} with transportType=sse to /api/v1/mcp-sse/sse (no params)")
             return RedirectResponse(url="/api/v1/mcp-sse/sse", status_code=307)
-        # If any other query params, strip them
-        elif request.url.query:
+        else:
             logger.info(f"Auto-correcting MCP URL from {path} with params {query_params} to {path} (no params)")
+            # Remove query params by redirecting to the same path without them
             return RedirectResponse(url=path, status_code=307)
 
-    # Always handle /api/v1/mcp-sse/sse (with or without trailing slash)
     if path.startswith("/api/v1/mcp-sse/sse") and request.url.query:
         logger.info(f"Auto-correcting MCP SSE URL from {path} with params {query_params} to {path} (no params)")
         return RedirectResponse(url=path, status_code=307)
 
-    response = await call_next(request)
-    return response
-
-# The MCP instance is already stored in app state via integrated_lifespan
-# All startup/shutdown logic is handled by the integrated_lifespan function
+    return await call_next(request)
