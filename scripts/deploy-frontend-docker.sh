@@ -50,8 +50,11 @@ if [ ! -f "$DOCKER_COMPOSE_FILE" ]; then
     exit 1
 fi
 
-echo "Switching to deployment directory..."
-cd "$DEPLOYMENT_DIR"
+# Always run docker-compose from the directory containing docker-compose.yml
+if [ "$PWD" != "$DEPLOYMENT_DIR" ]; then
+    echo "Switching to deployment directory: $DEPLOYMENT_DIR"
+    cd "$DEPLOYMENT_DIR" || { echo "❌ Failed to cd to $DEPLOYMENT_DIR"; exit 1; }
+fi
 
 # Determine docker compose command
 if command -v docker-compose >/dev/null 2>&1; then
