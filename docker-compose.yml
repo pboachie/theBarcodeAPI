@@ -47,7 +47,6 @@ services:
       dockerfile: Dockerfile
       args:
         - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
-        - PYTHON_ENV=${ENVIRONMENT:-production}
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
