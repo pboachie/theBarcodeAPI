@@ -396,16 +396,16 @@ async def add_rate_limit_headers(request: Request, call_next):
     return response
 
 # Add a custom middleware to ensure CORS headers are always present
-@app.middleware("http")
-async def add_cors_headers(request: Request, call_next):
-    response = await call_next(request)
-    origin = request.headers.get("origin")
-
-    if origin in app.state.cors_origins:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-
-    return response
+# @app.middleware("http")
+# async def add_cors_headers(request: Request, call_next):
+#     response = await call_next(request)
+#     origin = request.headers.get("origin")
+#
+#     if origin in app.state.cors_origins:
+#         response.headers["Access-Control-Allow-Origin"] = origin
+#         response.headers["Access-Control-Allow-Credentials"] = "true"
+#
+#     return response
 
 @app.middleware("http")
 async def mcp_url_autocorrect_middleware(request: Request, call_next):
@@ -420,14 +420,16 @@ async def mcp_url_autocorrect_middleware(request: Request, call_next):
             if query_params.get("transportType", "").lower() == "sse":
                 logger.info(f"Auto-correcting MCP URL from {path} with transportType=sse to /api/v1/mcp-sse/sse (no params)")
                 return RedirectResponse(url="/api/v1/mcp-sse/sse", status_code=307)
-            else:
-                logger.info(f"Auto-correcting MCP URL from {path} with params {query_params} to {path} (no params)")
-                # Remove query params by redirecting to the same path without them
-                return RedirectResponse(url=path, status_code=307)
+            # else:
+            #     logger.info(f"Auto-correcting MCP URL from {path} with params {query_params} to {path} (no params)")
+            #     # Remove query params by redirecting to the same path without them
+            #     return RedirectResponse(url=path, status_code=307)
+            # Let other GET requests with query parameters pass through to the MCP application
 
+        # For the SSE endpoint, if it has query parameters, redirect to remove them.
+        # SSE endpoint should generally not have query parameters other than those handled by the transport.
         if path.startswith("/api/v1/mcp-sse/sse") and has_query_params:
             logger.info(f"Auto-correcting MCP SSE URL from {path} with params {query_params} to {path} (no params)")
             return RedirectResponse(url=path, status_code=307)
 
-    # If there are no query parameters, do not redirect, just proceed
     return await call_next(request)
