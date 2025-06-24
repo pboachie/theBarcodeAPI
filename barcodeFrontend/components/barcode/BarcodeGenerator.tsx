@@ -2,6 +2,7 @@
 
 'use client';
 
+import Link from 'next/link';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardHeader, CardContent, CardTitle } from '@/components/ui/card';
 import { BarcodeControls } from './BarcodeControls';
@@ -155,7 +156,7 @@ const BarcodeGenerator: React.FC = () => {
                 <Card className="max-w-full">
                     <CardHeader>
                         <CardTitle className="text-2xl font-bold text-center relative">
-                            <a href="/" className="absolute inset-0 z-10"></a>
+                            <Link href="/" legacyBehavior><a className="absolute inset-0 z-10" aria-label="Go to homepage"></a></Link>
                             The Barcode API {process.env.NODE_ENV == 'development' ? (
                                 <span className="text-red-500">DEV*</span>
                             ) : (

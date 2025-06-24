@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { Mail, Phone, MessageCircle, Clock, ArrowRight, FileText, Globe } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -107,10 +108,12 @@ export function SupportPageClient() {
             <Globe className="h-4 w-4" />
             Documentation
           </a>
-          <a href="/" className="flex items-center gap-2 text-sm hover:text-primary">
-            <FileText className="h-4 w-4" />
-            API Reference
-          </a>
+          <Link href="/" legacyBehavior>
+            <a className="flex items-center gap-2 text-sm hover:text-primary">
+              <FileText className="h-4 w-4" />
+              API Reference
+            </a>
+          </Link>
         </div>
       </div>
     </motion.div>
