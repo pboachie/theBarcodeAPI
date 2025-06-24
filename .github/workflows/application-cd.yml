@@ -555,6 +555,24 @@ jobs:
           echo "Frontend container is not running."
         fi
 
+    # Create .env file for frontend services
+    - name: Create .env file for frontend services
+      run: |
+        envsubst < ./scripts/infra/templates/frontend.env.template > ./barcodeFrontend/.env
+        echo "Generated frontend .env file:"
+        cat ./barcodeFrontend/.env
+      env:
+        NEXT_PUBLIC_API_URL: ${{ env.NEXT_PUBLIC_API_URL }}
+        ENVIRONMENT: ${{ env.ENVIRONMENT }}
+        PROJECT_VERSION: ${{ env.API_VERSION }}
+
+    # Ensure .env file is present in frontend deployment directory before Docker Compose
+    - name: Copy .env file to frontend deployment directory
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeFrontend/.env /opt/thebarcodeapi/barcodeFrontend/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeFrontend/.env
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 /opt/thebarcodeapi/barcodeFrontend/.env
+
     - name: Deploy Frontend using Docker
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
