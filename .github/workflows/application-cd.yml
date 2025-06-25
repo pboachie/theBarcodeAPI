@@ -44,11 +44,8 @@ jobs:
     # This job runs if the event is a push, manual workflow dispatch, or after infrastructure setup
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     steps:
-    # Determines the branch to checkout for the backend deployment.
-    # For manual 'workflow_dispatch', it uses the workflow's own ref (branch or tag).
-    # For other events, it defaults to 'main'.
     - name: Determine branch for backend deployment
-      id: get_branch # Note: ID is same as in frontend job, but it's a local ID to this job.
+      id: get_branch
       run: |
         if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
           echo "branch=${{ github.event.inputs.branch || github.ref }}" >> $GITHUB_OUTPUT
@@ -58,17 +55,14 @@ jobs:
 
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Fetch all history for all branches and tags, enabling diffs against any prior commit.
+        fetch-depth: 0
         ref: ${{ steps.get_branch.outputs.branch }}
 
-    # Verify that infrastructure is properly set up before proceeding
     - name: Verify infrastructure setup
       run: bash ./scripts/verify-infrastructure-setup.sh
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
 
-    # Executes a script to determine if there are changes in the backend codebase.
-    # Outputs 'changes=true' or 'changes=false' to GITHUB_OUTPUT for use in subsequent steps.
     - name: Check for backend code changes
       id: check_backend_changes
       run: bash ./scripts/check-backend-changes.sh
@@ -76,8 +70,6 @@ jobs:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
         GITHUB_EVENT_NAME: ${{ github.event_name }}
 
-    # If backend changes are detected, this step cleans the target deployment directory
-    # and copies the new backend files into it. A backup of the existing deployment is made first.
     - name: Clean and copy backend files to deployment directory
       if: steps.check_backend_changes.outputs.changes == 'true'
       run: |
@@ -113,13 +105,9 @@ jobs:
         echo "Contents of root deployment directory:"
         ls -la /opt/thebarcodeapi/
 
-    # Executes a script to create the .env file required by the backend application.
-    # This file contains sensitive information and configuration details.
     - name: Create .env file for backend services
       run: |
-        # Substitute all variables in the backend.env.template and output to .env
         envsubst < ./scripts/infra/templates/backend.env.template > ./barcodeApi/.env
-        # Show the generated .env for debugging (remove or mask sensitive values in production)
         echo "Generated backend .env file:"
         cat ./barcodeApi/.env
       env:
@@ -131,7 +119,6 @@ jobs:
         ENVIRONMENT: ${{ vars.ENVIRONMENT }}
         SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
 
-    # Ensure .env file is present in deployment directory before Docker Compose
     - name: Copy .env file to deployment directory
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeApi/.env /opt/thebarcodeapi/barcodeApi/.env
@@ -332,26 +319,17 @@ jobs:
     # It also handles cleanup of the temporary .env file used during verification.
     - name: Verify backend deployment status and API health
       run: |
-        cd /opt/thebarcodeapi/barcodeApi # Script expects to be in this directory for docker-compose commands.
+        cd /opt/thebarcodeapi/barcodeApi
 
-        # Determine docker compose command
         if command -v docker-compose >/dev/null 2>&1; then
           COMPOSE_CMD="docker-compose"
         else
           COMPOSE_CMD="docker compose"
         fi
 
-        # Set proper permissions
-        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeApi/.env
-        # echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/barcodeApi/.env
-
         echo "Verifying backend deployment..."
-
         echo "Checking Docker containers status:"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD ps
-
-        echo "Checking container logs (last 10 lines):"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail=10
 
         echo "Testing backend health:"
         MAX_RETRIES=3
@@ -365,10 +343,8 @@ jobs:
         if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
           echo "Backend health check failed after $MAX_RETRIES attempts"
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs barcodeapi
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeApi/.env
           exit 1
         fi
-
         echo "Backend verification completed successfully"
 
         # Cleanup of the .env file specific to this verification step; the main .env for the container is managed by create-backend-env-file.sh.
@@ -535,10 +511,9 @@ jobs:
         SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
         PROJECT_VERSION: ${{ env.API_VERSION }}
       run: |
-        # Copy frontend files if changes are detected or if the container needs to be rebuilt
         if [ "${{ steps.check_frontend_changes.outputs.changes }}" == "true" ] || [ "${{ steps.frontend_status.outputs.FRONTEND_RUNNING }}" == "false" ]; then
           echo "Copying frontend files to /opt/thebarcodeapi/barcodeFrontend..."
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeFrontend/* # Clean before copy
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeFrontend/*
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeFrontend/* /opt/thebarcodeapi/barcodeFrontend/
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeFrontend/Dockerfile /opt/thebarcodeapi/barcodeFrontend/Dockerfile
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeFrontend
@@ -549,7 +524,7 @@ jobs:
           echo "No frontend changes and frontend is running. Skipping file copy."
         fi
 
-        cd /opt/thebarcodeapi # Ensure we are in the directory where docker-compose.yml is
+        cd /opt/thebarcodeapi
         COMPOSE_FILE_PATH="./docker-compose.yml"
 
         if command -v docker-compose &> /dev/null; then
@@ -577,19 +552,17 @@ jobs:
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --no-deps --remove-orphans barcodefrontend
         fi
 
-        # Health check logic remains the same
         echo "Performing frontend health check..."
-        sleep 15 # Give frontend time to start
+        sleep 15
 
         MAX_RETRIES=5
         RETRY_DELAY=10
         ATTEMPT=1
         while [ $ATTEMPT -le $MAX_RETRIES ]; do
           echo "Health check attempt $ATTEMPT/$MAX_RETRIES..."
-          # Use -s for silent, -f for fail-fast, -L to follow redirects
           if curl -sfL http://localhost:3000 > /dev/null; then
             echo "✅ Frontend is healthy."
-            exit 0 # Exit script with success
+            exit 0
           fi
           echo "Health check failed. Retrying in $RETRY_DELAY seconds..."
           sleep $RETRY_DELAY
@@ -615,8 +588,8 @@ jobs:
 
   final-verification:
     runs-on: self-hosted
-    needs: [build-and-deploy-backend, build-and-deploy-frontend]
-    if: always() # This job should always run to report success or failure
+    needs: [build-and-deploy-frontend]
+    if: always()
     steps:
     - name: Report deployment status
       run: |
@@ -626,8 +599,6 @@ jobs:
           echo "❌ Overall deployment failed."
         fi
 
-    # Cleans up build artifacts (like .next, build directories, package files) from the runner's workspace.
-    # Also runs a Docker system prune, which might be redundant if the backend job already did it.
     - name: Clean up build artifacts from runner workspace
       # This step runs regardless of the success or failure of previous jobs/steps within this 'final-verification' job.
       # The job itself runs 'always()'.
