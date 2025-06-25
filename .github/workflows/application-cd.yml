@@ -197,9 +197,12 @@ jobs:
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R 1000:1000 /opt/thebarcodeapi/barcodeApi/data
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/barcodeApi/data
 
-    # Executes the main backend deployment script.
-    # This script is responsible for managing Docker Compose (down, up, build), handling data persistence,
-    # database backups, and health checks for the backend services.
+    # --- DOCKER CLEANUP STEP: Ensures no orphaned/corrupted containers/images before backend deployment ---
+    - name: Clean up Docker containers, images, and volumes before backend deployment
+      run: |
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker-compose down --remove-orphans || true
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -af --volumes || true
+
     - name: Check backend container status
       id: backend_status
       run: |
