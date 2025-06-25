@@ -1,0 +1,100 @@
+services:
+  barcodeapi:
+    build:
+      context: ./barcodeApi
+      dockerfile: Dockerfile
+      args:
+        - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
+        - PYTHON_ENV=${ENVIRONMENT:-development}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./barcodeApi/.env
+    environment:
+      - APP_VERSION=${PROJECT_VERSION:-0.0.0-default}
+    volumes:
+      - ./barcodeApi/app:/app/app:rw
+      - ./barcodeApi/alembic:/app/alembic:rw
+      - ./barcodeApi/data:/app/data
+      - ./barcodeApi/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  barcodefrontend:
+    build:
+      context: ./barcodeFrontend
+      dockerfile: Dockerfile
+      args:
+        - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - NEXT_PUBLIC_API_URL=http://localhost:${API_PORT:-8000}
+      - NEXT_PUBLIC_APP_VERSION=${PROJECT_VERSION:-0.0.0-default}
+    volumes:
+      - ./barcodeFrontend/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    depends_on:
+      barcodeapi:
+        condition: service_healthy
+
+  redis:
+    image: redislabs/rejson:latest
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+
+  db:
+    image: postgres:13
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./barcodeApi/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - BARCODE_DB_USER=${BARCODE_DB_USER:-barcodeboachiefamily}
+      - BARCODE_DB_PASSWORD=${DB_PASSWORD}
+      - BARCODE_DB_NAME=${BARCODE_DB_NAME:-barcode_api}
+      - POSTGRES_HOST_AUTH_METHOD=${POSTGRES_HOST_AUTH_METHOD:-md5}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${BARCODE_DB_USER:-barcodeboachiefamily} -d ${BARCODE_DB_NAME:-barcode_api}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: barcodeproject_network

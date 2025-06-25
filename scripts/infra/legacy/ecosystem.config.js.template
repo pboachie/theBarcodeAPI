@@ -1,0 +1,31 @@
+module.exports = {
+  apps: [{
+    name: 'thebarcodeapi-frontend-__ENVIRONMENT__',
+    script: 'npm',
+    args: 'start',
+    namespace: '__ENVIRONMENT__',
+    env: {
+      NODE_ENV: '__ENVIRONMENT__',
+      ENVIRONMENT: '__ENVIRONMENT__',
+      PORT: 3000,
+      NODE_OPTIONS: '--max-old-space-size=512'
+    },
+    cwd: '/opt/thebarcodeapi/__ENVIRONMENT__/current',
+    instances: 2,
+    exec_mode: 'cluster',
+    autorestart: true,
+    watch: false,
+    max_memory_restart: '1024M',
+    wait_ready: false,
+    listen_timeout: 30000,
+    kill_timeout: 5000,
+    exp_backoff_restart_delay: 100,
+    restart_delay: 2000,
+    max_restarts: 5,
+    error_file: '/opt/thebarcodeapi/__ENVIRONMENT__/logs/err.log',
+    out_file: '/opt/thebarcodeapi/__ENVIRONMENT__/logs/out.log',
+    merge_logs: true,
+    min_uptime: '120s',
+    node_args: '--expose-gc'
+  }]
+};

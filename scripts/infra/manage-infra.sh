@@ -1,0 +1,196 @@
+#!/bin/bash
+
+set -e # Exit immediately if a command exits with a non-zero status.
+# set -x # Print commands and their arguments as they are executed (for debugging).
+
+# Environment variables expected to be set in the GitHub Actions workflow
+# SUDO_PASSWORD
+# ENVIRONMENT
+# DOMAIN_NAME
+# DB_PASSWORD
+# POSTGRES_PASSWORD
+# API_SECRET_KEY
+# API_MASTER_KEY
+# API_VERSION
+
+# Other variables that might be needed by sourced scripts, taken from infra-ci.yml defaults if not overridden
+ALGORITHM=${ALGORITHM:-HS256}
+ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+REDIS_URL=${REDIS_URL:-redis://redis:6379/1} # Default Redis URL
+LOG_DIRECTORY=${LOG_DIRECTORY:-/app/logs} # Default log directory within the container, if needed by templates
+
+# Construct database URLs carefully, ensuring DB_PASSWORD is used if set
+# These are primarily for populating the .env file for the application, via GLOBAL_ENV_VARS_FILE
+SYNC_DATABASE_URL_VALUE=""
+DATABASE_URL_VALUE=""
+if [ -n "${DB_PASSWORD}" ]; then
+    SYNC_DATABASE_URL_VALUE="postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api"
+    DATABASE_URL_VALUE="postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api"
+else
+    # Fallback or error if DB_PASSWORD is not set but we are in first-time setup
+    echo "Warning: DB_PASSWORD is not set. Database URLs will be incomplete."
+    # This will be caught by the essential vars check later if it's a first-time run
+fi
+
+MARKER_FILE="/opt/thebarcodeapi/${ENVIRONMENT}/.infra_initialized"
+GLOBAL_ENV_VARS_FILE="/tmp/env_vars_infra_setup.$$" # Unique name using PID
+
+# Function to safely echo sudo password and execute a command
+exec_sudo() {
+    if [ -z "${SUDO_PASSWORD}" ]; then
+        echo "Error: SUDO_PASSWORD is not set. Cannot execute sudo command."
+        # This check is critical before attempting to use SUDO_PASSWORD
+        # If we are in a state where infra needs to be built, this is a fatal error.
+        # The script will likely exit due to set -e if a sudo command fails without SUDO_PASSWORD.
+        # However, an explicit check where SUDO_PASSWORD is first confirmed available is safer.
+        # For this script structure, we assume SUDO_PASSWORD will be available if we reach a point needing it for first-time setup.
+        # The ESSENTIAL_VARS check for SUDO_PASSWORD during first-time setup handles this.
+        return 1 # Indicate failure
+    fi
+    echo "${SUDO_PASSWORD}" | sudo -S "$@"
+}
+
+# Simpler sudo check for trap, assuming SUDO_PASSWORD might be set or not
+# This is tricky because trap runs in its own context.
+# For simplicity, the trap will attempt sudo rm -f, which will fail if SUDO_PASSWORD isn't available or sudo isn't needed.
+cleanup_global_env_vars() {
+    echo "Attempting to clean up global environment variables file: ${GLOBAL_ENV_VARS_FILE}..."
+    if [ -n "${SUDO_PASSWORD}" ]; then # Check if SUDO_PASSWORD was set at all during script run
+        echo "${SUDO_PASSWORD}" | sudo -S rm -f "${GLOBAL_ENV_VARS_FILE}" || echo "Cleanup with sudo failed or file not found."
+    else
+        rm -f "${GLOBAL_ENV_VARS_FILE}" || echo "Cleanup without sudo failed or file not found."
+    fi
+}
+
+# Ensure cleanup happens on script exit, including on error
+trap cleanup_global_env_vars EXIT INT TERM
+
+main() {
+    echo "=== Starting Infrastructure Management Script ==="
+
+    # Check for marker file.
+    # We need SUDO_PASSWORD to check the marker file's existence if it's in a privileged location.
+    if [ -z "${SUDO_PASSWORD}" ]; then
+        echo "Error: SUDO_PASSWORD is not set. Cannot check marker file or perform setup."
+        exit 1
+    fi
+
+    echo "Checking for infrastructure initialization marker: ${MARKER_FILE}"
+
+    if ! exec_sudo test -f "${MARKER_FILE}"; then
+        echo "First time setup detected (marker file ${MARKER_FILE} not found)."
+        echo "Initializing infrastructure for environment: ${ENVIRONMENT}..."
+
+        # Validate essential environment variables needed for infra setup
+        ESSENTIAL_VARS=("SUDO_PASSWORD" "ENVIRONMENT" "DOMAIN_NAME" "DB_PASSWORD" "POSTGRES_PASSWORD" "API_SECRET_KEY" "API_MASTER_KEY" "API_VERSION")
+        for var in "${ESSENTIAL_VARS[@]}"; do
+            if [ -z "${!var}" ]; then
+                echo "Error: Essential environment variable $var is not set for first-time infrastructure setup."
+                exit 1
+            fi
+        done
+
+        # Re-evaluate database URLs now that we've confirmed DB_PASSWORD is set
+        SYNC_DATABASE_URL_VALUE="postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api"
+        DATABASE_URL_VALUE="postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api"
+
+        # Create the global environment variables file
+        echo "Creating global environment variables file: ${GLOBAL_ENV_VARS_FILE}"
+        exec_sudo bash -c "cat > '${GLOBAL_ENV_VARS_FILE}' <<'EOF'
+# Variables for infrastructure scripts - Sourced by sub-scripts
+# Generated by manage-infra.sh
+export ENVIRONMENT=\"${ENVIRONMENT}\"
+export DOMAIN_NAME=\"${DOMAIN_NAME}\"
+export NODE_ENV=\"${ENVIRONMENT}\"
+export API_SECRET_KEY=\"${API_SECRET_KEY}\"
+export API_MASTER_KEY=\"${API_MASTER_KEY}\"
+export DB_PASSWORD=\"${DB_PASSWORD}\"
+export POSTGRES_PASSWORD=\"${POSTGRES_PASSWORD}\"
+export API_VERSION=\"${API_VERSION}\"
+export ALGORITHM=\"${ALGORITHM}\"
+export ACCESS_TOKEN_EXPIRE_MINUTES=\"${ACCESS_TOKEN_EXPIRE_MINUTES}\"
+export REDIS_URL=\"${REDIS_URL}\"
+export SYNC_DATABASE_URL=\"${SYNC_DATABASE_URL_VALUE}\"
+export DATABASE_URL=\"${DATABASE_URL_VALUE}\"
+export LOG_DIRECTORY=\"${LOG_DIRECTORY}\"
+export SECRET_KEY=\"${API_SECRET_KEY}\"
+export MASTER_API_KEY=\"${API_MASTER_KEY}\"
+export GITHUB_WORKSPACE=\"${GITHUB_WORKSPACE}\"
+export SUDO_PASSWORD=\"${SUDO_PASSWORD}\"
+export CHANGES=\"true\"
+EOF
+"
+        exec_sudo chmod 644 "${GLOBAL_ENV_VARS_FILE}"
+
+        CURRENT_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+        # SCRIPTS_INFRA_DIR is the same as CURRENT_SCRIPT_DIR if manage-infra.sh is in scripts/infra
+        SCRIPTS_INFRA_DIR="${CURRENT_SCRIPT_DIR}"
+
+        echo "Executing infrastructure setup scripts from ${SCRIPTS_INFRA_DIR}..."
+
+        echo "Updating system packages..."
+        exec_sudo bash "${SCRIPTS_INFRA_DIR}/update-system.sh" || echo "Warning: System update encountered issues. Continuing..."
+
+        echo "Installing dependencies..."
+        exec_sudo bash "${SCRIPTS_INFRA_DIR}/install-dependencies.sh"
+
+        echo "Setting up initial application directories..."
+        exec_sudo mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres"
+        exec_sudo mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis"
+        exec_sudo mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/backups"
+        exec_sudo chown -R "${USER}:${USER}" "/opt/thebarcodeapi" # Own parent first
+        exec_sudo chown -R "${USER}:${USER}" "/opt/thebarcodeapi/${ENVIRONMENT}"
+        exec_sudo chown -R "${USER}:${USER}" "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
+        exec_sudo chown -R "${USER}:${USER}" "/opt/thebarcodeapi/${ENVIRONMENT}/backups"
+
+        echo "Configuring Nginx..."
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/configure-nginx.sh"
+
+        echo "Configuring backend Docker environment (setup-docker-env.sh)..."
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/setup-docker-env.sh"
+
+        echo "Fixing permissions..."
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/fix-permissions.sh"
+
+        echo "Configuring backup coordination..."
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/configure-backup-coordination.sh"
+
+        echo "Adding cleanup routine..."
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/add-cleanup-routine.sh"
+
+        echo "Restarting Nginx..."
+        exec_sudo systemctl restart nginx || echo "Warning: Nginx restart failed. Check Nginx configuration and status."
+
+        echo "Ensuring Docker service is running and restarting if necessary..."
+        if ! exec_sudo systemctl is-active --quiet docker; then
+            echo "Docker service is not active. Attempting to start/restart Docker..."
+            exec_sudo systemctl restart docker
+            echo "Waiting for Docker to initialize after restart..."
+            sleep 15
+        else
+            echo "Docker service is active."
+        fi
+        exec_sudo docker ps # Verify docker is up
+
+        # Note: Application deployment is handled by application-cd.yml workflow
+        # Infrastructure setup creates the environment, but does not deploy the application
+        echo "Infrastructure setup complete. Application deployment should be handled by application-cd.yml workflow."
+
+        echo "Verifying setup using verify-setup.sh..."
+        exec_sudo env GLOBAL_ENV_VARS_FILE="${GLOBAL_ENV_VARS_FILE}" bash "${SCRIPTS_INFRA_DIR}/verify-setup.sh"
+
+        echo "Infrastructure setup completed successfully for ${ENVIRONMENT}."
+        echo "Application deployment should be handled by the application-cd.yml workflow."
+        echo "Creating marker file: ${MARKER_FILE}"
+        exec_sudo touch "${MARKER_FILE}"
+        exec_sudo chown "${USER}:${USER}" "${MARKER_FILE}"
+
+    else
+        echo "Existing infrastructure detected for ${ENVIRONMENT} (Marker file found: ${MARKER_FILE}). Skipping initialization."
+    fi
+
+    echo "=== Infrastructure Management Script Completed Successfully ==="
+    exit 0
+}
+
+main

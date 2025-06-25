@@ -2,873 +2,298 @@ name: theBarcodeApi Infrastructure Setup
 
 on:
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild of all infrastructure components'
+        required: false
+        default: false
+        type: boolean
 
 env:
+  # Domain name for the application, used by Nginx and other services.
   DOMAIN_NAME: ${{ secrets.DOMAIN_NAME }}
+  # Deployment environment (e.g., staging, production). Used for path creation and configuration templating.
   ENVIRONMENT: ${{ vars.ENVIRONMENT }}
+  # Sudo password for privileged operations on the self-hosted runner.
   SUDO_PASSWORD: ${{ secrets.SUDO_PASSWORD }}
+  # Database password for the main application user.
   DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+  # PostgreSQL superuser (postgres user) password.
   POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+  # Secret key for API authentication (e.g., JWT signing).
   API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
+  # Master API key for administrative API access.
   API_MASTER_KEY: ${{ secrets.API_MASTER_KEY }}
+  # Version of the API, used in .env files and potentially for tagging.
   API_VERSION: ${{ vars.API_VERSION }}
 
 jobs:
-  infra-ci-job:
+  infra-setup:
+    name: Setup Server Infrastructure
     runs-on: self-hosted
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - name: Checkout repository code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history for infrastructure scripts that may need it
 
-    - name: Setup Initial Directories
+    # Validate that all required environment variables are set
+    - name: Validate infrastructure environment variables
       run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p "/opt/thebarcodeapi/${ENVIRONMENT}/backups"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R github-runner:github-runner "/opt/thebarcodeapi/${ENVIRONMENT}/releases"
-
-    # - name: Configure sudoers
-    #   run: |
-    #     echo "Configuring sudoers..."
-    #     echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat << 'EOF' | sudo tee /etc/sudoers.d/github-runner
-    #     # PM2 related commands
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/pm2
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/npm
-
-    #     # System service commands
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart nginx
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/systemctl reload nginx
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/systemctl restart docker
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/sbin/nginx -t
-
-    #     # Directory and file operations
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/mkdir -p /opt/thebarcodeapi/*
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/chown -R * /opt/thebarcodeapi/*
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/chmod -R * /opt/thebarcodeapi/*
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /opt/thebarcodeapi/*
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -rf /opt/thebarcodeapi/*
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/cp -R * /opt/thebarcodeapi/*
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/mv * /opt/thebarcodeapi/*
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/ln -sf * /opt/thebarcodeapi/*
-
-    #     # Docker related
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/docker
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/local/bin/docker-compose
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/docker-compose
-
-    #     # Temp directory operations
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/env_vars
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/rm -f /tmp/docker_vars
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/tee /tmp/env_vars
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/tee /tmp/docker_vars
-
-    #     # Package management
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get update
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get upgrade -y
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/bin/apt-get install -y *
-
-    #     # Group management
-    #     github-runner ALL=(ALL) NOPASSWD: /usr/sbin/usermod -aG docker github-runner
-
-    #     # Allow nginx configuration
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/cp * /etc/nginx/sites-available/*
-    #     github-runner ALL=(ALL) NOPASSWD: /bin/ln -sf /etc/nginx/sites-available/* /etc/nginx/sites-enabled/*
-    #     EOF
-
-    #     sudo chmod 0440 /etc/sudoers.d/github-runner
-
-    - name: Set PM2 permissions
-      run: |
-        # Create PM2 home directory with correct permissions
-        mkdir -p /home/github-runner/.pm2
-        chmod 700 /home/github-runner/.pm2
-
-        # Ensure PM2 files are owned by github-runner
-        touch /home/github-runner/.pm2/pm2.log
-        chmod 600 /home/github-runner/.pm2/pm2.log
-
-        # Create PM2 startup script directory
-        mkdir -p /home/github-runner/.pm2/logs
-        chmod 700 /home/github-runner/.pm2/logs
-
-    - name: Create system update script
-      run: |
-        echo "Creating system update script..."
-        cat << 'EOF' > update_system.sh
-        #!/bin/bash
-        set -e
-        echo "Updating system packages..."
-        apt-get update
-        apt-get upgrade -y
-        echo "System update completed."
-        EOF
-        chmod +x update_system.sh
-
-    - name: Update system
-      run: echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./update_system.sh
-      continue-on-error: true
-
-    - name: Check and install dependencies
-      run: |
-        echo "Creating dependency installation script..."
-        cat << 'EOF' > install_dependencies.sh
-        #!/bin/bash
-        set -e
-
-        # Function to check if a command exists
-        command_exists() {
-          command -v "$1" >/dev/null 2>&1
-        }
-
-        # Function to install Docker Compose
-        install_docker_compose() {
-          echo "Installing Docker Compose..."
-
-          # Create plugin directories
-          mkdir -p ~/.docker/cli-plugins/
-          mkdir -p /usr/local/lib/docker/cli-plugins
-
-          # Download and install Docker Compose binary
-          COMPOSE_URL="https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)"
-          curl -L "$COMPOSE_URL" -o /usr/local/bin/docker-compose
-          chmod +x /usr/local/bin/docker-compose
-          ln -sf /usr/local/bin/docker-compose /usr/bin/docker-compose
-
-          # Install as plugin
-          curl -L "$COMPOSE_URL" -o ~/.docker/cli-plugins/docker-compose
-          chmod +x ~/.docker/cli-plugins/docker-compose
-          cp ~/.docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-compose
-        }
-
-        echo "Starting dependency installation check..."
-
-        # Install Nginx if not present
-        if ! command_exists nginx; then
-          echo "Installing Nginx..."
-          apt-get install -y nginx
-        else
-          echo "Nginx already installed"
-        fi
-
-        # Install Node.js if not present
-        if ! command_exists node; then
-          echo "Installing Node.js 20.x..."
-          curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-          apt-get install -y nodejs
-        else
-          echo "Node.js already installed"
-        fi
-
-        # Install PM2 if not present
-        if ! command_exists pm2; then
-          echo "Installing PM2..."
-          npm install -g pm2
-        else
-          echo "PM2 already installed"
-        fi
-
-        # Install Docker if not present
-        if ! command_exists docker; then
-          echo "Installing Docker..."
-          # Install prerequisites
-          apt-get update
-          apt-get install -y ca-certificates curl gnupg lsb-release
-
-          # Add Docker's official GPG key
-          mkdir -p /etc/apt/keyrings
-          curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-
-          # Add Docker repository
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
-            tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-          # Install Docker Engine
-          apt-get update
-          apt-get install -y docker-ce docker-ce-cli containerd.io
-
-          # Start and enable Docker service
-          systemctl start docker
-          systemctl enable docker
-
-          # Add github-runner to docker group
-          usermod -aG docker github-runner
-        else
-          echo "Docker already installed"
-        fi
-
-        # Install Docker Compose if not present
-        if ! (docker compose version || docker-compose --version) &> /dev/null; then
-          install_docker_compose
-        else
-          echo "Docker Compose already installed"
-        fi
-
-        # Verify all installations
-        echo "Verifying installations..."
-
-        declare -A commands=(
-          ["Nginx"]="nginx -v"
-          ["Node.js"]="node -v"
-          ["PM2"]="pm2 --version"
-          ["Docker"]="docker --version"
-          ["Docker Compose"]="docker compose version || docker-compose --version"
-        )
-
-        for name in "${!commands[@]}"; do
-          echo "Checking $name..."
-          if ! eval "${commands[$name]}" &> /dev/null; then
-            echo "Error: $name installation failed"
+        echo "Validating required environment variables..."
+        for var in ENVIRONMENT DOMAIN_NAME SUDO_PASSWORD DB_PASSWORD POSTGRES_PASSWORD API_SECRET_KEY API_MASTER_KEY API_VERSION; do
+          if [ -z "${!var}" ]; then
+            echo "Error: Required environment variable $var is not set"
             exit 1
           fi
         done
+        echo "All required environment variables are set."
 
-        # Ensure docker group membership
-        if ! groups github-runner | grep -q docker; then
-          echo "Adding github-runner to docker group..."
-          usermod -aG docker github-runner
-          echo "Note: You may need to log out and back in for docker group changes to take effect"
+    # Check system prerequisites for Docker-based deployment
+    - name: Verify system prerequisites
+      run: |
+        echo "Checking system prerequisites for Docker deployment..."
+
+        # Check if Docker is installed
+        if ! command -v docker &> /dev/null; then
+          echo "Warning: Docker is not installed. Infrastructure setup will install it."
+        else
+          echo "Docker is available: $(docker --version)"
         fi
 
-        echo "All installations verified successfully"
-
-        # Display all versions
-        echo "Installed versions:"
-        nginx -v
-        node -v
-        pm2 --version
-        docker --version
-        docker compose version || docker-compose --version
-        EOF
-        chmod +x install_dependencies.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./install_dependencies.sh
-
-    - name: Configure Nginx
-      run: |
-        echo "Creating Nginx configuration script..."
-        cat << 'EOF' > configure_nginx.sh
-        #!/bin/bash
-        set -e
-
-        # Read environment variables from file
-        source /tmp/env_vars
-
-        # Configure Nginx
-        echo "Configuring Nginx..."
-        cat > /etc/nginx/sites-available/thebarcodeapi << EOL
-        server {
-            listen 80;
-            listen [::]:80;
-            server_name 192.168.1.112;
-            server_tokens off;
-
-            # Frontend Next.js application
-            location / {
-                proxy_pass http://localhost:3000;
-                proxy_http_version 1.1;
-                proxy_set_header Upgrade \$http_upgrade;
-                proxy_set_header Connection 'upgrade';
-                proxy_set_header Host \$host;
-                proxy_cache_bypass \$http_upgrade;
-            }
-
-            # Backend API
-            location /api {
-                proxy_pass http://localhost:8000;
-                proxy_http_version 1.1;
-                proxy_set_header Upgrade \$http_upgrade;
-                proxy_set_header Connection 'upgrade';
-                proxy_set_header Host \$host;
-                proxy_cache_bypass \$http_upgrade;
-            }
-
-            # Security headers
-            add_header X-Frame-Options "SAMEORIGIN" always;
-            add_header X-XSS-Protection "1; mode=block" always;
-            add_header X-Content-Type-Options "nosniff" always;
-            add_header Referrer-Policy "no-referrer-when-downgrade" always;
-            add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
-
-            # Logging
-            access_log /var/log/nginx/thebarcodeapi.access.log;
-            error_log /var/log/nginx/thebarcodeapi.error.log warn;
-        }
-        EOL
-
-        ln -sf /etc/nginx/sites-available/thebarcodeapi /etc/nginx/sites-enabled/
-        nginx -t
-        EOF
-        echo "$SUDO_PASSWORD" | sudo -S chmod +x configure_nginx.sh
-
-        # Create environment variables file
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
-        ENVIRONMENT=${{ env.ENVIRONMENT }}
-        NODE_ENV=production
-        SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
-        EOF"
-
-        # Run configuration script
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./configure_nginx.sh
-
-        # Clean up
-        echo "$SUDO_PASSWORD" | sudo -S rm -f /tmp/env_vars
-
-    - name: Configure PM2 for Frontend
-      run: |
-        echo "Creating PM2 configuration script..."
-        cat << 'EOF' > configure_pm2.sh
-        #!/bin/bash
-        set -e
-
-        # move to theBarcodeAPI directory
-        cd /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI
-
-        # Read environment variables from file
-        source /tmp/env_vars
-
-        # Create required directories with proper permissions
-        echo "Creating required directories..."
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/current
-        echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
-
-        # Configure PM2
-        echo "Configuring PM2..."
-        cat << EEOF > /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js
-        module.exports = {
-          apps: [{
-            name: 'thebarcodeapi-frontend-${ENVIRONMENT}',
-            script: 'npm',
-            args: 'start',
-            namespace: '${ENVIRONMENT}',
-            env: {
-              NODE_ENV: '${ENVIRONMENT}',
-              ENVIRONMENT: '${ENVIRONMENT}',
-              PORT: 3000,
-              NODE_OPTIONS: '--max-old-space-size=512'
-            },
-            cwd: '/opt/thebarcodeapi/${ENVIRONMENT}/current',
-            instances: 2,
-            exec_mode: 'fork',
-            autorestart: true,
-            watch: false,
-            max_memory_restart: '512M',
-            wait_ready: true,
-            listen_timeout: 30000,
-            kill_timeout: 5000,
-            exp_backoff_restart_delay: 100,
-            restart_delay: 2000,
-            max_restarts: 3,
-            error_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log',
-            out_file: '/opt/thebarcodeapi/${ENVIRONMENT}/logs/out.log',
-            merge_logs: true,
-            min_uptime: '60s',
-            node_args: '--expose-gc',
-            increment_var: 'PORT'
-          }]
-        };
-        EEOF
-
-        # Create log directory
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/logs
-        echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}/logs
-
-        # Stop and remove existing PM2 processes
-        echo "Managing PM2 process..."
-        PM2_HOME="/home/github-runner/.pm2" pm2 delete "thebarcodeapi-frontend-${ENVIRONMENT}" || true
-
-        # Wait for processes to fully stop
-        sleep 15
-
-        # Clear PM2 logs before starting
-        PM2_HOME="/home/github-runner/.pm2" pm2 flush
-
-        # Start PM2 with the new configuration
-        cd "/opt/thebarcodeapi/${ENVIRONMENT}/current" || exit 1
-        PM2_HOME="/home/github-runner/.pm2" pm2 start /opt/thebarcodeapi/${ENVIRONMENT}/ecosystem.config.js
-
-        # Wait for process to stabilize
-        sleep 10
-
-        # Save PM2 configuration
-        PM2_HOME="/home/github-runner/.pm2" pm2 save
-
-        # Set final permissions
-        echo "$SUDO_PASSWORD" | sudo -S chown -R github-runner:github-runner /opt/thebarcodeapi
-        echo "$SUDO_PASSWORD" | sudo -S chmod -R 755 /opt/thebarcodeapi
-
-        # Show logs to help with debugging
-        echo "Recent logs:"
-        if [ -f "/opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log" ]; then
-          tail -n 50 /opt/thebarcodeapi/${ENVIRONMENT}/logs/err.log
+        # Check if Docker Compose is installed
+        if command -v docker-compose &> /dev/null; then
+          echo "Docker Compose is available: $(docker-compose --version)"
+        elif docker compose version &> /dev/null 2>&1; then
+          echo "Docker Compose (plugin) is available: $(docker compose version)"
+        else
+          echo "Warning: Docker Compose is not installed. Infrastructure setup will install it."
         fi
 
-        # Show PM2 status
-        PM2_HOME="/home/github-runner/.pm2" pm2 list
-        EOF
+        # Check available disk space
+        echo "Available disk space:"
+        df -h /opt/ || df -h /
 
-        echo "$SUDO_PASSWORD" | sudo -S chmod +x configure_pm2.sh
+        # Check available memory
+        echo "Available memory:"
+        free -h
 
-        # Create environment variables file
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
-        ENVIRONMENT=${{ env.ENVIRONMENT }}
-        NODE_ENV=production
-        SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
-        EOF"
-
-        # Run configuration script
-        ./configure_pm2.sh
-
-        # Clean up
-        echo "$SUDO_PASSWORD" | sudo -S rm -f /tmp/env_vars
-
-    - name: List source directory contents (Before)
-      run: ls -l /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/
-
-    - name: List destination directory contents (Before)
-      run: ls -l .
-
-    - name: Configure Backend Docker Environment
+    # Run infrastructure integration tests before setup
+    - name: Run Infrastructure Integration Tests
       run: |
-        echo "Creating Docker environment setup script..."
-        cat << 'EOF' > setup_docker.sh
-        #!/bin/bash
-        set -e
-
-        # Read environment variables from file
-        source /tmp/env_vars
-
-        # Create necessary directories
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeAPI
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/backups
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis
-        echo "$SUDO_PASSWORD" | sudo -S mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres
-
-        # Navigate to backend directory
-        cd /opt/thebarcodeapi/barcodeAPI
-
-        # Copy backend files
-        echo "$SUDO_PASSWORD" | sudo -S cp -R /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/* .
-
-        # Create .env file before Docker build
-        echo "$SUDO_PASSWORD" | sudo -S cat > /opt/thebarcodeapi/barcodeAPI/.env << EOL
-        DB_PASSWORD=${DB_PASSWORD}
-        POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-        SECRET_KEY=${API_SECRET_KEY}
-        MASTER_API_KEY=${API_MASTER_KEY}
-        API_VERSION=${API_VERSION}
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${DB_PASSWORD}@db/barcode_api
-        REDIS_URL=redis://redis:6379
-        ALGORITHM=HS256
-        ACCESS_TOKEN_EXPIRE_MINUTES=30
-        ENVIRONMENT=${ENVIRONMENT}
-        EOL
-
-        # Set permission for .env file
-        echo "$SUDO_PASSWORD" | sudo -S chmod 600 /opt/thebarcodeapi/barcodeAPI/.env
-        echo "$SUDO_PASSWORD" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/.env
-
-        # Create docker-compose.yml
-        cat > docker-compose.yml << EOL
-        version: '3.8'
-
-        services:
-          api:
-            build:
-              context: .
-              dockerfile: Dockerfile
-              args:
-                - PYTHON_ENV=production
-            ports:
-              - "8000:8000"
-            depends_on:
-              db:
-                condition: service_healthy
-              redis:
-                condition: service_healthy
-            env_file:
-              - .env
-            volumes:
-              - ./app:/app/app
-              - ./alembic:/app/alembic
-              # Don't mount .env as it's copied during build
-            healthcheck:
-              test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-              interval: 15s
-              timeout: 10s
-              retries: 3
-              start_period: 30s
-            restart: unless-stopped
-            logging:
-              driver: "json-file"
-              options:
-                max-size: "10m"
-                max-file: "3"
-
-          redis:
-            image: redislabs/rejson:latest
-            ports:
-              - "6379:6379"
-            volumes:
-              - /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis:/data
-            healthcheck:
-              test: ["CMD", "redis-cli", "ping"]
-              interval: 5s
-              timeout: 30s
-              retries: 50
-            restart: unless-stopped
-
-          db:
-            image: postgres:13
-            ports:
-              - "5432:5432"
-            volumes:
-              - /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/postgres:/var/lib/postgresql/data
-              - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh
-            environment:
-              - POSTGRES_USER=postgres
-              - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-              - BARCODE_DB_USER=barcodeboachiefamily
-              - BARCODE_DB_PASSWORD=${DB_PASSWORD}
-              - BARCODE_DB_NAME=barcode_api
-            healthcheck:
-              test: ["CMD-SHELL", "pg_isready -U barcodeboachiefamily -d barcode_api"]
-              interval: 5s
-              timeout: 5s
-              retries: 5
-            restart: unless-stopped
-            logging:
-              driver: "json-file"
-              options:
-                max-size: "10m"
-                max-file: "3"
-
-        networks:
-          default:
-            name: barcodeapi_network
-        EOL
-
-        # Create backup script
-        cat > /opt/thebarcodeapi/barcodeAPI/backup.sh << EOL
-        #!/bin/bash
-        TIMESTAMP=\$(date +%Y%m%d_%H%M%S)
-        BACKUP_DIR="/opt/thebarcodeapi/${ENVIRONMENT}/backups"
-
-        # Backup PostgreSQL
-        docker compose exec db pg_dump -U barcodeboachiefamily barcode_api > "\$BACKUP_DIR/db_backup_\$TIMESTAMP.sql"
-
-        # Backup Redis
-        docker compose exec redis redis-cli SAVE
-        echo "$SUDO_PASSWORD" | sudo -S cp /opt/thebarcodeapi/${ENVIRONMENT}/releases/data/redis/dump.rdb "\$BACKUP_DIR/redis_backup_\$TIMESTAMP.rdb"
-
-        # Clean old backups (keep last 7 days)
-        find \$BACKUP_DIR -name "db_backup_*" -mtime +7 -delete
-        find \$BACKUP_DIR -name "redis_backup_*" -mtime +7 -delete
-        EOL
-        chmod +x /opt/thebarcodeapi/barcodeAPI/backup.sh
-
-        # Set up cron job for backups
-        (crontab -l 2>/dev/null; echo "0 0 * * * /opt/thebarcodeapi/barcodeAPI/backup.sh") | crontab -
-
-        # Ensure start.sh is executable
-        chmod +x start.sh
-
-        # Create wait-for-it script for startup coordination
-        cat > wait-for-it.sh << 'EOL'
-        #!/bin/bash
-        # wait-for-it.sh script to check service availability
-
-        host="$1"
-        port="$2"
-        shift 2
-        cmd="$@"
-
-        until nc -z "$host" "$port"; do
-          echo "Waiting for $host:$port..."
-          sleep 1
-        done
-
-        echo "$host:$port is available"
-        exec $cmd
-        EOL
-        chmod +x wait-for-it.sh
-
-        # Set permissions
-        chown -R github-runner:github-runner /opt/thebarcodeapi
-        chmod -R 755 /opt/thebarcodeapi/barcodeAPI
-
-        echo "Docker environment setup completed"
-        EOF
-        chmod +x setup_docker.sh
-
-        # Create environment variables file
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c "cat > /tmp/env_vars << 'EOF'
-        ENVIRONMENT=${{ env.ENVIRONMENT }}
-        NODE_ENV=${{ env.ENVIRONMENT }}
-        SUDO_PASSWORD=${{ env.SUDO_PASSWORD }}
-        API_SECRET_KEY=${{ env.API_SECRET_KEY }}
-        API_MASTER_KEY=${{ env.API_MASTER_KEY }}
-        DB_PASSWORD=${{ env.DB_PASSWORD }}
-        POSTGRES_PASSWORD=${{ env.POSTGRES_PASSWORD }}
-        API_VERSION=${{ env.API_VERSION }}
-        ALGORITHM=HS256
-        ACCESS_TOKEN_EXPIRE_MINUTES=30
-        REDIS_URL=redis://redis:6379/1
-        SYNC_DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        LOG_DIRECTORY=/app/logs
-        SECRET_KEY=${{ env.API_SECRET_KEY }}
-        MASTER_API_KEY=${{ env.API_MASTER_KEY }}
-        DATABASE_URL=postgresql+asyncpg://barcodeboachiefamily:${{ env.DB_PASSWORD }}@db/barcode_api
-        EOF"
-
-        # Run setup script
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./setup_docker.sh
-
-        # Clean up
-        echo "$SUDO_PASSWORD" | sudo -S  rm -f /tmp/env_vars
-
-    - name: List source directory contents (Before)
-      run: ls -l /home/github-runner/actions-runner/_work/theBarcodeAPI/theBarcodeAPI/barcodeAPI/
-
-    - name: List destination directory contents (Before)
-      run: ls -l .
-
-    - name: Fix Permissions
-      run: |
-        echo "Fixing permissions..."
-        cat << 'EOF' > fix_permissions.sh
-        #!/bin/bash
-        set -e
-
-        # Create required directories if they don't exist
-        mkdir -p /opt/thebarcodeapi/barcodeAPI
-        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/releases/data
-        mkdir -p /opt/thebarcodeapi/${ENVIRONMENT}/backups
-
-        # Set ownership
-        chown -R github-runner:github-runner /opt/thebarcodeapi
-
-        # Set directory permissions
-        find /opt/thebarcodeapi -type d -exec chmod 755 {} \;
-
-        # Set file permissions
-        find /opt/thebarcodeapi -type f -exec chmod 644 {} \;
-
-        # Make scripts executable
-        find /opt/thebarcodeapi -name "*.sh" -exec chmod +x {} \;
-
-        # Ensure special permissions for sensitive files
-        if [ -f "/opt/thebarcodeapi/barcodeAPI/.env" ]; then
-          chmod 600 /opt/thebarcodeapi/barcodeAPI/.env
+        echo "Running infrastructure integration tests..."
+        if [ -f "scripts/infra/tests/test_infra_setup.sh" ]; then
+          bash scripts/infra/tests/test_infra_setup.sh
+        else
+          echo "Infrastructure tests not found, skipping..."
         fi
 
-        # Set proper permissions for Docker socket
-        if [ -S /var/run/docker.sock ]; then
-          chmod 666 /var/run/docker.sock
+    # Clean up any existing infrastructure if force rebuild is requested
+    - name: Clean existing infrastructure (if force rebuild)
+      if: github.event.inputs.force_rebuild == 'true'
+      run: |
+        echo "Force rebuild requested - cleaning existing infrastructure..."
+
+        # Stop any running Docker containers
+        if command -v docker &> /dev/null; then
+          echo "Stopping existing Docker containers..."
+          docker stop $(docker ps -q) 2>/dev/null || true
+          docker system prune -af --volumes 2>/dev/null || true
         fi
 
-        # set theBarcodeAPI directory permissions
-        chown -R github-runner:github-runner /opt/thebarcodeapi/barcodeAPI
+        # Clean up deployment directories (but preserve data)
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeApi/logs/* 2>/dev/null || true
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/.env.* 2>/dev/null || true
 
-        # set ownership for backup folder
-        chown github-runner:github-runner /opt/thebarcodeapi/${ENVIRONMENT}/backups
-        echo "Permissions fixed successfully"
-        EOF
+        echo "Infrastructure cleanup completed."
 
-        chmod +x fix_permissions.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./fix_permissions.sh
-
-    - name: Configure Backup Coordination
+    # Main infrastructure setup
+    - name: Run Infrastructure and Initial Setup Script
+      env:
+        FORCE_REBUILD: ${{ github.event.inputs.force_rebuild }}
       run: |
-        echo "Setting up backup coordination..."
-        # First create script locally
-        cat << 'EOF' > pre-backup-check.sh
-        #!/bin/bash
-        set -e
-
-        # Check if deployment is in progress
-        if [ -f "/opt/thebarcodeapi/deployment.lock" ]; then
-          echo "Deployment in progress, skipping backup"
-          exit 0
-        fi
-
-        # Proceed with backup
-        /opt/thebarcodeapi/barcodeAPI/backup.sh
-        EOF
-        chmod +x pre-backup-check.sh
-
-        # Move to destination with sudo
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv pre-backup-check.sh /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 755 /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh
-
-        # Update cron job with sudo
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c '(crontab -l 2>/dev/null | grep -v "backup.sh" | grep -v "pre-backup-check.sh") | crontab -'
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c '(crontab -l 2>/dev/null; echo "0 0 * * * /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh") | crontab -'
-
-    - name: Add Cleanup Routine
-      run: |
-        # First create the script in current directory
-        cat << 'EOF' > cleanup.sh
-        #!/bin/bash
-        set -e
-
-        # Clean old frontend releases
-        find /opt/thebarcodeapi/${ENVIRONMENT}/releases -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
-
-        # Clean old backups (keep last 30 days)
-        find /opt/thebarcodeapi/${ENVIRONMENT}/backups -maxdepth 1 -type d -mtime +30 -exec rm -rf {} \;
-
-        # Clean Docker
-        docker system prune -f --filter "until=168h"
-        EOF
-        chmod +x cleanup.sh
-
-        # Then move it to the target location with sudo
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mv cleanup.sh /opt/thebarcodeapi/cleanup.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown github-runner:github-runner /opt/thebarcodeapi/cleanup.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 755 /opt/thebarcodeapi/cleanup.sh
-
-        # Add weekly cleanup to cron with sudo
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S bash -c '(crontab -l 2>/dev/null; echo "0 0 * * 0 /opt/thebarcodeapi/cleanup.sh") | crontab -'
-
-    - name: Error Check
-      run: |
-        # Check if critical files exist
-        for file in "/opt/thebarcodeapi/barcodeAPI/backup.sh" "/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh" "/opt/thebarcodeapi/cleanup.sh"; do
-          if [ ! -x "$file" ]; then
-            echo "Error: $file is not executable or doesn't exist"
-            exit 1
-          fi
-        done
-
-    - name: Verify Setup
-      run: |
-        echo "Verifying setup..."
-        cat << 'EOF' > verify_setup.sh
-        #!/bin/bash
-        set -e
-
-        # Function to create directory with proper permissions if it doesn't exist
-        create_directory() {
-          local dir="$1"
-          if [ ! -d "$dir" ]; then
-            echo "Creating directory: $dir"
-            sudo mkdir -p "$dir"
-            sudo chown github-runner:github-runner "$dir"
-            sudo chmod 755 "$dir"
-          fi
-        }
-
-        # Function to create executable script if it doesn't exist
-        create_script() {
-          local script="$1"
-          local content="$2"
-          if [ ! -f "$script" ]; then
-            echo "Creating script: $script"
-            echo "$content" | sudo tee "$script" > /dev/null
-            sudo chmod +x "$script"
-            sudo chown github-runner:github-runner "$script"
-          elif [ ! -x "$script" ]; then
-            echo "Making script executable: $script"
-            sudo chmod +x "$script"
-          fi
-        }
-
-        # Create and verify base directory
-        echo "Setting up base directory..."
-        sudo mkdir -p /opt/thebarcodeapi
-        sudo chown github-runner:github-runner /opt/thebarcodeapi
-        sudo chmod 755 /opt/thebarcodeapi
-
-        # Create and verify required directories
-        echo "Checking directory structure..."
-        for dir in barcodeAPI data backups; do
-          create_directory "/opt/thebarcodeapi/$dir"
-        done
-
-        # Create wait-for-it script if it doesn't exist
-        echo "Setting up wait-for-it script..."
-        WAIT_SCRIPT="/opt/thebarcodeapi/barcodeAPI/wait-for-it.sh"
-        create_script "$WAIT_SCRIPT" '#!/bin/bash
-        timeout=15
-        while ! nc -z "$1" "$2"; do
-          if [ "$timeout" -le 0 ]; then
-            echo "Timeout waiting for $1:$2"
-            exit 1
-          fi
-          echo "Waiting for $1:$2... ($timeout seconds left)"
-          timeout=$((timeout-1))
-          sleep 1
-        done'
-
-        # Create backup scripts if they don't exist
-        echo "Setting up backup scripts..."
-
-        BACKUP_SCRIPT="/opt/thebarcodeapi/barcodeAPI/backup.sh"
-        create_script "$BACKUP_SCRIPT" '#!/bin/bash
-        timestamp=$(date +%Y%m%d_%H%M%S)
-        backup_dir="/opt/thebarcodeapi/${ENVIRONMENT}/backups"
-        tar -czf "$backup_dir/backup_$timestamp.tar.gz" -C /opt/thebarcodeapi/${ENVIRONMENT}/releases/data .'
-
-        PRE_BACKUP_SCRIPT="/opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh"
-        create_script "$PRE_BACKUP_SCRIPT" '#!/bin/bash
-        if [ $(df -P /opt/thebarcodeapi/${ENVIRONMENT}/backups | tail -1 | awk '"'"'{print $5}'"'"' | sed '"'"'s/%//'"'"') -gt 90 ]; then
-          echo "Backup directory is over 90% full"
-          exit 1
-        fi'
-
-        # Set up cron job if it doesn't exist
-        echo "Setting up cron job..."
-        if ! sudo crontab -l 2>/dev/null | grep -q "pre-backup-check.sh"; then
-          (sudo crontab -l 2>/dev/null; echo "0 1 * * * /opt/thebarcodeapi/barcodeAPI/pre-backup-check.sh") | sudo crontab -
-        fi
-
-        # Verify final permissions
-        echo "Verifying final permissions..."
-        sudo chown -R github-runner:github-runner /opt/thebarcodeapi
-        sudo chmod -R 755 /opt/thebarcodeapi
-
-        echo "Setup verified and completed successfully"
-        EOF
-
-        chmod +x verify_setup.sh
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S ./verify_setup.sh
-
-    - name: Verify Repository Structure
-      run: |
-        if [ ! -d "barcodeAPI" ]; then
-          echo "Error: barcodeAPI directory not found!"
-          exit 1
-        fi
-
-        if [ ! -f "barcodeAPI/requirements.txt" ]; then
-          echo "Error: requirements.txt not found in barcodeAPI directory!"
-          exit 1
-        fi
-
-        if [ ! -f "barcodeAPI/start.sh" ]; then
-          echo "Error: start.sh not found in barcodeAPI directory!"
-          exit 1
-        fi
-
-    - name: Clean up scripts
-      run: |
-        echo "Cleaning up..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f update_system.sh install_dependencies.sh configure_nginx.sh configure_pm2.sh setup_docker.sh verify_setup.sh setup_backup.sh fix_permissions.sh
-
-    - name: Start Services
-      run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S systemctl restart nginx
-
-    - name: Restart Docker
-      run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S systemctl restart docker
-        # Wait for Docker to be ready
-        sleep 5
-
-    - name: Print Environment Info (for debugging)
-      run: |
-        echo "Deployed to ${{ env.ENVIRONMENT }} environment"
+        echo "Starting infrastructure setup for environment: ${{ env.ENVIRONMENT }}"
         echo "Domain: ${{ env.DOMAIN_NAME }}"
+        echo "Force rebuild: ${{ github.event.inputs.force_rebuild }}"
+
+        if [ -f "scripts/infra/manage-infra.sh" ]; then
+          bash scripts/infra/manage-infra.sh
+        else
+          echo "Error: Infrastructure management script not found at scripts/infra/manage-infra.sh"
+          exit 1
+        fi
+
+    # Verify Docker installation and configuration
+    - name: Verify Docker setup
+      run: |
+        echo "Verifying Docker installation and configuration..."
+
+        # Check Docker daemon
+        if ! docker info >/dev/null 2>&1; then
+          echo "Error: Docker daemon is not running or accessible"
+          exit 1
+        fi
+
+        # Check Docker Compose
+        if command -v docker-compose >/dev/null 2>&1; then
+          COMPOSE_CMD="docker-compose"
+        elif docker compose version >/dev/null 2>&1; then
+          COMPOSE_CMD="docker compose"
+        else
+          echo "Error: Docker Compose is not available"
+          exit 1
+        fi
+
+        echo "Docker Compose command: $COMPOSE_CMD"
+        echo "Docker info:"
+        docker info | head -20
+
+        echo "Docker setup verification completed."
+
+    # Create essential directory structure for Docker deployment
+    - name: Setup deployment directory structure
+      run: |
+        echo "Creating deployment directory structure..."
+
+        # Create main deployment directories
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeApi
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeFrontend
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${{ env.ENVIRONMENT }}/backups
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${{ env.ENVIRONMENT }}/logs
+
+        # Create Docker volume directories
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${{ env.ENVIRONMENT }}/volumes/postgres
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/${{ env.ENVIRONMENT }}/volumes/redis
+
+        # Set proper ownership
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi
+
+        # Create logs directories with proper permissions for containers
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeApi/logs
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R 1000:1000 /opt/thebarcodeapi/barcodeApi/logs
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod -R 755 /opt/thebarcodeapi/barcodeApi/logs
+
+        echo "Directory structure created successfully."
+
+    # Verify web server configuration (Nginx)
+    - name: Verify web server configuration
+      run: |
+        echo "Verifying web server configuration..."
+
+        # Check if Nginx is installed and configured
+        if command -v nginx >/dev/null 2>&1; then
+          echo "Nginx is installed: $(nginx -v 2>&1)"
+
+          # Test Nginx configuration
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S nginx -t || echo "Nginx configuration needs attention"
+
+          # Check if Nginx is running
+          if systemctl is-active nginx >/dev/null 2>&1; then
+            echo "Nginx is running"
+          else
+            echo "Nginx is not running - will be started by infrastructure scripts"
+          fi
+        else
+          echo "Nginx is not installed - will be installed by infrastructure scripts"
+        fi
+
+    # Test network connectivity and DNS
+    - name: Test network connectivity
+      run: |
+        echo "Testing network connectivity..."
+
+        # Test external connectivity
+        if curl -s --max-time 10 https://www.google.com >/dev/null; then
+          echo "External connectivity: OK"
+        else
+          echo "Warning: External connectivity test failed"
+        fi
+
+        # Test Docker Hub connectivity (for pulling images)
+        if curl -s --max-time 10 https://registry-1.docker.io >/dev/null; then
+          echo "Docker Hub connectivity: OK"
+        else
+          echo "Warning: Docker Hub connectivity test failed"
+        fi
+
+        # Test domain resolution if domain is configured
+        if [ -n "${{ env.DOMAIN_NAME }}" ] && [ "${{ env.DOMAIN_NAME }}" != "localhost" ]; then
+          if nslookup "${{ env.DOMAIN_NAME }}" >/dev/null 2>&1; then
+            echo "Domain resolution for ${{ env.DOMAIN_NAME }}: OK"
+          else
+            echo "Warning: Domain resolution for ${{ env.DOMAIN_NAME }} failed"
+          fi
+        fi
+
+    # Final infrastructure validation
+    - name: Final infrastructure validation
+      run: |
+        echo "Performing final infrastructure validation..."
+
+        # Check critical directories
+        for dir in /opt/thebarcodeapi /opt/thebarcodeapi/barcodeApi /opt/thebarcodeapi/${{ env.ENVIRONMENT }}; do
+          if [ -d "$dir" ]; then
+            echo "Directory $dir: OK"
+          else
+            echo "Error: Directory $dir not found"
+            exit 1
+          fi
+        done
+
+        # Check Docker group membership
+        if groups $USER | grep -q docker; then
+          echo "User $USER is in docker group: OK"
+        else
+          echo "Warning: User $USER is not in docker group"
+        fi
+
+        # Check critical services
+        services=("docker")
+        for service in "${services[@]}"; do
+          if systemctl is-active "$service" >/dev/null 2>&1; then
+            echo "Service $service: RUNNING"
+          else
+            echo "Warning: Service $service is not running"
+          fi
+        done
+
+        echo "Infrastructure validation completed."
+
+    # Print final environment information for debugging and record-keeping
+    - name: Print final environment information
+      run: |
+        echo "============================================"
+        echo "Infrastructure setup completed successfully!"
+        echo "============================================"
+        echo "Environment: ${{ env.ENVIRONMENT }}"
+        echo "Domain: ${{ env.DOMAIN_NAME }}"
+        echo "API Version: ${{ env.API_VERSION }}"
+        echo "Timestamp: $(date)"
+        echo ""
+        echo "System Information:"
+        echo "- OS: $(uname -a)"
+        echo "- Docker: $(docker --version 2>/dev/null || echo 'Not available')"
+        echo "- Docker Compose: $(docker-compose --version 2>/dev/null || docker compose version 2>/dev/null || echo 'Not available')"
+        echo "- Available disk space: $(df -h /opt | tail -1 | awk '{print $4}')"
+        echo "- Available memory: $(free -h | grep Mem | awk '{print $7}')"
+        echo ""
+        echo "Infrastructure is ready for Docker-based application deployment."
+        echo "Next step: Application deployment via application-cd.yml workflow."
+        echo "============================================"
+
+    # Cleanup temporary files and prepare for application deployment
+    - name: Cleanup and prepare for application deployment
+      if: always()
+      run: |
+        echo "Cleaning up temporary files..."
+
+        # Remove any temporary infrastructure files
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/infra_setup_* 2>/dev/null || true
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/nginx_test_* 2>/dev/null || true
+
+        # Ensure proper permissions on deployment directories
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi 2>/dev/null || true
+
+        echo "Infrastructure setup cleanup completed."

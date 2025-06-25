@@ -1,0 +1,36 @@
+# Core Dependencies
+fastapi==0.115.4
+uvicorn[standard]==0.32.0
+starlette==0.41.3
+pydantic==2.9.2
+pydantic-settings==2.6.1
+psutil==7.0.0
+
+# Database
+SQLAlchemy[asyncio]==2.0.36
+psycopg2-binary==2.9.10
+asyncpg==0.30.0
+alembic==1.14.0
+
+# Security & Rate Limiting
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+fastapi-limiter==0.1.6
+fastmcp==2.8.1
+
+# Caching
+redis[hiredis]==5.2.0
+
+# Image Processing
+python-barcode==0.15.1
+# Pillow-SIMD>=9.0.0.post0
+Pillow==10.4.0 # Uncomment this if you are having issues locally and comment out Pillow-SIMD
+
+# Data Processing
+pandas==2.3.0
+
+# Utilities
+python-multipart==0.0.17
+pytz==2024.2
+aiohttp==3.10.10
+fastnanoid==0.4.1

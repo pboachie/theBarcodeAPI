@@ -13,28 +13,60 @@
 
 # misc
 .DS_Store
+*.log
+*.env # Catch-all for .env files, recommend being specific if needed
+
+# Node / Frontend (within barcodeFrontend)
+node_modules/
+.next/
+out/
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+coverage/
 
-.next*
-
-
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
+# Python / Backend (within barcodeApi)
+__pycache__/
 *.pyc
-/__pycache__/*
+.venv/
+venv/
+.env # Backend specific .env
+.pytest_cache/
+.coverage*
+htmlcov/
+instance/
+dist/
+*.egg-info/
+.eggs/
+*.egg
 
-*.log
-*.env
-*.db
-*/build*
-*/venv/*
+# VSCode
+.vscode/*
+!.vscode/settings.json # Often useful to commit workspace settings
+!.vscode/launch.json   # Often useful to commit launch configurations
+!.vscode/extensions.json # Useful for recommending extensions
+
+# Build artifacts (if any at root, less likely now)
+# /build
+# /dist
+
+# Coverage (if any at root)
+# /coverage
+
+# PNP (if you use Yarn PnP)
+.pnp.js
+.pnp.loader.mjs
+.yarn/cache
+.yarn/install-state.gz
+.yarn/patches
+.yarn/plugins
+.yarn/releases
+.yarn/sdks
+.yarn/versions
+.env
+
