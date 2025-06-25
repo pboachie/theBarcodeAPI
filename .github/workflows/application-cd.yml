@@ -428,7 +428,6 @@ jobs:
     runs-on: self-hosted
     needs: build-and-deploy-backend
     steps:
-    # Check infrastructure workflow status when triggered by workflow_run
     - name: Check infrastructure workflow status
       if: github.event_name == 'workflow_run'
       run: |
@@ -438,9 +437,6 @@ jobs:
           exit 1
         fi
 
-    # Determines the branch to checkout.
-    # For manual 'workflow_dispatch', it uses the 'branch' input or the current ref_name if input is not provided.
-    # For other events (like a push, though the trigger is currently commented out), it defaults to github.ref_name.
     - name: Determine branch to deploy
       id: get_branch
       run: |
@@ -455,30 +451,16 @@ jobs:
         fetch-depth: 0
         ref: ${{ steps.get_branch.outputs.branch }}
 
-    # Verify that infrastructure is properly set up before proceeding
     - name: Verify infrastructure setup
       run: bash ./scripts/verify-infrastructure-setup.sh
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
 
-    # Executes a script to determine if there are changes in the frontend codebase compared to the last deployed commit.
-    # Outputs 'changes=true' or 'changes=false' to GITHUB_OUTPUT, which is used by subsequent steps.
     - name: Check for frontend code changes
       id: check_frontend_changes
       run: bash ./scripts/check-frontend-changes.sh
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
-
-    # Validates that essential environment variables are set if frontend changes are detected and a build/deployment is needed.
-    - name: Validate essential environment variables
-      if: steps.check_frontend_changes.outputs.changes == 'true'
-      run: |
-        for var in ENVIRONMENT; do # Removed backend specific vars
-          if [ -z "${!var}" ]; then
-            echo "Error: $var is not set"
-            exit 1
-          fi
-        done
 
     - name: Use Node.js
       if: steps.check_frontend_changes.outputs.changes == 'true'
@@ -488,10 +470,6 @@ jobs:
         cache: 'npm'
         cache-dependency-path: 'barcodeFrontend/package-lock.json'
 
-    # Caches Next.js build artifacts (.next/cache) and downloaded dependencies (node_modules)
-    # to speed up subsequent builds if frontend changes are detected.
-    # The cache key is composed of the runner's OS, a hash of package-lock.json, and hashes of all JS/TS(X) files.
-    # A less specific restore key (without source file hashes) is provided as a fallback.
     - name: Cache Next.js build artifacts and dependencies
       if: steps.check_frontend_changes.outputs.changes == 'true'
       uses: actions/cache@v3
@@ -503,8 +481,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-nextjs-${{ hashFiles('barcodeFrontend/package-lock.json') }}-
 
-    # Installs npm dependencies using 'npm ci' for a clean, reproducible install from package-lock.json.
-    # Then, it runs linting and the build process for the Next.js application.
     - name: Install dependencies, lint, and build frontend
       if: steps.check_frontend_changes.outputs.changes == 'true'
       working-directory: barcodeFrontend
@@ -513,15 +489,6 @@ jobs:
         npm run lint
         npm run build
 
-    # Clean up Docker containers, images, and volumes before frontend build - MOVED TO BACKEND, this might be redundant or specific for frontend
-    # - name: Clean up Docker containers, images, and volumes before frontend build
-    #   run: |
-    #     echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker-compose down -v || true
-    #     echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -af --volumes || true
-
-    # Setup Environment Variables for Docker - This step might be partially needed for frontend if it writes to /opt/thebarcodeapi/.env
-    # For now, assuming frontend doesn't need to write to the global .env, only read.
-    # The docker-compose.yml copy is essential and should be present.
     - name: Ensure docker-compose.yml exists in deployment directory
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi
@@ -531,16 +498,12 @@ jobs:
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/docker-compose.yml
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 644 /opt/thebarcodeapi/docker-compose.yml
         fi
-        # Ensure frontend deployment directory exists and has correct permissions
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S mkdir -p /opt/thebarcodeapi/barcodeFrontend
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeFrontend
 
     - name: Check frontend container status
       id: frontend_status
       run: |
-        # Check if barcodefrontend service is running
-        # Docker adds project name prefix, e.g. thebarcodeapi_barcodefrontend_1
-        # We will grep for the base service name.
         FRONTEND_CONTAINER_NAME=$(docker ps --format '{{.Names}}' | grep -E "_barcodefrontend_" || echo "false")
         if [ "$FRONTEND_CONTAINER_NAME" != "false" ]; then
           echo "FRONTEND_RUNNING=true" >> $GITHUB_OUTPUT
@@ -550,49 +513,35 @@ jobs:
           echo "Frontend container is not running."
         fi
 
-    # Create .env file for frontend services
     - name: Create .env file for frontend services
       run: |
         envsubst < ./scripts/infra/templates/frontend.env.template > ./barcodeFrontend/.env
         echo "Generated frontend .env file:"
         cat ./barcodeFrontend/.env
       env:
-        NEXT_PUBLIC_API_URL: "http://localhost:8000" # Set to backend API URL, adjust as needed
+        NEXT_PUBLIC_API_URL: "http://localhost:8000"
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
         PROJECT_VERSION: ${{ env.API_VERSION }}
 
-    # Ensure .env file is present in frontend deployment directory before Docker Compose
     - name: Copy .env file to frontend deployment directory
       run: |
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeFrontend/.env /opt/thebarcodeapi/barcodeFrontend/.env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeFrontend/.env
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 /opt/thebarcodeapi/barcodeFrontend/.env
 
-    # Debug: Show contents of .env file in frontend deployment directory (mask secrets in production)
-    - name: Show deployed frontend .env file contents
-      run: |
-        echo "Contents of /opt/thebarcodeapi/barcodeFrontend/.env (mask secrets in production):"
-        echo "---"
-        cat /opt/thebarcodeapi/barcodeFrontend/.env
-        echo "---"
-
     - name: Deploy Frontend using Docker
       env:
         ENVIRONMENT: ${{ env.ENVIRONMENT }}
         SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }}
-        PROJECT_VERSION: ${{ env.API_VERSION }} # Frontend might use this
-        # STEPS_CHECK_FRONTEND_CHANGES_OUTPUTS_CHANGES: ${{ steps.check_frontend_changes.outputs.changes }} # Will be used in the run script directly
+        PROJECT_VERSION: ${{ env.API_VERSION }}
       run: |
         # Copy frontend files if changes are detected or if the container needs to be rebuilt
         if [ "${{ steps.check_frontend_changes.outputs.changes }}" == "true" ] || [ "${{ steps.frontend_status.outputs.FRONTEND_RUNNING }}" == "false" ]; then
           echo "Copying frontend files to /opt/thebarcodeapi/barcodeFrontend..."
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf /opt/thebarcodeapi/barcodeFrontend/* # Clean before copy
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp -r ./barcodeFrontend/* /opt/thebarcodeapi/barcodeFrontend/
-          # Ensure Dockerfile is in the correct context for docker-compose build
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeFrontend/Dockerfile /opt/thebarcodeapi/barcodeFrontend/Dockerfile
-          # Set proper ownership for the copied frontend files
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown -R $USER:$USER /opt/thebarcodeapi/barcodeFrontend
-          # Copy .env file after copying frontend files (to avoid deletion)
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S cp ./barcodeFrontend/.env /opt/thebarcodeapi/barcodeFrontend/.env
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S chown $USER:$USER /opt/thebarcodeapi/barcodeFrontend/.env
           echo "${{ env.SUDO_PASSWORD }}" | sudo -S chmod 600 /opt/thebarcodeapi/barcodeFrontend/.env
@@ -600,20 +549,9 @@ jobs:
           echo "No frontend changes and frontend is running. Skipping file copy."
         fi
 
-        # Debug: Show contents of .env file in deployment directory (mask secrets in production)
-        if [ -f /opt/thebarcodeapi/barcodeFrontend/.env ]; then
-          echo "Contents of /opt/thebarcodeapi/barcodeFrontend/.env (mask secrets in production):"
-          echo "---"
-          cat /opt/thebarcodeapi/barcodeFrontend/.env
-          echo "---"
-        else
-          echo "WARNING: .env file not found in /opt/thebarcodeapi/barcodeFrontend/.env"
-        fi
-
         cd /opt/thebarcodeapi # Ensure we are in the directory where docker-compose.yml is
         COMPOSE_FILE_PATH="./docker-compose.yml"
 
-        # Determine docker compose command
         if command -v docker-compose &> /dev/null; then
             COMPOSE_CMD="docker-compose -f $COMPOSE_FILE_PATH"
         elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
@@ -626,68 +564,42 @@ jobs:
         echo "Frontend changes detected: ${{ steps.check_frontend_changes.outputs.changes }}"
         echo "Frontend running: ${{ steps.frontend_status.outputs.FRONTEND_RUNNING }}"
 
-        BUILD_CMD=""
         if [ "${{ steps.check_frontend_changes.outputs.changes }}" == "true" ]; then
           echo "Frontend changes detected. Building and deploying barcodefrontend..."
-          BUILD_CMD="$COMPOSE_CMD up -d --no-deps --build barcodefrontend --force-recreate --remove-orphans"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD build barcodefrontend
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --no-deps --force-recreate --remove-orphans barcodefrontend
         elif [ "${{ steps.frontend_status.outputs.FRONTEND_RUNNING }}" == "false" ]; then
-          echo "No frontend changes, but frontend is not running. Pruning image and rebuilding barcodefrontend with no-cache..."
-          # Pruning specific image can be done here if needed, e.g.,
-          # IMAGE_FRONTEND=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "barcodefrontend") || true
-          # if [ -n "$IMAGE_FRONTEND" ]; then echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker rmi $IMAGE_FRONTEND || true; fi
-          BUILD_CMD="$COMPOSE_CMD up -d --no-deps --build --no-cache barcodefrontend --force-recreate --remove-orphans"
+          echo "No frontend changes, but frontend is not running. Rebuilding barcodefrontend with no-cache..."
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD build --no-cache barcodefrontend
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --no-deps --force-recreate --remove-orphans barcodefrontend
         else
           echo "No frontend changes and frontend is running. Ensuring service is up..."
-          BUILD_CMD="$COMPOSE_CMD up -d --no-deps barcodefrontend --remove-orphans"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --no-deps --remove-orphans barcodefrontend
         fi
 
-        # Execute the determined command with retry logic
-        MAX_RETRIES=3 # Reduced from 5 for quicker feedback if it fails consistently
-        RETRY_DELAY=5
+        # Health check logic remains the same
+        echo "Performing frontend health check..."
+        sleep 15 # Give frontend time to start
+
+        MAX_RETRIES=5
+        RETRY_DELAY=10
         ATTEMPT=1
         while [ $ATTEMPT -le $MAX_RETRIES ]; do
-          echo "Frontend Docker Compose command attempt $ATTEMPT/$MAX_RETRIES..."
-          echo "Executing: echo \"${{ env.SUDO_PASSWORD }}\" | sudo -S $BUILD_CMD"
-          # Wrap the command in a subshell to handle potential errors correctly with sudo
-          (echo "${{ env.SUDO_PASSWORD }}" | sudo -S $BUILD_CMD) && CMD_SUCCESS=true || CMD_SUCCESS=false
-
-          if [ "$CMD_SUCCESS" = true ]; then
-            echo "Frontend deployment command successful."
-            break
+          echo "Health check attempt $ATTEMPT/$MAX_RETRIES..."
+          # Use -s for silent, -f for fail-fast, -L to follow redirects
+          if curl -sfL http://localhost:3000 > /dev/null; then
+            echo "✅ Frontend is healthy."
+            exit 0 # Exit script with success
           fi
-          echo "Frontend deployment command failed. Retrying in $RETRY_DELAY seconds..."
+          echo "Health check failed. Retrying in $RETRY_DELAY seconds..."
           sleep $RETRY_DELAY
           ATTEMPT=$((ATTEMPT + 1))
         done
 
-        if [ "$CMD_SUCCESS" != true ]; then
-          echo "❌ Frontend Docker Compose command failed after $MAX_RETRIES attempts."
-          echo "Displaying logs for barcodefrontend:"
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail 50 barcodefrontend || echo "Could not get barcodefrontend logs"
-          exit 1
-        fi
-
-        # Health check for frontend (e.g., curl localhost:3000)
-        echo "Performing frontend health check..."
-        sleep 10 # Give frontend time to start
-        FRONTEND_HEALTH_MAX_RETRIES=3
-        FRONTEND_HEALTH_ATTEMPT=1
-        while [ $FRONTEND_HEALTH_ATTEMPT -le $FRONTEND_HEALTH_MAX_RETRIES ]; do
-            if curl -f http://localhost:3000; then # Adjust URL/port if needed
-                echo "Frontend is healthy."
-                break
-            fi
-            echo "Frontend health check failed (attempt $FRONTEND_HEALTH_ATTEMPT/$FRONTEND_HEALTH_MAX_RETRIES). Retrying in $RETRY_DELAY seconds..."
-            sleep $RETRY_DELAY
-            FRONTEND_HEALTH_ATTEMPT=$((FRONTEND_HEALTH_ATTEMPT + 1))
-        done
-
-        if [ $FRONTEND_HEALTH_ATTEMPT -gt $FRONTEND_HEALTH_MAX_RETRIES ]; then
-            echo "❌ Frontend health check failed after $FRONTEND_HEALTH_MAX_RETRIES attempts."
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail 50 barcodefrontend || echo "Could not get barcodefrontend logs"
-            exit 1
-        fi
-        echo "Frontend deployed and healthy."
+        echo "❌ Frontend health check failed after $MAX_RETRIES attempts."
+        echo "Displaying logs for barcodefrontend:"
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail 100 barcodefrontend || echo "Could not get barcodefrontend logs"
+        exit 1
 
     - name: Store Git commit hash for frontend deployment
       if: success() # Only run if the deployment was successful
@@ -701,9 +613,9 @@ jobs:
         echo "Contents of ${TARGET_DIR}/.git-commit:"
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S cat "${TARGET_DIR}/.git-commit"
 
-  final-verification: # This job runs after both frontend and backend deployments.
+  final-verification:
     runs-on: self-hosted
-    needs: [build-and-deploy-frontend] # Ensures it runs only if build-and-deploy-frontend succeeds
+    needs: [build-and-deploy-backend, build-and-deploy-frontend]
     if: always() # This job should always run to report success or failure
     steps:
     - name: Report deployment status
