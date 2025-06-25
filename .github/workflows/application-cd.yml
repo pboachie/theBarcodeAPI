@@ -314,56 +314,12 @@ jobs:
       env:
         SUDO_PASSWORD: ${{ env.SUDO_PASSWORD }} # Script uses sudo for `docker compose exec`.
 
-    # Verifies the overall backend deployment by checking Docker container statuses,
-    # recent logs, and performing a health check against the API endpoint.
-    # It also handles cleanup of the temporary .env file used during verification.
-    - name: Verify backend deployment status and API health
-      run: |
-        cd /opt/thebarcodeapi/barcodeApi
-
-        if command -v docker-compose >/dev/null 2>&1; then
-          COMPOSE_CMD="docker-compose"
-        else
-          COMPOSE_CMD="docker compose"
-        fi
-
-        echo "Verifying backend deployment..."
-        echo "Checking Docker containers status:"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD ps
-
-        echo "Testing backend health:"
-        MAX_RETRIES=3
-        RETRY_COUNT=0
-        until curl -f http://localhost:8000/health || [ $RETRY_COUNT -eq $MAX_RETRIES ]; do
-          echo "Backend health check failed, retrying in 5 seconds..."
-          sleep 5
-          RETRY_COUNT=$((RETRY_COUNT + 1))
-        done
-
-        if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
-          echo "Backend health check failed after $MAX_RETRIES attempts"
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs barcodeapi
-          exit 1
-        fi
-        echo "Backend verification completed successfully"
-
-        # Cleanup of the .env file specific to this verification step; the main .env for the container is managed by create-backend-env-file.sh.
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeApi/.env
-
-    # Performs a Docker system prune to remove unused Docker data (images, containers, volumes, networks)
-    # to free up disk space. Runs even if previous steps in the job fail.
     - name: Clean up unused Docker resources on runner
       if: always()
       run: |
         cd /opt/thebarcodeapi/barcodeApi # Context for docker-compose related prune if applicable, though `docker system prune` is global.
         echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
 
-    # Final cleanup of the backend .env file created by 'Create .env file for backend services' step.
-    # This ensures that sensitive data in this specific .env file (if different from the one inside Docker) is removed after deployment.
-    - name: Final cleanup of backend .env file from host
-      if: always()
-      run: |
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeApi/.env
 
     # Performs a final status check on all critical services (API, Redis, Database)
     # to ensure they are running and responsive after the deployment process.
@@ -525,32 +481,20 @@ jobs:
         fi
 
         cd /opt/thebarcodeapi
-        COMPOSE_FILE_PATH="./docker-compose.yml"
 
+        # Determine compose command
         if command -v docker-compose &> /dev/null; then
-            COMPOSE_CMD="docker-compose -f $COMPOSE_FILE_PATH"
-        elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
-            COMPOSE_CMD="docker compose -f $COMPOSE_FILE_PATH"
+            COMPOSE_CMD="docker-compose"
         else
-            echo "Neither docker-compose nor docker compose found!"
-            exit 1
+            COMPOSE_CMD="docker compose"
         fi
 
-        echo "Frontend changes detected: ${{ steps.check_frontend_changes.outputs.changes }}"
-        echo "Frontend running: ${{ steps.frontend_status.outputs.FRONTEND_RUNNING }}"
-
-        if [ "${{ steps.check_frontend_changes.outputs.changes }}" == "true" ]; then
-          echo "Frontend changes detected. Building and deploying barcodefrontend..."
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD build barcodefrontend
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --no-deps --force-recreate --remove-orphans barcodefrontend
-        elif [ "${{ steps.frontend_status.outputs.FRONTEND_RUNNING }}" == "false" ]; then
-          echo "No frontend changes, but frontend is not running. Rebuilding barcodefrontend with no-cache..."
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD build --no-cache barcodefrontend
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --no-deps --force-recreate --remove-orphans barcodefrontend
-        else
-          echo "No frontend changes and frontend is running. Ensuring service is up..."
-          echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --no-deps --remove-orphans barcodefrontend
-        fi
+        echo "Deploying/updating frontend service..."
+        # This single command handles most cases:
+        # --build: Builds if source files change.
+        # --force-recreate: Ensures a fresh container if config/image changes or if it's down.
+        # --no-deps: Prevents it from restarting the backend services unnecessarily.
+        echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD up -d --build --force-recreate --no-deps barcodefrontend
 
         echo "Performing frontend health check..."
         sleep 15
@@ -591,63 +535,66 @@ jobs:
     needs: [build-and-deploy-frontend]
     if: always()
     steps:
-    - name: Report deployment status
-      run: |
-        if [[ "${{ needs.build-and-deploy-frontend.result }}" == "success" ]]; then
-          echo "✅ Overall deployment successful!"
-        else
-          echo "❌ Overall deployment failed."
-        fi
-
-    - name: Clean up build artifacts from runner workspace
-      # This step runs regardless of the success or failure of previous jobs/steps within this 'final-verification' job.
-      # The job itself runs 'always()'.
-      run: |
-        echo "Cleaning up runner workspace..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf .next
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf build
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f package.json package-lock.json
-        # Clean docker unused resources - this is a repeat from the backend job, consider if necessary here.
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
-
-    # If any of the preceding jobs (build-and-deploy-frontend) failed,
-    # this step collects diagnostic information from Docker and Nginx, and cleans up temporary files.
-    - name: Collect diagnostics on deployment failure
-      if: needs.build-and-deploy-frontend.result != 'success'
-      run: |
-        echo "============================================"
-        echo "Deployment failed! Collecting diagnostic information..."
-        echo "============================================"
-
-        echo "Docker Container Status:"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker ps -a || true
-
-        echo "Recent Docker Logs (from /opt/thebarcodeapi/docker-compose.yml):"
-        if [ -f "/opt/thebarcodeapi/docker-compose.yml" ]; then
-          # Determine docker compose command
-          if command -v docker-compose &> /dev/null; then
-              COMPOSE_CMD="docker-compose -f /opt/thebarcodeapi/docker-compose.yml"
-          elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
-              COMPOSE_CMD="docker compose -f /opt/thebarcodeapi/docker-compose.yml"
+      - name: Report deployment status
+        run: |
+          if [[ "${{ needs.build-and-deploy-frontend.result }}" == "success" ]]; then
+            echo "✅ Overall deployment successful!"
           else
-              COMPOSE_CMD=""
-              echo "Neither docker-compose nor docker compose found for fetching logs!"
+            echo "❌ Overall deployment failed."
           fi
-          if [ -n "$COMPOSE_CMD" ]; then
-            echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail=100 || true # Increased tail to 100
+
+      # ADD THIS NEW CLEANUP STEP HERE
+      - name: Clean up sensitive .env files from host
+        run: |
+          echo "Cleaning up .env files from deployment directory..."
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeApi/.env
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /opt/thebarcodeapi/barcodeFrontend/.env
+
+      - name: Clean up build artifacts from runner workspace
+        run: |
+          echo "Cleaning up runner workspace..."
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf .next
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -rf build
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f package.json package-lock.json
+          # Clean docker unused resources - this is a repeat from the backend job, consider if necessary here.
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker system prune -f --volumes
+
+      - name: Collect diagnostics on deployment failure
+        if: needs.build-and-deploy-frontend.result != 'success'
+        run: |
+          echo "============================================"
+          echo "Deployment failed! Collecting diagnostic information..."
+          echo "============================================"
+
+          echo "Docker Container Status:"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S docker ps -a || true
+
+          echo "Recent Docker Logs (from /opt/thebarcodeapi/docker-compose.yml):"
+          if [ -f "/opt/thebarcodeapi/docker-compose.yml" ]; then
+            # Determine docker compose command
+            if command -v docker-compose &> /dev/null; then
+                COMPOSE_CMD="docker-compose -f /opt/thebarcodeapi/docker-compose.yml"
+            elif command -v docker &> /dev/null && docker compose version &> /dev/null; then
+                COMPOSE_CMD="docker compose -f /opt/thebarcodeapi/docker-compose.yml"
+            else
+                COMPOSE_CMD=""
+                echo "Neither docker-compose nor docker compose found for fetching logs!"
+            fi
+            if [ -n "$COMPOSE_CMD" ]; then
+              echo "${{ env.SUDO_PASSWORD }}" | sudo -S $COMPOSE_CMD logs --tail=100 || true # Increased tail to 100
+            fi
+          else
+            echo "No docker-compose.yml file found at /opt/thebarcodeapi/docker-compose.yml for logs"
           fi
-        else
-          echo "No docker-compose.yml file found at /opt/thebarcodeapi/docker-compose.yml for logs"
-        fi
 
-        echo "Nginx Status:"
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S systemctl status nginx || true
+          echo "Nginx Status:"
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S systemctl status nginx || true
 
-        echo "Cleaning up temporary files..."
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
-        echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/docker_vars
-        # The .env file at /opt/thebarcodeapi/barcodeApi/.env is cleaned up by the backend job.
-        # No need to repeat here unless it's a different .env file.
+          echo "Cleaning up temporary files..."
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/env_vars
+          echo "${{ env.SUDO_PASSWORD }}" | sudo -S rm -f /tmp/docker_vars
+          # The .env file at /opt/thebarcodeapi/barcodeApi/.env is cleaned up by the backend job.
+          # No need to repeat here unless it's a different .env file.
 
-        echo "============================================"
-        # exit 1 # The job will fail due to the 'if' condition on 'needs' if there was a failure.
+          echo "============================================"
+          # exit 1 # The job will fail due to the 'if' condition on 'needs' if there was a failure.
