@@ -411,7 +411,11 @@ async def add_rate_limit_headers(request: Request, call_next):
 async def mcp_url_autocorrect_middleware(request: Request, call_next):
     path = request.url.path
     query_params = dict(request.query_params)
-    has_query_params = bool(request.query_params)
+    # Only redirect if there are actual, non-empty query parameters
+    has_query_params = bool(request.query_params) and request.url.query != ""
+
+    # Log the full URL and query params for debugging
+    logger.debug(f"MCP Middleware: {request.method} {request.url} | query_params={query_params} | has_query_params={has_query_params}")
 
     # Only redirect for GET requests and only if there are query parameters
     if request.method == "GET":
