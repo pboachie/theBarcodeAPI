@@ -7,7 +7,7 @@ services:
         - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
         - PYTHON_ENV=${ENVIRONMENT:-production}
     ports:
-      - "${API_PORT:-8000}:8000" # Allow host port to be configured via .env
+      - "${API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
