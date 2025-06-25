@@ -396,42 +396,13 @@ async def add_rate_limit_headers(request: Request, call_next):
     return response
 
 # Add a custom middleware to ensure CORS headers are always present
-# @app.middleware("http")
-# async def add_cors_headers(request: Request, call_next):
-#     response = await call_next(request)
-#     origin = request.headers.get("origin")
-#
-#     if origin in app.state.cors_origins:
-#         response.headers["Access-Control-Allow-Origin"] = origin
-#         response.headers["Access-Control-Allow-Credentials"] = "true"
-#
-#     return response
-
 @app.middleware("http")
-async def mcp_url_autocorrect_middleware(request: Request, call_next):
-    path = request.url.path
-    query_params = dict(request.query_params)
-    # Only redirect if there are actual, non-empty query parameters
-    has_query_params = bool(request.query_params) and request.url.query != ""
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    origin = request.headers.get("origin")
 
-    # Log the full URL and query params for debugging
-    logger.debug(f"MCP Middleware: {request.method} {request.url} | query_params={query_params} | has_query_params={has_query_params}")
+    if origin in app.state.cors_origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
 
-    # Only redirect for GET requests and only if there are query parameters
-    if request.method == "GET":
-        # Normalize path to handle both with and without trailing slash
-        sse_paths = ["/api/v1/mcp-sse/sse", "/api/v1/mcp-sse/sse/"]
-        mcp_paths = ["/api/v1/mcp-server/mcp", "/api/v1/mcp-server/mcp/"]
-
-        if any(path == p for p in mcp_paths) and has_query_params:
-            if query_params.get("transportType", "").lower() == "sse":
-                logger.info(f"Auto-correcting MCP URL from {path} with transportType=sse to /api/v1/mcp-sse/sse (no params)")
-                return RedirectResponse(url="/api/v1/mcp-sse/sse", status_code=307)
-            # Let other GET requests with query parameters pass through to the MCP application
-
-        if any(path == p for p in sse_paths) and has_query_params:
-            logger.info(f"Auto-correcting MCP SSE URL from {path} with params {query_params} to {path} (no params)")
-            # Always redirect to the same path, but without query params
-            return RedirectResponse(url=path.rstrip("?"), status_code=307)
-
-    return await call_next(request)
+    return response
