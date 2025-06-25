@@ -7,7 +7,7 @@ services:
         - VERSION_ARG=${PROJECT_VERSION:-0.0.0-default}
         - PYTHON_ENV=${ENVIRONMENT:-production}
     ports:
-      - "${API_PORT:-8000}:8000" # Allow host port to be configured via .env
+      - "${API_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
@@ -55,10 +55,8 @@ services:
       # Next.js environment variables
       - NODE_ENV=production
       - PORT=3000
-      - NEXT_PUBLIC_API_URL=http://barcodeapi:${API_PORT:-8000} # Ensure this is prioritized
+      - NEXT_PUBLIC_API_URL=http://barcodeapi:${API_PORT:-8000}
       - NEXT_PUBLIC_APP_VERSION=${PROJECT_VERSION:-0.0.0-default}
-      # NEXT_PUBLIC_ENVIRONMENT is now set via .env file through envsubst
-      # NEXT_PUBLIC_PROJECT_VERSION is now set via .env file through envsubst
     volumes:
       - ./barcodeFrontend/logs:/app/logs
     healthcheck:
