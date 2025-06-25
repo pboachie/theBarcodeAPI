@@ -1,0 +1,16 @@
+# Use an official Node.js runtime as a parent image
+FROM node:18-bullseye AS builder
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy package.json
+COPY barcodeFrontend/package.json ./package.json
+
+# Install project dependencies and generate package-lock.json
+# Also update npm to latest to avoid potential issues with old npm during install
+RUN npm install -g npm@latest && npm install
+
+# Now, create a new stage to easily extract the package-lock.json
+FROM scratch AS export-stage
+COPY --from=builder /app/package-lock.json /package-lock.json
